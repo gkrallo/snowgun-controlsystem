@@ -19,6 +19,34 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 - Nedladdade programbinärer (`GSSystem/`, `*.exe`, `*.dat`, `*.msi`) checkas
   inte in — de är stora och ägs av tillverkaren. Se `.gitignore`.
 
+## Beslut (2026-11-11)
+
+- **Bara läsning och övervakning** — appen får aldrig styra anläggningen. För
+  faktisk styrning finns Google Remote Desktop mot kontrollrums-PC:n.
+- **Inloggning krävs** (Firebase Auth). Datan är inte för allmänheten.
+- **Egen app, skild från den publika prognosappen.** Koden bor här, isär från
+  öppna `snowgun-forecast`. Hosting ej bestämd (Firebase Hosting eller internt;
+  inte GitHub Pages).
+
+## Hårda regler — får aldrig glömmas
+
+Fullständig motivering i [`docs/arkitektur-och-risker.md`](docs/arkitektur-och-risker.md).
+I korthet:
+
+1. **Skriv ALDRIG till SQL.** Läs-only-konto (`db_datareader`), aldrig `sa`.
+2. **Läs med `WITH (NOLOCK)`** — våra läsningar får aldrig blockera
+   styrprogrammet.
+3. **Bara små nulägestabeller.** Tung analys sker mot en återställd kopia av
+   backupen, aldrig skarpa databasen.
+4. **Bryggan lätt och utåtgående.** Kör på PC:n, öppna aldrig en port in.
+   Gammal, minnesansträngd maskin.
+5. **Lösenord/nycklar aldrig i git.** Se `SECRETS.md` (gitignore-ad).
+6. **Firebase-regler låsta:** bara bryggan skriver, bara inloggade läser.
+7. **Tidsstämpel på allt** — appen varnar för gammal data, visar aldrig stale
+   som live.
+8. **Bryggan auto-startar** vid omboot. **Budgetlarm** i Google Cloud, skriv
+   bara vid ändring.
+
 ## Vad vi vet hittills
 
 Se [`docs/granskning-gssystem.md`](docs/granskning-gssystem.md) för helheten.
