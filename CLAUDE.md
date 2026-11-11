@@ -47,6 +47,20 @@ I korthet:
 8. **Bryggan auto-startar** vid omboot. **Budgetlarm** i Google Cloud, skriv
    bara vid ändring.
 
+## Idéer under utredning
+
+Se [`docs/ideer-och-roadmap.md`](docs/ideer-och-roadmap.md). Viktigast att minnas:
+
+- **Vattenfördelnings-rådgivare:** föreslå inställningar per enhet utifrån
+  våttemperatur + pumptak, så förbrukningen tajmas. Alltid bara *förslag* —
+  människan ställer in i styrsystemet (läs-only-regeln).
+- **"Stanna/pulsa vid överskriden förbrukning" bygger vi INTE in.** Det är en
+  åtgärd på anläggningen (skrivaccess, säkerhetskritiskt), skilt från
+  övervakningen. Styrsystemet stryper troligen redan själv — vi *visar* det.
+  Egna larm får notifiera, aldrig styra.
+- **Statusrader (fläkt startar→förvärmer→drift) hanteras som tillstånd**, inte
+  en ström vi sparar rad för rad. Skriv till Firebase bara vid förändring.
+
 ## Vad vi vet hittills
 
 Se [`docs/granskning-gssystem.md`](docs/granskning-gssystem.md) för helheten.
