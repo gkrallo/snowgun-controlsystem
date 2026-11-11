@@ -1,0 +1,19 @@
+# Riktiga lösenord och anslutningsuppgifter — får aldrig checkas in
+SECRETS.md
+secrets.*
+*.secret
+
+# Nedladdade programfiler från styrsystemet (stora binärer, ligger inte i git)
+GSSystem/
+*.zip
+*.msi
+*.dat
+
+# Lokala databasdumpar
+*.bak
+*.mdb
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
