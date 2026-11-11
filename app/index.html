@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Snökoll — driftövervakning</title>
+<!--
+  PROTOTYP med simulerad data. Ingen riktig uppkoppling mot styrsystem eller
+  Firebase. Alla siffror är påhittade exempel (märkta där det är viktigt).
+  Syfte: visa UX-förslag för övervakningsappen — välkomst, systemvy,
+  vattenbalans, kanon-/lansvy, larm och körfönster.
+  Chart.js hämtas från CDN. Allt annat ligger i den här filen, i samma anda
+  som prognosappen (ingen bygg).
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0a111e; --bg2:#0e1829; --panel:#13203360; --panel-solid:#132033;
+  --panel-hi:#1a2a42; --border:#ffffff14; --border-hi:#ffffff26;
+  --text:#e9f0fa; --muted:#8ba0bd; --muted2:#64789b;
+  --ice:#38bdf8; --ice2:#22d3ee; --accent:#7dd3fc;
+  --run:#34d399; --standby:#60a5fa; --limit:#fbbf24; --alarm:#f87171; --off:#5b6b82;
+  --shadow:0 10px 30px -12px #000a, 0 2px 8px -4px #0008;
+  --r:16px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, #16304d55, transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, #0e2a3d55, transparent 55%),
+    var(--bg);
+  color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;
+  letter-spacing:.1px;
+}
+a{color:inherit}
+.hidden{display:none!important}
+
+/* ---------- Login ---------- */
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;overflow:hidden}
+.flakes{position:absolute;inset:0;pointer-events:none;opacity:.5}
+.flake{position:absolute;top:-10px;color:#bfe4ff;animation:fall linear infinite}
+@keyframes fall{to{transform:translateY(105vh) rotate(360deg)}}
+.login-card{
+  width:min(420px,100%);background:linear-gradient(180deg,#14233aee,#0e1829ee);
+  border:1px solid var(--border-hi);border-radius:24px;padding:38px 30px;
+  box-shadow:var(--shadow);backdrop-filter:blur(8px);text-align:center;position:relative;z-index:2
+}
+.logo{width:72px;height:72px;margin:0 auto 14px;display:grid;place-items:center;
+  background:radial-gradient(circle at 35% 30%,#1b3a5a,#0c1b2d);border:1px solid var(--border-hi);
+  border-radius:20px;box-shadow:inset 0 1px 0 #ffffff22}
+.login-card h1{margin:.1em 0 .1em;font-size:1.5rem;letter-spacing:.3px}
+.login-card .sub{color:var(--muted);font-size:.92rem;margin-bottom:22px}
+.btn{
+  width:100%;border:0;border-radius:12px;padding:13px 16px;font-size:.98rem;font-weight:600;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;
+  transition:transform .12s ease, filter .12s ease
+}
+.btn:active{transform:translateY(1px)}
+.btn-g{background:#fff;color:#1f2733}
+.btn-g:hover{filter:brightness(.96)}
+.login-card .tiny{color:var(--muted2);font-size:.76rem;margin-top:18px;line-height:1.5}
+.pill{display:inline-flex;align-items:center;gap:6px;background:#0c1a2b;border:1px solid var(--border);
+  color:var(--accent);border-radius:999px;padding:4px 11px;font-size:.74rem;margin-bottom:18px}
+
+/* ---------- App shell ---------- */
+#app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
+#sidebar{
+  background:linear-gradient(180deg,#0e1829,#0b1320);border-right:1px solid var(--border);
+  padding:18px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px
+}
+.brand{display:flex;align-items:center;gap:11px;padding:6px 8px 16px;border-bottom:1px solid var(--border);margin-bottom:10px}
+.brand .logo{width:38px;height:38px;border-radius:11px;margin:0}
+.brand b{font-size:1.02rem;letter-spacing:.3px}
+.brand small{display:block;color:var(--muted2);font-size:.68rem;font-weight:500}
+.nav{display:flex;flex-direction:column;gap:2px;flex:1}
+.nav a{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;color:var(--muted);
+  font-size:.93rem;font-weight:500;cursor:pointer;transition:background .15s,color .15s;position:relative}
+.nav a:hover{background:#ffffff0a;color:var(--text)}
+.nav a.active{background:linear-gradient(90deg,#1b3250,#16263d);color:#fff}
+.nav a.active::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--ice)}
+.nav a .badge{margin-left:auto;background:var(--alarm);color:#fff;font-size:.68rem;font-weight:700;
+  min-width:19px;height:19px;border-radius:999px;display:grid;place-items:center;padding:0 5px}
+.side-foot{border-top:1px solid var(--border);padding-top:12px;margin-top:8px;display:flex;align-items:center;gap:10px}
+.avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#2a4a6f,#1b3a5a);
+  display:grid;place-items:center;font-weight:700;font-size:.82rem;color:#cfe9ff}
+.side-foot small{color:var(--muted2);font-size:.7rem;display:block}
+
+#main{padding:22px 26px 90px;max-width:1180px;width:100%}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.topbar h2{margin:0;font-size:1.32rem;letter-spacing:.2px}
+.topbar .crumb{color:var(--muted2);font-size:.8rem;margin-bottom:3px}
+.live{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:.8rem;
+  background:#0d1a2b;border:1px solid var(--border);padding:7px 13px;border-radius:999px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--run);box-shadow:0 0 0 0 #34d39977;animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #34d39966}70%{box-shadow:0 0 0 9px #34d39900}100%{box-shadow:0 0 0 0 #34d39900}}
+
+/* ---------- cards / grid ---------- */
+.grid{display:grid;gap:14px}
+.g-kpi{grid-template-columns:repeat(auto-fit,minmax(185px,1fr))}
+.g-2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g-units{grid-template-columns:repeat(auto-fit,minmax(255px,1fr))}
+.card{background:linear-gradient(180deg,#14233a99,#101b2c99);border:1px solid var(--border);
+  border-radius:var(--r);padding:17px 18px;box-shadow:var(--shadow);backdrop-filter:blur(4px)}
+.card h3{margin:0 0 2px;font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;display:flex;align-items:center;gap:8px}
+.kpi .val{font-size:1.9rem;font-weight:700;letter-spacing:.3px;margin-top:6px;line-height:1.05}
+.kpi .val small{font-size:.9rem;color:var(--muted);font-weight:600}
+.kpi .foot{color:var(--muted2);font-size:.76rem;margin-top:5px;display:flex;align-items:center;gap:6px}
+.up{color:var(--run)} .down{color:var(--alarm)} .warn{color:var(--limit)}
+
+/* bars */
+.bar{height:9px;border-radius:999px;background:#0c1626;overflow:hidden;margin-top:9px;border:1px solid var(--border)}
+.bar > i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--ice),var(--ice2));transition:width .6s cubic-bezier(.2,.7,.2,1)}
+.bar.amber > i{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.bar.red > i{background:linear-gradient(90deg,#ef4444,#f87171)}
+.bar.green > i{background:linear-gradient(90deg,#10b981,#34d399)}
+
+/* status chip */
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:.76rem;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid var(--border)}
+.chip .d{width:8px;height:8px;border-radius:50%}
+.s-run{color:#8ff0c6;background:#0e2a20} .s-run .d{background:var(--run);animation:pulse 2s infinite}
+.s-standby{color:#bcd4ff;background:#132544} .s-standby .d{background:var(--standby)}
+.s-limit{color:#ffe0a3;background:#2b2410} .s-limit .d{background:var(--limit)}
+.s-alarm{color:#ffc2c2;background:#2b1414} .s-alarm .d{background:var(--alarm);animation:pulse 1.2s infinite}
+.s-off{color:#9fb0c7;background:#161f2e} .s-off .d{background:var(--off)}
+
+/* unit card */
+.unit{cursor:pointer;transition:transform .14s ease,border-color .14s ease;position:relative;overflow:hidden}
+.unit:hover{transform:translateY(-3px);border-color:var(--border-hi)}
+.unit .u-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.unit .u-name{font-weight:700;font-size:1.02rem;display:flex;align-items:center;gap:10px}
+.unit .u-well{color:var(--muted2);font-size:.73rem;font-weight:500}
+.metric-row{display:flex;justify-content:space-between;gap:12px;margin-top:10px}
+.metric{flex:1}
+.metric .m-l{color:var(--muted);font-size:.72rem}
+.metric .m-v{font-weight:700;font-size:1.05rem;margin-top:1px}
+.metric .m-v small{font-size:.72rem;color:var(--muted);font-weight:600}
+
+/* fan spin */
+.fan{transform-origin:50% 50%}
+.spin{animation:spin 2.4s linear infinite}
+.spin.fast{animation-duration:.9s}
+@keyframes spin{to{transform:rotate(360deg)}}
+.droplet{animation:bob 2.6s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(2.5px)}}
+
+/* water flow view */
+.flow-row{display:grid;grid-template-columns:150px 1fr 96px;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
+.flow-row:last-child{border-bottom:0}
+.flow-row .fname{display:flex;align-items:center;gap:9px;font-weight:600;font-size:.9rem}
+.flow-track{height:18px;border-radius:7px;background:#0b1626;border:1px solid var(--border);overflow:hidden;position:relative}
+.flow-fill{height:100%;border-radius:6px 0 0 6px;background:linear-gradient(90deg,#0ea5e9,#22d3ee);position:relative}
+.flow-fill::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,#ffffff00 0 10px,#ffffff22 10px 14px);
+  animation:stream 1s linear infinite}
+@keyframes stream{to{background-position:28px 0}}
+.flow-fill.amber{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.flow-val{text-align:right;font-weight:700;font-size:.9rem}
+.flow-val small{color:var(--muted);font-weight:600;font-size:.72rem}
+
+/* pump gauge */
+.pumpwrap{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.gauge{--p:0;position:relative;width:150px;height:150px;border-radius:50%;flex:0 0 auto;
+  background:conic-gradient(var(--gcol,var(--ice)) calc(var(--p)*1%), #10203400 0);
+  display:grid;place-items:center;transition:--p .6s}
+.gauge::before{content:"";position:absolute;inset:12px;border-radius:50%;background:#0d1a2b;border:1px solid var(--border)}
+.gauge .gv{position:relative;text-align:center}
+.gauge .gv b{font-size:1.7rem;display:block;line-height:1}
+.gauge .gv span{font-size:.72rem;color:var(--muted)}
+.pstat{flex:1;min-width:200px}
+.pstat .big{font-size:1.05rem;font-weight:700;margin-bottom:4px}
+.pstat p{margin:.3em 0;color:var(--muted);font-size:.86rem;line-height:1.5}
+
+/* alarms */
+.alarm-item{display:flex;gap:13px;align-items:flex-start;padding:13px 4px;border-bottom:1px solid var(--border)}
+.alarm-item:last-child{border-bottom:0}
+.alarm-ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto}
+.a-crit{background:#2b1414;color:var(--alarm)} .a-warn{background:#2b2410;color:var(--limit)} .a-info{background:#132544;color:var(--standby)}
+.alarm-item .a-body{flex:1}
+.alarm-item .a-title{font-weight:600;font-size:.95rem}
+.alarm-item .a-meta{color:var(--muted2);font-size:.76rem;margin-top:2px}
+.alarm-item.ack{opacity:.5}
+.banner{display:flex;align-items:center;gap:12px;background:linear-gradient(90deg,#2b1414,#1c1420);
+  border:1px solid #f8717144;border-radius:14px;padding:13px 16px;margin-bottom:18px}
+.banner.ok{background:linear-gradient(90deg,#0e2a20,#101f2c);border-color:#34d39944}
+
+/* forecast window */
+.timeline{display:flex;gap:4px;margin-top:14px;height:40px;border-radius:9px;overflow:hidden;border:1px solid var(--border)}
+.tseg{flex:1;display:flex;align-items:flex-end;justify-content:center;font-size:.6rem;color:#ffffffaa;padding-bottom:3px;position:relative}
+.tseg.good{background:linear-gradient(180deg,#0e3a2a,#10533a)} .tseg.ok{background:linear-gradient(180deg,#1b3250,#24476f)}
+.tseg.no{background:linear-gradient(180deg,#2a1a1a,#3a2020)}
+.legend{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;color:var(--muted);font-size:.78rem}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+canvas{max-width:100%}
+.section-title{font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin:26px 2px 10px}
+
+/* mobile bottom nav */
+#botnav{display:none}
+@media(max-width:860px){
+  #app{grid-template-columns:1fr}
+  #sidebar{display:none}
+  #main{padding:16px 15px 86px}
+  #botnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;
+    background:#0c1626ee;border-top:1px solid var(--border);backdrop-filter:blur(10px);
+    padding:7px 4px calc(7px + env(safe-area-inset-bottom))}
+  #botnav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted2);
+    font-size:.62rem;padding:5px 2px;cursor:pointer;position:relative}
+  #botnav a.active{color:var(--ice)}
+  #botnav a .badge{position:absolute;top:0;right:50%;margin-right:-22px;background:var(--alarm);color:#fff;
+    font-size:.6rem;font-weight:700;min-width:15px;height:15px;border-radius:999px;display:grid;place-items:center;padding:0 3px}
+  .topbar h2{font-size:1.15rem}
+}
+.view{animation:fade .35s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.muted{color:var(--muted)} .small{font-size:.82rem}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.spacer{flex:1}
+.linkbtn{background:#132544;border:1px solid var(--border);color:var(--accent);border-radius:9px;
+  padding:7px 12px;font-size:.82rem;font-weight:600;cursor:pointer}
+.note{background:#0c1a2b;border:1px dashed var(--border-hi);border-radius:12px;padding:11px 14px;color:var(--muted);font-size:.8rem;line-height:1.55}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<section id="login">
+  <div class="flakes" id="flakes"></div>
+  <div class="login-card">
+    <div class="logo">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.6" stroke-linecap="round">
+        <path d="M12 2v20M12 2l3 3M12 2L9 5M12 22l3-3M12 22l-3-3"/>
+        <path d="M2 12h20M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/>
+        <path d="M4.5 4.5l15 15M4.5 19.5l15-15" stroke-width="1.1" opacity=".6"/>
+      </svg>
+    </div>
+    <div class="pill"><span class="dot"></span> snow.pettersson.app</div>
+    <h1>Snökoll</h1>
+    <div class="sub">Driftövervakning för snögruppen<br>Lidköpings Vintersportklubb</div>
+    <button class="btn btn-g" onclick="login()">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M45 24c0-1.6-.1-3.1-.4-4.6H24v9.3h11.8c-.5 2.7-2 5-4.3 6.6v5.5h7C42.6 37 45 31 45 24z"/><path fill="#34A853" d="M24 46c5.8 0 10.7-1.9 14.3-5.2l-7-5.5c-1.9 1.3-4.4 2.1-7.3 2.1-5.6 0-10.4-3.8-12.1-8.9H4.7v5.6C8.3 41.6 15.6 46 24 46z"/><path fill="#FBBC05" d="M11.9 28.5c-.4-1.3-.7-2.7-.7-4.5s.3-3.2.7-4.5v-5.6H4.7C3.6 16.6 3 20.2 3 24s.6 7.4 1.7 10.6l7.2-6.1z"/><path fill="#EA4335" d="M24 10.8c3.1 0 5.9 1.1 8.1 3.2l6.1-6.1C34.7 4.3 29.8 2 24 2 15.6 2 8.3 6.4 4.7 13.4l7.2 5.6C13.6 14.6 18.4 10.8 24 10.8z"/></svg>
+      Logga in med Google
+    </button>
+    <div class="tiny">Endast inbjudna konton i snögruppen.<br>All data kräver inloggning — inget visas publikt.</div>
+  </div>
+</section>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.6" stroke-linecap="round"><path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5"/></svg></div>
+      <div><b>Snökoll</b><small>snow.pettersson.app</small></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <div class="avatar">KP</div>
+      <div style="flex:1"><div style="font-size:.84rem;font-weight:600">Kristian</div><small>Snögruppen</small></div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64789b" stroke-width="2" stroke-linecap="round" style="cursor:pointer" onclick="logout()"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+    </div>
+  </aside>
+
+  <main id="main"></main>
+  <nav id="botnav"></nav>
+</div>
+
+<script>
+/* ============================================================
+   SIMULERAD DATA  (exempelvärden — ersätts av Firebase senare)
+   ============================================================ */
+const PUMP_MAX = 45;        // l/s — EXEMPEL, verklig pumpkapacitet okänd
+const RESERVOIR_DAYS = 4.2; // dygn kvar vid nuvarande förbrukning (exempel)
+const RESERVOIR_PCT = 58;
+
+let cannons = [
+  {id:'K1', typ:'kanon', namn:'Kanon 1', brunn:3,  state:'run',   steg:'8/12', eau:6.8, air:11.0, tw:-6.4, stryp:0},
+  {id:'K2', typ:'kanon', namn:'Kanon 2', brunn:5,  state:'limit', steg:'5/12', eau:4.1, air:7.5,  tw:-6.1, stryp:38},
+  {id:'K3', typ:'kanon', namn:'Kanon 3', brunn:8,  state:'run',   steg:'9/12', eau:7.2, air:11.4, tw:-6.6, stryp:0},
+  {id:'K4', typ:'kanon', namn:'Kanon 4', brunn:11, state:'limit', steg:'4/12', eau:3.6, air:6.8,  tw:-5.9, stryp:46},
+  {id:'K5', typ:'kanon', namn:'Kanon 5', brunn:14, state:'run',   steg:'7/12', eau:6.1, air:10.2, tw:-6.3, stryp:12},
+  {id:'K6', typ:'kanon', namn:'Kanon 6', brunn:18, state:'off',   steg:'0/12', eau:0,   air:0,    tw:-5.8, stryp:0},
+  {id:'L1', typ:'lans',  namn:'Lans 1',  brunn:6,  state:'run',   steg:'10/12',eau:5.2, air:3.1,  tw:-6.2, stryp:0},
+  {id:'L2', typ:'lans',  namn:'Lans 2',  brunn:15, state:'limit', steg:'6/12', eau:3.1, air:1.9,  tw:-6.0, stryp:30},
+];
+
+let alarms = [
+  {id:1, sev:'warn', title:'Kanon 2 — begränsat vattenflöde', meta:'Strypt pga pumpkapacitet · sedan 21:42', ack:false},
+  {id:2, sev:'info', title:'Lans 2 — låg lufttemperatur, nära startgräns', meta:'Våttemp -6.0 °C · 22:05', ack:false},
+  {id:3, sev:'crit', title:'Pumphus — uttag nära kapacitetstak', meta:'41 / 45 l/s · automatisk strypning aktiv', ack:false},
+];
+
+const NAV = [
+  {id:'overview', label:'Översikt',    icon:'grid'},
+  {id:'water',    label:'Vattenbalans',icon:'drop'},
+  {id:'cannons',  label:'Kanoner',     icon:'fan'},
+  {id:'lances',   label:'Lansar',      icon:'lance'},
+  {id:'alarms',   label:'Larm',        icon:'bell'},
+  {id:'forecast', label:'Körfönster',  icon:'clock'},
+];
+
+/* ---------- ikoner ---------- */
+function icon(name,c='currentColor',s=20){
+  const p={
+    grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    drop:'<path d="M12 2.5c3.5 4.5 6 7.8 6 11a6 6 0 1 1-12 0c0-3.2 2.5-6.5 6-11z"/>',
+    bell:'<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/>',
+    clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    lance:'<path d="M5 20L18 7"/><path d="M15 4l5 5-2 2-5-5z"/><circle cx="6" cy="19" r="2"/>',
+    fan:'<circle cx="12" cy="12" r="2.3"/><path d="M12 10c0-3 .5-6-1.5-7.5C8 4 9 7 12 10zM12 14c0 3-.5 6 1.5 7.5C16 20 15 17 12 14zM10 12c-3 0-6-.5-7.5 1.5C4 16 7 15 10 12zM14 12c3 0 6 .5 7.5-1.5C20 8 17 9 14 12z"/>',
+    gauge:'<path d="M12 13l4-4"/><path d="M4 19a9 9 0 1 1 16 0"/><circle cx="12" cy="13" r="1.4"/>',
+    bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+    temp:'<path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0z"/>',
+    track:'<path d="M4 20c4-1 4-7 8-8s4-7 8-8"/>',
+  }[name]||'';
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+}
+function fanSVG(run,fast){return `<svg width="22" height="22" viewBox="0 0 24 24" fill="#7dd3fc" class="fan ${run?('spin'+(fast?' fast':'')):''}"><circle cx="12" cy="12" r="2.1"/><path d="M12 10c0-3 .5-6-1.5-7.5C8 4 9 7 12 10zM12 14c0 3-.5 6 1.5 7.5C16 20 15 17 12 14zM10 12c-3 0-6-.5-7.5 1.5C4 16 7 15 10 12zM14 12c3 0 6 .5 7.5-1.5C20 8 17 9 14 12z"/></svg>`}
+
+const STATE={run:['s-run','Körs'],standby:['s-standby','Redo'],limit:['s-limit','Strypt'],alarm:['s-alarm','Larm'],off:['s-off','Av']};
+function chip(st){const[c,l]=STATE[st];return `<span class="chip ${c}"><span class="d"></span>${l}</span>`}
+
+/* ---------- derived ---------- */
+const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
+function totalWater(){return +sum(cannons,c=>c.eau).toFixed(1)}
+function running(){return cannons.filter(c=>c.state!=='off')}
+function activeAlarms(){return alarms.filter(a=>!a.ack)}
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+let current='overview', charts={};
+function go(id){current=id;render();if(window.innerWidth<=860)window.scrollTo(0,0)}
+function buildNav(){
+  const a=activeAlarms().length;
+  document.getElementById('nav').innerHTML=NAV.map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
+  document.getElementById('botnav').innerHTML=NAV.filter(n=>n.id!=='forecast').map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
+}
+
+function topbar(crumb,title,extra=''){
+  return `<div class="topbar"><div><div class="crumb">${crumb}</div><h2>${title}</h2></div>
+    <div class="row">${extra}<span class="live"><span class="dot"></span>Live · uppdaterad nyss</span></div></div>`;
+}
+
+/* ============================================================
+   VIEWS
+   ============================================================ */
+function vOverview(){
+  const run=running().length, tw=cannons.find(c=>c.state==='run')?.tw??-6.3;
+  const wpct=Math.round(totalWater()/PUMP_MAX*100);
+  const aa=activeAlarms();
+  const banner = aa.length
+    ? `<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${aa.length} aktiva larm</b> <span class="muted small">· allvarligast: ${aa.find(a=>a.sev==='crit')?.title||aa[0].title}</span></div><button class="linkbtn" onclick="go('alarms')">Visa larm</button></div>`
+    : `<div class="banner ok">${icon('bell','#34d399')}<div style="flex:1"><b>Inga aktiva larm</b> <span class="muted small">· allt rullar på</span></div></div>`;
+  return topbar('Driftövervakning','Översikt')+ `<div class="view">${banner}
+  <div class="grid g-kpi">
+    <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} I drift</h3><div class="val">${run}<small> / ${cannons.length} enheter</small></div><div class="foot">${cannons.filter(c=>c.state==='limit').length} strypta · 1 avstängd</div></div>
+    <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Vattenuttag</h3><div class="val">${totalWater()}<small> / ${PUMP_MAX} l/s</small></div><div class="bar ${wpct>90?'red':wpct>75?'amber':''}"><i style="width:${wpct}%"></i></div><div class="foot warn">${wpct>90?'Nära pumpkapacitet':'Inom kapacitet'}</div></div>
+    <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${tw.toFixed(1)}<small> °C</small></div><div class="foot up">▼ sjunker · bra för produktion</div></div>
+    <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${RESERVOIR_PCT}<small> %</small></div><div class="bar ${RESERVOIR_PCT<30?'red':RESERVOIR_PCT<50?'amber':'green'}"><i style="width:${RESERVOIR_PCT}%"></i></div><div class="foot">≈ ${RESERVOIR_DAYS.toFixed(1)} dygn kvar vid nuvarande takt</div></div>
+  </div>
+
+  <div class="grid g-2" style="margin-top:14px">
+    <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — senaste 12 h</h3><canvas id="cTw" height="150"></canvas></div>
+    <div class="card"><h3>${icon('clock','#7dd3fc',15)} Körfönster från prognosen</h3>
+      <div class="row" style="margin-top:8px"><span class="chip s-run"><span class="d"></span>Går att köra nu</span></div>
+      <p class="muted small" style="line-height:1.6;margin:11px 0 0">Gynnsamma förhållanden håller i sig <b style="color:var(--text)">till ca 09:00 imorgon</b>, därefter stiger våttemperaturen över startgränsen under eftermiddagen. Nästa fönster: natten mot torsdag.</p>
+      ${timelineHTML()}
+      <button class="linkbtn" style="margin-top:12px" onclick="go('forecast')">Mer om körfönstret</button>
+    </div>
+  </div>
+
+  <div class="section-title">Enheter</div>
+  <div class="grid g-units">${cannons.map(unitCard).join('')}</div>
+  </div>`;
+}
+
+function unitCard(c){
+  const isFan=c.typ==='kanon';
+  return `<div class="card unit" onclick="openUnit('${c.id}')">
+    <div class="u-head">
+      <div><div class="u-name">${isFan?fanSVG(c.state!=='off',c.state==='run'):icon('lance','#7dd3fc',20)} ${c.namn}</div><div class="u-well">Brunn ${c.brunn} · steg ${c.steg}</div></div>
+      ${chip(c.state)}
+    </div>
+    <div class="metric-row">
+      <div class="metric"><div class="m-l">Vatten</div><div class="m-v">${c.eau.toFixed(1)} <small>l/s</small></div></div>
+      <div class="metric"><div class="m-l">Luft</div><div class="m-v">${c.air.toFixed(1)} <small>${isFan?'m³/min':'l/s'}</small></div></div>
+      <div class="metric"><div class="m-l">Våttemp</div><div class="m-v">${c.tw.toFixed(1)}<small>°C</small></div></div>
+    </div>
+    ${c.stryp?`<div class="bar amber"><i style="width:${100-c.stryp}%"></i></div><div class="foot warn" style="font-size:.73rem;margin-top:5px;color:var(--limit)">Strypt ${c.stryp}% för att dela vattnet</div>`:`<div class="bar green"><i style="width:100%"></i></div><div class="foot" style="font-size:.73rem;margin-top:5px;color:var(--muted2)">Full produktion</div>`}
+  </div>`;
+}
+
+function vWater(){
+  const tot=totalWater(), pct=Math.round(tot/PUMP_MAX*100), head=(PUMP_MAX-tot).toFixed(1);
+  const near=pct>90;
+  return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
+  <div class="card">
+    <h3>${icon('gauge','#7dd3fc',15)} Pumphus</h3>
+    <div class="pumpwrap" style="margin-top:14px">
+      <div class="gauge" style="--p:${pct};--gcol:${near?'#fbbf24':'#22d3ee'}"><div class="gv"><b>${pct}%</b><span>av kapacitet</span></div></div>
+      <div class="pstat">
+        <div class="big">${tot} l/s <span class="muted" style="font-weight:500">av ${PUMP_MAX} l/s</span></div>
+        <div class="bar ${near?'amber':''}" style="max-width:340px"><i style="width:${pct}%"></i></div>
+        <p>${near
+          ? '<b style="color:var(--limit)">Nära kapacitetstaket.</b> Systemet stryper flera kanoner så att fler kan vara igång samtidigt — mindre produktion per kanon, men större del av spåret täcks.'
+          : 'God marginal. Marginal kvar: <b>'+head+' l/s</b> — går att öka produktionen eller starta fler enheter.'}</p>
+        <p class="muted small">Pumpkapaciteten (${PUMP_MAX} l/s) är ett <b>exempelvärde</b> — fylls i med verkligt tak.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Fördelning till varje enhet</div>
+  <div class="card">
+    ${cannons.filter(c=>c.state!=='off').map(c=>{
+      const w=Math.round(c.eau/PUMP_MAX*100);
+      return `<div class="flow-row">
+        <div class="fname">${c.typ==='kanon'?fanSVG(true,c.state==='run'):icon('lance','#7dd3fc',18)} ${c.namn}<span class="u-well"> · br ${c.brunn}</span></div>
+        <div class="flow-track"><div class="flow-fill ${c.stryp?'amber':''}" style="width:${Math.max(6,w*3)}%"></div></div>
+        <div class="flow-val">${c.eau.toFixed(1)} <small>l/s</small>${c.stryp?`<br><small style="color:var(--limit)">−${c.stryp}%</small>`:''}</div>
+      </div>`}).join('')}
+    <div class="flow-row" style="margin-top:4px;border-top:2px solid var(--border-hi);padding-top:11px">
+      <div class="fname">${icon('drop','#22d3ee',18)} <b>Summa uttag</b></div>
+      <div class="flow-track"><div class="flow-fill ${near?'amber':''}" style="width:${pct}%"></div></div>
+      <div class="flow-val"><b>${tot}</b> <small>l/s</small></div>
+    </div>
+  </div>
+
+  <div class="grid g-2" style="margin-top:14px">
+    <div class="card"><h3>${icon('drop','#7dd3fc',15)} Uttag vs kapacitet — senaste 12 h</h3><canvas id="cWater" height="150"></canvas></div>
+    <div class="card"><h3>${icon('track','#7dd3fc',15)} Täckning & strategi</h3>
+      <div class="val" style="font-size:1.5rem;font-weight:700;margin-top:6px">≈ 1,8 <small class="muted" style="font-size:.9rem">av 2,3 km täcks nu</small></div>
+      <div class="bar" style="margin-top:10px"><i style="width:78%"></i></div>
+      <p class="muted small" style="line-height:1.6;margin-top:12px">Med strypning körs <b style="color:var(--text)">7 enheter</b> samtidigt och sträckan blir längre, i stället för full effekt på 3–4. Släpps strypningen ökar produktionen per kanon men färre kan köra.</p>
+      <div class="note" style="margin-top:12px">Idé: lägg in en reglagefunktion här senare som föreslår fördelning utifrån pumptak och vald strategi (täckning vs hastighet).</div>
+    </div>
+  </div>
+  </div>`;
+}
+
+function vUnits(typ){
+  const list=cannons.filter(c=>c.typ===typ);
+  const t=typ==='kanon'?'Kanoner':'Lansar';
+  return topbar('Enheter',t)+`<div class="view"><div class="grid g-units">${list.map(unitCard).join('')}</div>
+   <div class="note" style="margin-top:16px">Tryck på en enhet för detaljer och trendkurvor. Lägen och steg speglar styrsystemets egen inkoppling — appen bara visar, styr aldrig.</div></div>`;
+}
+
+function vAlarms(){
+  const order={crit:0,warn:1,info:2};
+  const sorted=[...alarms].sort((a,b)=>(a.ack-b.ack)||order[a.sev]-order[b.sev]);
+  const sevIco={crit:['a-crit','bell'],warn:['a-warn','bolt'],info:['a-info','clock']};
+  return topbar('Driftövervakning','Larm',`<button class="linkbtn" onclick="ackAll()">Kvittera alla lokalt</button>`)+`<div class="view">
+   <div class="grid g-kpi" style="margin-bottom:16px">
+     <div class="card kpi"><h3>Kritiska</h3><div class="val down">${alarms.filter(a=>a.sev==='crit'&&!a.ack).length}</div></div>
+     <div class="card kpi"><h3>Varningar</h3><div class="val warn">${alarms.filter(a=>a.sev==='warn'&&!a.ack).length}</div></div>
+     <div class="card kpi"><h3>Info</h3><div class="val">${alarms.filter(a=>a.sev==='info'&&!a.ack).length}</div></div>
+   </div>
+   <div class="card">${sorted.map(a=>{const[c,i]=sevIco[a.sev];return `<div class="alarm-item ${a.ack?'ack':''}">
+      <div class="alarm-ico ${c}">${icon(i,'currentColor',18)}</div>
+      <div class="a-body"><div class="a-title">${a.title}</div><div class="a-meta">${a.meta}</div></div>
+      ${a.ack?'<span class="chip s-off"><span class="d"></span>Kvitterad</span>':`<button class="linkbtn" onclick="ackOne(${a.id})">Kvittera</button>`}
+    </div>`}).join('')}</div>
+   <div class="note" style="margin-top:14px">Kvittering sker <b>lokalt i appen</b> (döljer larmet för den som tittar) — styrsystemet påverkas inte, eftersom appen bara läser. Faktisk återställning görs i anläggningen.</div>
+  </div>`;
+}
+
+function vForecast(){
+  return topbar('Prognos','Körfönster')+`<div class="view">
+   <div class="card">
+     <div class="row"><span class="chip s-run"><span class="d"></span>Går att köra nu</span><span class="muted small">Våttemp −6,3 °C · startgräns −2,5 °C</span></div>
+     <p class="muted" style="line-height:1.6;margin-top:12px">Förhållandena är gynnsamma och håller i sig <b style="color:var(--text)">till ca 09:00 imorgon</b>. Under eftermiddagen stiger våttemperaturen över startgränsen. Nästa fönster öppnar natten mot torsdag.</p>
+     ${timelineHTML()}
+   </div>
+   <div class="grid g-2" style="margin-top:14px">
+     <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — prognos 48 h</h3><canvas id="cFc" height="160"></canvas></div>
+     <div class="card"><h3>${icon('drop','#7dd3fc',15)} Vattenmagasin — så länge räcker det</h3>
+       <div class="val" style="font-size:1.7rem;font-weight:700;margin-top:6px">≈ ${RESERVOIR_DAYS.toFixed(1)} dygn <small class="muted" style="font-size:.85rem">vid nuvarande förbrukning</small></div>
+       <div class="bar green" style="margin-top:10px"><i style="width:${RESERVOIR_PCT}%"></i></div>
+       <p class="muted small" style="line-height:1.6;margin-top:12px">Snöproduktion pågår oftast bara några dygn, max en vecka, innan vattnet är slut. Grafen hjälper till att planera: kör hårt medan fönstret är öppet och magasinet räcker.</p>
+       <div class="note" style="margin-top:10px">Kopplas ihop med prognosmaskinen i snowgun-forecast — samma våttemperatur­modell och startgräns.</div>
+     </div>
+   </div>
+  </div>`;
+}
+
+function timelineHTML(){
+  const segs=[['good','nu'],['good',''],['good','06'],['ok','09'],['ok',''],['no','14'],['no',''],['no','18'],['ok','22'],['good','02'],['good',''],['good','06']];
+  return `<div class="timeline">${segs.map(([c,l])=>`<div class="tseg ${c}">${l}</div>`).join('')}</div>
+    <div class="legend"><span><i style="background:#10533a"></i>Gynnsamt</span><span><i style="background:#24476f"></i>Marginellt</span><span><i style="background:#3a2020"></i>Över gräns</span></div>`;
+}
+
+/* ---------- unit detail (modal-ish, reuse main) ---------- */
+let backTo='overview';
+function openUnit(id){
+  const c=cannons.find(x=>x.id===id); backTo=current;
+  document.getElementById('main').innerHTML=topbar('Enhet / '+(c.typ==='kanon'?'Kanon':'Lans'),c.namn,
+    `<button class="linkbtn" onclick="go('${backTo}')">← Tillbaka</button>`)+`<div class="view">
+    <div class="grid g-kpi">
+      <div class="card kpi"><h3>Status</h3><div style="margin-top:10px">${chip(c.state)}</div><div class="foot" style="margin-top:9px">Brunn ${c.brunn} · steg ${c.steg}</div></div>
+      <div class="card kpi"><h3>Vattenflöde</h3><div class="val">${c.eau.toFixed(1)}<small> l/s</small></div>${c.stryp?`<div class="foot warn">Strypt ${c.stryp}%</div>`:'<div class="foot">Full</div>'}</div>
+      <div class="card kpi"><h3>Luft</h3><div class="val">${c.air.toFixed(1)}<small> ${c.typ==='kanon'?'m³/min':'l/s'}</small></div></div>
+      <div class="card kpi"><h3>Våttemp vid enheten</h3><div class="val">${c.tw.toFixed(1)}<small> °C</small></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>${icon('drop','#7dd3fc',15)} Vattenflöde — senaste timmen</h3><canvas id="cUnit" height="150"></canvas></div>
+    <div class="note" style="margin-top:14px">Trenden hjälper att se om en strypning håller eller om flödet vandrar — t.ex. när pumptrycket pressas av att fler enheter startar.</div>
+  </div>`;
+  drawUnitChart(c);
+}
+
+/* ============================================================
+   CHARTS
+   ============================================================ */
+const CH_BASE={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+  scales:{x:{grid:{color:'#ffffff0c'},ticks:{color:'#64789b',maxRotation:0,font:{size:10}}},
+          y:{grid:{color:'#ffffff0c'},ticks:{color:'#64789b',font:{size:10}}}}};
+function mkGrad(ctx,c1,c2){const g=ctx.createLinearGradient(0,0,0,160);g.addColorStop(0,c1);g.addColorStop(1,c2);return g}
+function line(id,labels,data,col,fill){
+  const el=document.getElementById(id);if(!el)return;const ctx=el.getContext('2d');
+  if(charts[id])charts[id].destroy();
+  charts[id]=new Chart(ctx,{type:'line',data:{labels,datasets:[{data,borderColor:col,borderWidth:2,
+    backgroundColor:fill?mkGrad(ctx,col+'44','#ffffff00'):'transparent',fill:!!fill,tension:.4,pointRadius:0,pointHoverRadius:4}]},options:CH_BASE});
+}
+function drawCharts(){
+  if(current==='overview'){
+    line('cTw',['−12h','−10','−8','−6','−4','−2','nu'],[-3.1,-3.8,-4.6,-5.2,-5.9,-6.1,-6.4],'#38bdf8',true);
+  }
+  if(current==='water'){
+    const l=['−12h','−10','−8','−6','−4','−2','nu'];
+    const el=document.getElementById('cWater');if(el){if(charts.cWater)charts.cWater.destroy();
+      charts.cWater=new Chart(el.getContext('2d'),{type:'line',data:{labels:l,datasets:[
+        {data:[28,33,39,42,44,43,totalWater()],label:'Uttag',borderColor:'#22d3ee',borderWidth:2,tension:.4,pointRadius:0,backgroundColor:mkGrad(el.getContext('2d'),'#22d3ee33','#ffffff00'),fill:true},
+        {data:Array(7).fill(PUMP_MAX),label:'Kapacitet',borderColor:'#f8717199',borderWidth:1.5,borderDash:[5,4],tension:0,pointRadius:0}
+      ]},options:CH_BASE});}
+  }
+  if(current==='forecast'){
+    const lab=[];for(let h=0;h<=48;h+=4)lab.push(h+'h');
+    const d=[-6.3,-6.6,-6.1,-5.2,-3.9,-2.1,-0.8,-1.9,-3.6,-5.4,-6.2,-6.5,-6.1];
+    const el=document.getElementById('cFc');if(el){if(charts.cFc)charts.cFc.destroy();
+      charts.cFc=new Chart(el.getContext('2d'),{type:'line',data:{labels:lab,datasets:[
+        {data:d,borderColor:'#38bdf8',borderWidth:2,tension:.4,pointRadius:0,backgroundColor:mkGrad(el.getContext('2d'),'#38bdf833','#ffffff00'),fill:true},
+        {data:Array(lab.length).fill(-2.5),borderColor:'#fbbf2499',borderWidth:1.5,borderDash:[5,4],pointRadius:0,tension:0}
+      ]},options:CH_BASE});}
+  }
+}
+function drawUnitChart(c){
+  const base=c.eau||4;const d=Array.from({length:12},(_,i)=>+(base+Math.sin(i/2)*0.5+(Math.random()-.5)*0.3).toFixed(1));
+  line('cUnit',['−60m','−50','−40','−30','−20','−10','nu'].concat([]),d.slice(0,7),'#22d3ee',true);
+}
+
+/* ============================================================
+   RENDER + LIVE
+   ============================================================ */
+function render(){
+  buildNav();
+  const m=document.getElementById('main');
+  if(current==='overview')m.innerHTML=vOverview();
+  else if(current==='water')m.innerHTML=vWater();
+  else if(current==='cannons')m.innerHTML=vUnits('kanon');
+  else if(current==='lances')m.innerHTML=vUnits('lans');
+  else if(current==='alarms')m.innerHTML=vAlarms();
+  else if(current==='forecast')m.innerHTML=vForecast();
+  requestAnimationFrame(drawCharts);
+}
+function ackOne(id){const a=alarms.find(x=>x.id===id);if(a)a.ack=true;render()}
+function ackAll(){alarms.forEach(a=>a.ack=true);render()}
+
+/* gentle live simulation */
+setInterval(()=>{
+  cannons.forEach(c=>{if(c.state==='off')return;
+    c.eau=Math.max(0,+(c.eau+(Math.random()-.5)*0.25).toFixed(1));
+    c.tw=+(c.tw+(Math.random()-.5)*0.08).toFixed(1);
+  });
+  // only cheap refresh when on data-heavy views
+  if(['overview','water','cannons','lances'].includes(current)) render();
+},5000);
+
+/* ---------- login ---------- */
+function login(){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');render()}
+function logout(){document.getElementById('app').classList.add('hidden');document.getElementById('login').classList.remove('hidden')}
+
+/* snowflakes */
+(function(){const f=document.getElementById('flakes');let h='';for(let i=0;i<22;i++){const x=Math.random()*100,d=6+Math.random()*8,s=8+Math.random()*12,o=Math.random();h+=`<div class="flake" style="left:${x}%;animation-duration:${d}s;animation-delay:${-Math.random()*d}s;font-size:${s}px;opacity:${o}">❄</div>`}f.innerHTML=h})();
+</script>
+</body>
+</html>
