@@ -33,18 +33,28 @@ Utifrån den kan vi bygga rätt bryggfrågor och färdigställa läs-only-kontot
    webbläsaren och ladda ner filen (eller ta ett USB-minne). Lägg den i en egen
    mapp, t.ex. `C:\Temp\sond\`.
 
-2. **Öppna PowerShell** (Start → skriv *PowerShell* → Enter) och gå till mappen:
-   ```powershell
-   cd C:\Temp\sond
-   ```
+2. **Öppna PowerShell i den mappen.** Enklast:
+   - Öppna mappen i Utforskaren.
+   - Håll inne **Shift** och **högerklicka** på tom yta i mappen.
+   - Välj **"Öppna PowerShell-fönster här"** (på Windows 11 kan det stå
+     **"Öppna i Terminal"**).
 
-3. **Kör sonden.** Prova först Windows-inloggning (inget lösenord behövs om din
-   Windows-användare har åtkomst):
+   Ett fönster öppnas, redan i rätt mapp. (Alternativt: Start → skriv
+   *PowerShell* → Enter, och gå dit med `cd C:\Temp\sond`.)
+
+3. **Kör sonden.** Klistra in raden och tryck Enter. Prova först
+   Windows-inloggning (inget lösenord behövs om din Windows-användare har
+   åtkomst):
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\db-sond.ps1
    ```
    `-ExecutionPolicy Bypass` behövs ofta för att Windows annars blockerar
-   nedladdade skript. Det gäller bara den här körningen.
+   nedladdade skript. Det gäller bara den här körningen — inget ställs om
+   permanent.
+
+   > **Om Windows säger att filen är blockerad eller "inte betrodd":**
+   > högerklicka på `db-sond.ps1` → **Egenskaper** → bocka i
+   > **"Fjärrblockering upphävd"** (Unblock) längst ned → **OK**. Kör sedan igen.
 
 4. **Om anslutningen misslyckas** står det i fönstret. Kör då med
    styrsystemets SQL-inloggning i stället — skriptet frågar efter lösenordet
@@ -60,6 +70,11 @@ Utifrån den kan vi bygga rätt bryggfrågor och färdigställa läs-only-kontot
 5. **Ta med rapporten hem.** Sökvägen skrivs ut sist i fönstret
    (`...\db-sond-rapport_DATUM-TID.txt`). Lägg upp den på Drive igen eller på
    USB-minnet. Skriptet lämnar inga spår i databasen.
+
+> **Vill du prova hemma först?** Kör den på din egen dator — du får då bara
+> "anslutning misslyckades" (databasen finns inte där), men miljökollen högst
+> upp körs ändå, så du ser hur det ser ut. Sonden bara läser och kan inte råka
+> ändra eller stoppa något i anläggningen.
 
 ## Passa på medan du är där
 
