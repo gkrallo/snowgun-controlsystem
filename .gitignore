@@ -17,3 +17,6 @@ GSSystem/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Sondens rapporter kan innehålla driftvärden — hålls utanför git
+probe/db-sond-rapport_*.txt
