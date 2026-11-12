@@ -45,6 +45,45 @@ Log " Dator:  $env:COMPUTERNAME   Användare: $env:USERNAME"
 Log "============================================================"
 Log ""
 
+# =================== 0. Miljö på datorn (för bryggan) =======================
+# Körs före databasen, så vi får svaret även om DB-anslutningen misslyckas.
+# Avgör vilket språk bryggan skrivs i och om datorn alls når molnet.
+Log "0. MILJÖ PÅ DATORN (avgör hur bryggan byggs)"
+Log "--------------------------------------------"
+Log ("   PowerShell: " + $PSVersionTable.PSVersion.ToString())
+Log ("   OS: " + (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption)
+
+# Python och Node? (inte nödvändigt, men avgör bryggans språk)
+foreach ($prog in @("python","py","node")) {
+  try {
+    $v = & $prog --version 2>&1
+    if ($LASTEXITCODE -eq 0 -or $v) { Log ("   $prog : " + ($v | Select-Object -First 1)) }
+    else { Log "   $prog : finns inte" }
+  } catch { Log "   $prog : finns inte" }
+}
+
+# ODBC-drivrutiner för SQL Server (behövs om bryggan blir Python med pyodbc)
+try {
+  $odbc = Get-ItemProperty "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers" -ErrorAction Stop
+  $sqlDrivers = $odbc.PSObject.Properties |
+    Where-Object { $_.Name -match "SQL Server" } | ForEach-Object { $_.Name }
+  if ($sqlDrivers) { Log ("   ODBC SQL-drivrutiner: " + ($sqlDrivers -join "; ")) }
+  else { Log "   ODBC SQL-drivrutiner: inga SQL Server-drivrutiner hittades" }
+} catch { Log "   ODBC-drivrutiner: kunde inte läsas ($($_.Exception.Message))" }
+
+# Når datorn molnet UTÅT på 443? (bryggan skickar bara ut, aldrig in)
+foreach ($hostName in @("firestore.googleapis.com","www.googleapis.com")) {
+  try {
+    $c = New-Object System.Net.Sockets.TcpClient
+    $iar = $c.BeginConnect($hostName,443,$null,$null)
+    $ok = $iar.AsyncWaitHandle.WaitOne(4000,$false)
+    if ($ok -and $c.Connected) { Log "   Utgående 443 -> $hostName : OK" }
+    else { Log "   Utgående 443 -> $hostName : NÅDDE INTE (kolla brandvägg/proxy)" }
+    $c.Close()
+  } catch { Log "   Utgående 443 -> $hostName : fel ($($_.Exception.Message))" }
+}
+Log ""
+
 # ---- bygg anslutningssträng (SQL- eller Windows-inloggning) ----------------
 if ($User -ne "") {
   $sec = Read-Host "Lösenord för SQL-inloggningen '$User'" -AsSecureString
@@ -104,7 +143,7 @@ try {
   $lines | Out-File -FilePath $report -Encoding utf8
   Write-Host ""
   Write-Host "Rapport (med felet) sparad: $report"
-  return
+  exit 1
 }
 
 # =================== 1. Version och grunduppgifter ===========================
@@ -227,3 +266,4 @@ $lines | Out-File -FilePath $report -Encoding utf8
 Write-Host ""
 Write-Host "Rapport sparad: $report"
 Write-Host "Det är den filen du tar med hem (lägg på Drive igen eller på ett USB-minne)."
+exit 0

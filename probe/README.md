@@ -7,9 +7,25 @@ sker med `WITH (NOLOCK)` så styrprogrammet aldrig kan blockeras, och radantal
 hämtas ur systemtabeller så inga stora tabeller skannas.
 
 Resultatet blir en textfil, `db-sond-rapport_DATUM-TID.txt`, bredvid skriptet.
-**Den filen tar du med hem** — där står versionen, nätverksuppgifter, tabeller,
-kolumner och några smakprovsrader. Utifrån den kan vi bygga rätt bryggfrågor och
-planera ett eget läs-only-konto.
+**Den filen tar du med hem.** Den fångar allt vi behöver i ett svep:
+
+- **Miljön på datorn** (körs först, även om databasen inte svarar): om Python
+  eller Node finns, vilka ODBC-drivrutiner som är installerade, och om datorn
+  når molnet utåt på port 443. Det avgör hur bryggan byggs — så vi slipper en
+  andra resa bara för att kolla förutsättningarna.
+- **Databasen:** version, om TCP/IP är på och vilken port, inloggningar och
+  roller, alla tabeller med radantal, kolumnerna i nyckeltabellerna och några
+  smakprovsrader.
+
+Utifrån den kan vi bygga rätt bryggfrågor och färdigställa läs-only-kontot.
+
+## Filer i den här mappen
+
+| Fil | Vad | När |
+|-----|-----|-----|
+| `db-sond.ps1` | Läs-only-sonden (kartlägger datorn + databasen) | Kör på plats, först |
+| `skapa-lasonly-konto.sql` | Skapar bryggans egna läs-only-konto (`db_datareader`) | Senare, när vi sett rapporten |
+| `README.md` | Den här instruktionen | — |
 
 ## Så gör du på plats
 
@@ -47,17 +63,31 @@ planera ett eget läs-only-konto.
 
 ## Passa på medan du är där
 
-Sonden kan läsa tabellerna, men **inte** vad de numrerade kolumnerna i
-`SGC300_Main` / `SGC400_Main` betyder. Det ser bara du, genom att jämföra med
-skärmen:
+Internet, Python/Node och ODBC-drivrutiner tar sonden reda på själv. Det enda
+**du** behöver göra för hand är det sonden inte kan se: vad de numrerade
+kolumnerna i `SGC300_Main` / `SGC400_Main` betyder.
 
 - **Fota kontrollrumsskärmen** när något faktiskt körs — bilden som visar
   flöden, våttemperatur, status per kanon/lans. Då kan vi para ihop ett tal i
   en kolumn med rätt kanon och storhet.
-- **Notera om datorn når internet utåt** (öppna en vanlig webbsida). Bryggan
-  behöver bara utgående anslutning — aldrig någon port in.
-- Kolla gärna om det står **Python** eller **Node** installerat (inte
-  nödvändigt, men avgör vilket språk bryggan skrivs i).
+
+## Nästa steg: läs-only-kontot (`skapa-lasonly-konto.sql`)
+
+Det här kör vi **inte** blint på första besöket — vi tittar först på
+sondrapporten så vi vet hur inloggningarna ser ut. Sedan:
+
+1. Öppna `skapa-lasonly-konto.sql` och **byt ut lösenordet** mot ett riktigt,
+   starkt. Spara det riktiga lösenordet bara i `SECRETS.md` (gitignore-ad).
+2. Kör som sysadmin, t.ex.:
+   ```powershell
+   sqlcmd -S 127.0.0.1\SQLEXPRESS -E -i skapa-lasonly-konto.sql
+   ```
+3. Det skapar kontot `snogrupp_ro` med **enbart läsrätt** (`db_datareader`) —
+   det kan inte ändra något i databasen. Bryggan använder sedan det kontot i
+   stället för det hårdkodade `GSS_Login`.
+
+Scriptet har `IF NOT EXISTS`-skydd (går att köra om) och en bortkommenterad
+del som tar bort kontot igen om ni vill.
 
 ## Säkerhet
 
