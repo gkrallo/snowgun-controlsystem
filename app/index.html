@@ -239,6 +239,26 @@ canvas{max-width:100%}
 .map-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
 .map-legend .row{gap:7px}
 .map-legend i{width:13px;height:13px;border-radius:50%;display:inline-block;flex:0 0 auto}
+
+/* ---------- vattenrådgivare ---------- */
+.strat{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:10px;margin-top:12px}
+.strat button{text-align:left;background:#0e1c30;border:1px solid var(--border);border-radius:13px;
+  padding:13px 14px;cursor:pointer;color:var(--text);transition:border-color .15s,background .15s}
+.strat button:hover{border-color:var(--border-hi)}
+.strat button.on{border-color:var(--ice);background:linear-gradient(180deg,#14304d,#102236)}
+.strat button b{display:block;font-size:.92rem;margin-bottom:3px}
+.strat button span{color:var(--muted);font-size:.75rem;line-height:1.45}
+.daypills{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.daypills button{background:#0e1c30;border:1px solid var(--border);border-radius:999px;padding:6px 14px;
+  cursor:pointer;color:var(--muted);font-weight:600;font-size:.82rem}
+.daypills button.on{border-color:var(--ice);color:var(--text);background:#13304d}
+.adv-row{display:grid;grid-template-columns:1fr 74px 22px 104px;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+.adv-row:last-child{border-bottom:0}
+.adv-cur{text-align:right;color:var(--muted);font-weight:600;font-size:.9rem}
+.adv-cur small,.adv-sug small{font-size:.7rem;font-weight:600;color:var(--muted)}
+.adv-arrow{text-align:center;color:var(--muted2)}
+.adv-sug{text-align:right;font-weight:700;font-size:.95rem}
+.adv-sug.up{color:var(--run)} .adv-sug.dn{color:var(--limit)} .adv-sug.off{color:var(--off)}
 </style>
 </head>
 <body>
@@ -292,15 +312,18 @@ const PUMP_MAX = 45;        // l/s — EXEMPEL, verklig pumpkapacitet okänd
 const RESERVOIR_DAYS = 4.2; // dygn kvar vid nuvarande förbrukning (exempel)
 const RESERVOIR_PCT = 58;
 
+// fmax = enhetens fulla vattenflöde vid rådande förhållanden (l/s). Summan av
+// alla fmax är större än pumpkapaciteten — det är själva poängen: alla kan inte
+// köra för fullt samtidigt, utan vattnet måste fördelas.
 let cannons = [
-  {id:'K1', typ:'kanon', namn:'Kanon 1', brunn:3,  state:'run',   steg:'8/12', eau:6.8, air:11.0, tw:-6.4, stryp:0},
-  {id:'K2', typ:'kanon', namn:'Kanon 2', brunn:5,  state:'limit', steg:'5/12', eau:4.1, air:7.5,  tw:-6.1, stryp:38},
-  {id:'K3', typ:'kanon', namn:'Kanon 3', brunn:8,  state:'run',   steg:'9/12', eau:7.2, air:11.4, tw:-6.6, stryp:0},
-  {id:'K4', typ:'kanon', namn:'Kanon 4', brunn:11, state:'limit', steg:'4/12', eau:3.6, air:6.8,  tw:-5.9, stryp:46},
-  {id:'K5', typ:'kanon', namn:'Kanon 5', brunn:14, state:'run',   steg:'7/12', eau:6.1, air:10.2, tw:-6.3, stryp:12},
-  {id:'K6', typ:'kanon', namn:'Kanon 6', brunn:18, state:'off',   steg:'0/12', eau:0,   air:0,    tw:-5.8, stryp:0},
-  {id:'L1', typ:'lans',  namn:'Lans 1',  brunn:6,  state:'run',   steg:'10/12',eau:5.2, air:3.1,  tw:-6.2, stryp:0},
-  {id:'L2', typ:'lans',  namn:'Lans 2',  brunn:15, state:'limit', steg:'6/12', eau:3.1, air:1.9,  tw:-6.0, stryp:30},
+  {id:'K1', typ:'kanon', namn:'Kanon 1', brunn:3,  state:'run',   steg:'8/12', eau:6.8, air:11.0, tw:-6.4, stryp:0,  fmax:7.2},
+  {id:'K2', typ:'kanon', namn:'Kanon 2', brunn:5,  state:'limit', steg:'5/12', eau:4.1, air:7.5,  tw:-6.1, stryp:38, fmax:6.8},
+  {id:'K3', typ:'kanon', namn:'Kanon 3', brunn:8,  state:'run',   steg:'9/12', eau:7.2, air:11.4, tw:-6.6, stryp:0,  fmax:7.6},
+  {id:'K4', typ:'kanon', namn:'Kanon 4', brunn:11, state:'limit', steg:'4/12', eau:3.6, air:6.8,  tw:-5.9, stryp:46, fmax:6.6},
+  {id:'K5', typ:'kanon', namn:'Kanon 5', brunn:14, state:'run',   steg:'7/12', eau:6.1, air:10.2, tw:-6.3, stryp:12, fmax:6.9},
+  {id:'K6', typ:'kanon', namn:'Kanon 6', brunn:18, state:'off',   steg:'0/12', eau:0,   air:0,    tw:-5.8, stryp:0,  fmax:6.8},
+  {id:'L1', typ:'lans',  namn:'Lans 1',  brunn:6,  state:'run',   steg:'10/12',eau:5.2, air:3.1,  tw:-6.2, stryp:0,  fmax:5.6},
+  {id:'L2', typ:'lans',  namn:'Lans 2',  brunn:15, state:'limit', steg:'6/12', eau:3.1, air:1.9,  tw:-6.0, stryp:30, fmax:5.2},
 ];
 
 let alarms = [
@@ -361,6 +384,7 @@ const UCOL={run:'#34d399',standby:'#60a5fa',limit:'#fbbf24',alarm:'#f87171',off:
 const NAV = [
   {id:'overview', label:'Översikt',    icon:'grid'},
   {id:'water',    label:'Vattenbalans',icon:'drop'},
+  {id:'advisor',  label:'Vattenråd',   icon:'sliders'},
   {id:'map',      label:'Karta',       icon:'map'},
   {id:'cannons',  label:'Kanoner',     icon:'fan'},
   {id:'lances',   label:'Lansar',      icon:'lance'},
@@ -382,6 +406,7 @@ function icon(name,c='currentColor',s=20){
     temp:'<path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0z"/>',
     track:'<path d="M4 20c4-1 4-7 8-8s4-7 8-8"/>',
     map:'<path d="M9 4L3 7v13l6-3 6 3 6-3V4l-6 3-6-3z"/><path d="M9 4v13M15 7v13"/>',
+    sliders:'<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2.3"/><circle cx="16" cy="12" r="2.3"/><circle cx="7" cy="17" r="2.3"/>',
   }[name]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
@@ -404,7 +429,7 @@ function go(id){current=id;render();if(window.innerWidth<=860)window.scrollTo(0,
 function buildNav(){
   const a=activeAlarms().length;
   document.getElementById('nav').innerHTML=NAV.map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
-  document.getElementById('botnav').innerHTML=NAV.filter(n=>n.id!=='forecast').map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
+  document.getElementById('botnav').innerHTML=NAV.filter(n=>!['forecast','advisor'].includes(n.id)).map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
 }
 
 function topbar(crumb,title,extra=''){
@@ -502,11 +527,97 @@ function vWater(){
       <div class="val" style="font-size:1.5rem;font-weight:700;margin-top:6px">≈ 1,8 <small class="muted" style="font-size:.9rem">av 2,3 km täcks nu</small></div>
       <div class="bar" style="margin-top:10px"><i style="width:78%"></i></div>
       <p class="muted small" style="line-height:1.6;margin-top:12px">Med strypning körs <b style="color:var(--text)">7 enheter</b> samtidigt och sträckan blir längre, i stället för full effekt på 3–4. Släpps strypningen ökar produktionen per kanon men färre kan köra.</p>
-      <div class="note" style="margin-top:12px">Idé: lägg in en reglagefunktion här senare som föreslår fördelning utifrån pumptak och vald strategi (täckning vs hastighet).</div>
+      <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren</button>
     </div>
   </div>
   </div>`;
 }
+
+/* ============================================================
+   VATTENRÅDGIVARE
+   Räknar fram ett FÖRSLAG på fördelning — appen styr aldrig. Hård gräns:
+   summan av vattenuttaget får inte överstiga pumpkapaciteten. Enheter med
+   lägst våttemperatur prioriteras (bäst snö per liter). Tre strategier.
+   ============================================================ */
+let advGoal='cover', advDays=5;
+const FTHRESH=-2.5;  // startgräns (våttemp °C) — prototyp, samma som prognosen
+const round1=x=>Math.round(x*10)/10;
+
+function advise(){
+  const rows=cannons.map(c=>({id:c.id,namn:c.namn,typ:c.typ,brunn:c.brunn,tw:c.tw,fmax:c.fmax,cur:c.eau,sug:0}));
+  const elig=rows.filter(u=>u.tw<=FTHRESH);        // får köra
+  const cold=[...elig].sort((a,b)=>a.tw-b.tw);     // kallast först
+  const sumF=elig.reduce((s,u)=>s+u.fmax,0);
+  const resBudget=totalWater()*RESERVOIR_DAYS;     // l/s·dygn kvar i magasinet
+
+  let budget = advGoal==='last'
+    ? Math.min(sumF, PUMP_MAX, resBudget/advDays)   // lägre uttag → räcker längre
+    : Math.min(sumF, PUMP_MAX);                      // kör mot pumptaket
+
+  if(advGoal==='cover'){
+    // sprid tunt på alla behöriga så fler brunnar täcks
+    const k = sumF<=budget ? 1 : budget/sumF;
+    elig.forEach(u=>u.sug=round1(u.fmax*k));
+  }else{
+    // koncentrera på de kallaste tills budgeten är slut (fast / last)
+    let rem=budget;
+    cold.forEach(u=>{const g=Math.min(u.fmax,Math.max(0,rem));u.sug=g>0.4?round1(g):0;rem-=u.sug;});
+  }
+
+  const sugTot=round1(rows.reduce((s,u)=>s+u.sug,0));
+  const runN=rows.filter(u=>u.sug>0).length;
+  const cov=Math.min(2.3, runN*0.30);              // fler enheter → längre bana
+  const lastDays= sugTot>0 ? resBudget/sugTot : 99;
+  return {rows,sugTot,runN,cov,lastDays,pumpPct:Math.round(sugTot/PUMP_MAX*100)};
+}
+
+function vAdvisor(){
+  const r=advise();
+  const goals={
+    cover:['Täck mer sträcka','Sprid vattnet tunt på fler enheter — längre bana, lägre produktion per kanon.'],
+    fast: ['Producera fort','Full effekt på de bästa enheterna tills pumpen är full — mest snö per timme, kortare bana.'],
+    last: ['Få vattnet att räcka','Kör färre, kallaste enheter så magasinet håller fler dygn.'],
+  };
+  return topbar('Vattenbalans','Vattenrådgivare')+`<div class="view">
+   <div class="banner ok">${icon('bolt','#34d399')}<div style="flex:1"><b>Förslag — inte styrning.</b> <span class="muted small">Appen räknar fram en fördelning utifrån våttemperatur och pumptak. Du ställer in den i styrsystemet; appen rör aldrig anläggningen.</span></div></div>
+
+   <div class="card">
+     <h3>${icon('sliders','#7dd3fc',15)} Vad vill du prioritera?</h3>
+     <div class="strat">
+       ${Object.entries(goals).map(([k,[t,d]])=>`<button class="${advGoal===k?'on':''}" onclick="setAdv('${k}')"><b>${t}</b><span>${d}</span></button>`).join('')}
+     </div>
+     ${advGoal==='last'?`<div class="daypills">${[3,4,5,7].map(d=>`<button class="${advDays===d?'on':''}" onclick="setDays(${d})">${d} dygn</button>`).join('')}</div>`:''}
+   </div>
+
+   <div class="grid g-kpi" style="margin-top:14px">
+     <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Föreslaget uttag</h3><div class="val">${r.sugTot}<small> / ${PUMP_MAX} l/s</small></div><div class="bar ${r.pumpPct>95?'red':r.pumpPct>85?'amber':''}"><i style="width:${Math.min(100,r.pumpPct)}%"></i></div><div class="foot">${r.pumpPct}% av pumpkapaciteten</div></div>
+     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} Enheter i drift</h3><div class="val">${r.runN}<small> / ${cannons.length}</small></div><div class="foot">${cannons.length-r.runN} vilande i förslaget</div></div>
+     <div class="card kpi"><h3>${icon('track','#7dd3fc',15)} Täckning</h3><div class="val">≈ ${r.cov.toFixed(1)}<small> km</small></div><div class="bar"><i style="width:${Math.round(r.cov/2.3*100)}%"></i></div><div class="foot">av 2,3 km</div></div>
+     <div class="card kpi"><h3>${icon('clock','#7dd3fc',15)} Vattnet räcker</h3><div class="val">≈ ${r.lastDays>30?'30+':r.lastDays.toFixed(1)}<small> dygn</small></div><div class="foot">vid föreslaget uttag</div></div>
+   </div>
+
+   <div class="section-title">Förslag per enhet — nuläge → föreslaget</div>
+   <div class="card">
+     <div class="adv-row" style="border-bottom:2px solid var(--border-hi);color:var(--muted2);font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;padding:6px 0 9px">
+       <div>Enhet · brunn · våttemp</div><div class="adv-cur">Nu</div><div></div><div class="adv-sug">Förslag</div>
+     </div>
+     ${r.rows.map(u=>{
+        const off=u.sug<=0;
+        const cls=off?'off':(u.sug>u.cur+0.15?'up':(u.sug<u.cur-0.15?'dn':''));
+        const thr=!off&&u.fmax?Math.round((1-u.sug/u.fmax)*100):0;
+        return `<div class="adv-row">
+          <div class="fname">${u.typ==='kanon'?icon('fan','#7dd3fc',17):icon('lance','#7dd3fc',17)} ${u.namn}<span class="u-well"> · br ${u.brunn} · ${u.tw.toFixed(1)}°C</span></div>
+          <div class="adv-cur">${u.cur.toFixed(1)}<small> l/s</small></div>
+          <div class="adv-arrow">→</div>
+          <div class="adv-sug ${cls}">${off?'Av':`${u.sug.toFixed(1)} <small>l/s</small>${thr>3?` · −${thr}%`:''}`}</div>
+        </div>`}).join('')}
+   </div>
+
+   <div class="note" style="margin-top:14px">Logiken är en <b>skiss</b>: hård gräns = summan ≤ pumpkapacitet, och enheter med lägst våttemperatur prioriteras (bäst snö per liter). Vilka rattar som faktiskt går att läsa och ställa (flöde, dyssteg, luft) bekräftas när uppkopplingen finns — tills dess är siffrorna exempel. Våttemperaturen per plats är tänkt att komma från samma modell som prognosappen.</div>
+  </div>`;
+}
+function setAdv(g){advGoal=g;render()}
+function setDays(d){advDays=d;render()}
 
 function vMap(){
   return topbar('Driftövervakning','Karta — enheter på spåret')+`<div class="view">
@@ -668,6 +779,7 @@ function render(){
   const m=document.getElementById('main');
   if(current==='overview')m.innerHTML=vOverview();
   else if(current==='water')m.innerHTML=vWater();
+  else if(current==='advisor')m.innerHTML=vAdvisor();
   else if(current==='map')m.innerHTML=vMap();
   else if(current==='cannons')m.innerHTML=vUnits('kanon');
   else if(current==='lances')m.innerHTML=vUnits('lans');
