@@ -259,6 +259,21 @@ canvas{max-width:100%}
 .adv-arrow{text-align:center;color:var(--muted2)}
 .adv-sug{text-align:right;font-weight:700;font-size:.95rem}
 .adv-sug.up{color:var(--run)} .adv-sug.dn{color:var(--limit)} .adv-sug.off{color:var(--off)}
+
+/* ---------- damm-koll (digital tvilling av magasinet) ---------- */
+.dam-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:14px}
+@media(max-width:820px){.dam-grid{grid-template-columns:1fr}}
+.dam-svg{width:100%;height:auto;display:block;margin-top:4px}
+.dam-ctrl label{display:block;color:var(--muted);font-size:.76rem;margin:12px 0 5px}
+.dam-ctrl input[type=number]{width:100%;background:#0c1626;border:1px solid var(--border);
+  color:var(--text);border-radius:9px;padding:9px 11px;font-size:.9rem}
+.dam-ctrl input[type=range]{width:100%;accent-color:var(--ice);margin-top:4px}
+.seg{display:inline-flex;background:#0c1626;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.seg button{background:transparent;border:0;color:var(--muted);padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer}
+.seg button.on{background:#13304d;color:var(--text)}
+.readout{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px}
+.readout div b{display:block;font-size:1.1rem;color:var(--text)}
+.readout div span{color:var(--muted2);font-size:.7rem}
 </style>
 </head>
 <body>
@@ -309,8 +324,8 @@ canvas{max-width:100%}
    SIMULERAD DATA  (exempelvärden — ersätts av Firebase senare)
    ============================================================ */
 const PUMP_MAX = 45;        // l/s — EXEMPEL, verklig pumpkapacitet okänd
-const RESERVOIR_DAYS = 4.2; // dygn kvar vid nuvarande förbrukning (exempel)
-const RESERVOIR_PCT = 58;
+// Vattenmagasinets nivå och drifttid räknas numera ur dammodellen (se Damm-koll
+// längre ner): damPct() och damDaysAt(l/s), grundade på byggritningens geometri.
 
 // fmax = enhetens fulla vattenflöde vid rådande förhållanden (l/s). Summan av
 // alla fmax är större än pumpkapaciteten — det är själva poängen: alla kan inte
@@ -384,6 +399,7 @@ const UCOL={run:'#34d399',standby:'#60a5fa',limit:'#fbbf24',alarm:'#f87171',off:
 const NAV = [
   {id:'overview', label:'Översikt',    icon:'grid'},
   {id:'water',    label:'Vattenbalans',icon:'drop'},
+  {id:'dam',      label:'Damm',        icon:'dam'},
   {id:'advisor',  label:'Vattenråd',   icon:'sliders'},
   {id:'map',      label:'Karta',       icon:'map'},
   {id:'cannons',  label:'Kanoner',     icon:'fan'},
@@ -407,6 +423,7 @@ function icon(name,c='currentColor',s=20){
     track:'<path d="M4 20c4-1 4-7 8-8s4-7 8-8"/>',
     map:'<path d="M9 4L3 7v13l6-3 6 3 6-3V4l-6 3-6-3z"/><path d="M9 4v13M15 7v13"/>',
     sliders:'<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2.3"/><circle cx="16" cy="12" r="2.3"/><circle cx="7" cy="17" r="2.3"/>',
+    dam:'<path d="M4 7h16l-1.6 12.2a1 1 0 0 1-1 .8H6.6a1 1 0 0 1-1-.8L4 7z"/><path d="M5.6 13c2-1.2 4.4.9 6.4 0s4.4-1.2 6.4 0"/>',
   }[name]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
@@ -429,7 +446,7 @@ function go(id){current=id;render();if(window.innerWidth<=860)window.scrollTo(0,
 function buildNav(){
   const a=activeAlarms().length;
   document.getElementById('nav').innerHTML=NAV.map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
-  document.getElementById('botnav').innerHTML=NAV.filter(n=>!['forecast','advisor'].includes(n.id)).map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
+  document.getElementById('botnav').innerHTML=NAV.filter(n=>!['forecast','advisor','lances'].includes(n.id)).map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
 }
 
 function topbar(crumb,title,extra=''){
@@ -452,7 +469,7 @@ function vOverview(){
     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} I drift</h3><div class="val">${run}<small> / ${cannons.length} enheter</small></div><div class="foot">${cannons.filter(c=>c.state==='limit').length} strypta · 1 avstängd</div></div>
     <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Vattenuttag</h3><div class="val">${totalWater()}<small> / ${PUMP_MAX} l/s</small></div><div class="bar ${wpct>90?'red':wpct>75?'amber':''}"><i style="width:${wpct}%"></i></div><div class="foot warn">${wpct>90?'Nära pumpkapacitet':'Inom kapacitet'}</div></div>
     <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${tw.toFixed(1)}<small> °C</small></div><div class="foot up">▼ sjunker · bra för produktion</div></div>
-    <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${RESERVOIR_PCT}<small> %</small></div><div class="bar ${RESERVOIR_PCT<30?'red':RESERVOIR_PCT<50?'amber':'green'}"><i style="width:${RESERVOIR_PCT}%"></i></div><div class="foot">≈ ${RESERVOIR_DAYS.toFixed(1)} dygn kvar vid nuvarande takt</div></div>
+    <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">≈ ${fmtDur(damDaysAt(totalWater())*24)} kvar vid nuvarande uttag</div></div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
@@ -534,6 +551,157 @@ function vWater(){
 }
 
 /* ============================================================
+   DAMM-KOLL — digital tvilling av vattenmagasinet vid Råda ås
+   Geometrin är förankrad i byggritningen M16.1-0000 (Snixåsen, 2019-03-12):
+   krön 36,5×44,5 m, lutning 1:1,5, djup 3,5 m, och 3543 m³ till ursprungligt
+   bräddavlopp (+0 m) — ritningens egen siffra. Botten 26×34 m följer av krön
+   minus slänt. Volymen räknas med den EXAKTA formeln för tvärsnittet (bredd och
+   längd växer olika snabbt, så Geminis frustum-formel är en approximation —
+   skillnaden är <1 m³, men den exakta är lika enkel):
+        V(h) = 884·h + 90·h² + 3·h³     (h = vattendjup i m, 0..3,5)
+   Snorkeln (+20 cm, 100 % = 3850 m³) och det 10 cm lägre hörnet är anläggningens
+   verkliga tillägg, inte ritningens — därför ligger de som inställbara värden.
+   ============================================================ */
+const DAM={slope:1.5, hMax:3.50, lowDrop:0.10, crestArea:1624.25};
+const SF=Math.sqrt(1+DAM.slope*DAM.slope);          // släntfaktor 1,80278
+const volAt=h=>884*h+90*h*h+3*h*h*h;                // exakt, m³
+const areaAt=h=>(26+3*h)*(34+3*h);                  // vattenytans area, m²
+const V100=volAt(3.20);                             // ≈3850 m³ = nominell 100 %
+function hFromVol(v){                               // invers via binärsökning
+  if(v<=0)return 0; if(v>=volAt(DAM.hMax))return DAM.hMax;
+  let lo=0,hi=DAM.hMax; for(let i=0;i<44;i++){const m=(lo+hi)/2; volAt(m)<v?lo=m:hi=m;} return (lo+hi)/2;
+}
+const tapeNormal=h=>(DAM.hMax-h)*SF*100;            // cm längs duk från normalt krön
+const tapeLow=h=>((DAM.hMax-DAM.lowDrop)-h)*SF*100; // cm från låga hörnet (3,40 m)
+const hFromTape=(cm,low)=>(low?DAM.hMax-DAM.lowDrop:DAM.hMax)-cm/(SF*100);
+
+// nivåmarkörer (h i m, etikett, färg) — från botten och upp
+const DAMLV=[
+  [3.50,'Normalt krön','#fbbf24'],
+  [3.40,'Låga hörnet bräddar','#f59e0b'],
+  [3.25,'Varning · 15 cm marginal','#f87171'],
+  [3.20,'Snorkel · 100 %','#38bdf8'],
+  [3.00,'Ursprungligt bräddrör','#8ba0bd'],
+];
+
+/* tillstånd — simulerat i prototypen. Senaste kalibrering = "nu".
+   Riktig app: V0/t0 i localStorage eller Firebase, uttaget från driftdatan. */
+let dam={ V0:3743, t0:Date.now(), fill:false, fillRate:213, leak:2.0, floorH:0.5, calMode:'normal' };
+let damTape=Math.round(tapeNormal(hFromVol(dam.V0)));  // måttbandsreglagets läge
+
+/* flöden */
+const L2M3H=3.6, L2M3D=86.4;                         // l/s → m³/h, m³/dygn
+const damUttakM3h=()=>totalWater()*L2M3H;            // snökanonernas uttag
+const damInflowM3d=()=>(dam.fill?dam.fillRate:0);    // påfyllningspump, m³/dygn (regn tillkommer)
+const damNetM3h=()=>damInflowM3d()/24 - damUttakM3h() - dam.leak/24;
+const floorVol=()=>volAt(dam.floorH);               // lägsta driftnivå (pumpintag)
+const usableVol=v=>Math.max(0,v-floorVol());
+function damPct(){return Math.round(dam.V0/V100*100);}
+function damDaysAt(lps){const net=lps*L2M3D - damInflowM3d(); return net<=0?99:usableVol(dam.V0)/net;}
+
+function fmtDur(h){ if(!isFinite(h)||h>24*30)return '30+ dygn'; if(h>=24)return (h/24).toFixed(1)+' dygn'; if(h>=1)return h.toFixed(1)+' h'; return Math.max(1,Math.round(h*60))+' min'; }
+function etaStr(h){ if(!isFinite(h)||h>24*30||h<=0)return ''; const d=new Date(Date.now()+h*3600e3);
+  const wd=['sön','mån','tis','ons','tor','fre','lör'][d.getDay()];
+  return wd+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+function damSVG(h){
+  const cx=150, topY=16, botY=176, Hpx=botY-topY;
+  const yAt=hh=>botY-(hh/DAM.hMax)*Hpx, half=hh=>60+70*(hh/DAM.hMax);
+  const lx=hh=>cx-half(hh), rx=hh=>cx+half(hh);
+  const wy=yAt(h), wl=lx(h), wr=rx(h);
+  // nivåerna 3,0–3,5 ligger alla i översta halvmetern, så markörlinjerna hamnar
+  // tätt. Etiketterna sprids ut i egna rader med tunna ledarlinjer.
+  const labelX=rx(DAM.hMax)+9;
+  const mk=DAMLV.map(([mh,lab,col],i)=>{const y=yAt(mh), ly=topY+11+i*13;
+    return `<line x1="${lx(mh).toFixed(1)}" y1="${y.toFixed(1)}" x2="${rx(mh).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${col}" stroke-width="1" stroke-dasharray="3 3" opacity=".85"/>`+
+      `<line x1="${rx(mh).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(labelX-3).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="${col}" stroke-width=".6" opacity=".45"/>`+
+      `<text x="${labelX.toFixed(1)}" y="${(ly+3).toFixed(1)}" fill="${col}" font-size="8">${lab}</text>`;}).join('');
+  return `<svg viewBox="0 0 440 196" class="dam-svg" preserveAspectRatio="xMinYMid meet">
+    <defs><linearGradient id="dw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22d3ee" stop-opacity=".8"/><stop offset="1" stop-color="#0e5a7a" stop-opacity=".95"/></linearGradient></defs>
+    <polygon points="${lx(0).toFixed(1)},${botY} ${rx(0).toFixed(1)},${botY} ${wr.toFixed(1)},${wy.toFixed(1)} ${wl.toFixed(1)},${wy.toFixed(1)}" fill="url(#dw)"/>
+    <line x1="${wl.toFixed(1)}" y1="${wy.toFixed(1)}" x2="${wr.toFixed(1)}" y2="${wy.toFixed(1)}" stroke="#7dd3fc" stroke-width="1.6"/>
+    ${mk}
+    <path d="M${lx(DAM.hMax).toFixed(1)},${topY} L${lx(0).toFixed(1)},${botY} L${rx(0).toFixed(1)},${botY} L${rx(DAM.hMax).toFixed(1)},${topY}" fill="none" stroke="#5b6b82" stroke-width="2"/>
+    <circle cx="${wr.toFixed(1)}" cy="${wy.toFixed(1)}" r="3" fill="#7dd3fc"/>
+    <text x="${cx}" y="${botY+14}" fill="#64789b" font-size="8" text-anchor="middle">Tvärsnitt — ej skalenligt på bredden</text>
+  </svg>`;
+}
+
+function vDam(){
+  const V=dam.V0, h=hFromVol(V), pct=damPct();
+  const net=damNetM3h(), uttak=damUttakM3h();
+  let proj, projEta='';
+  if(net>0.01){const t=(V100-V)/net, tv=(volAt(3.25)-V)/net; proj=`Fyller ≈ ${fmtDur(t)} till snorkeln, ≈ ${fmtDur(tv)} till varningsnivå`; projEta=etaStr(t);}
+  else if(net<-0.01){const t=usableVol(V)/(-net); proj=`Sjunker ≈ ${fmtDur(t)} till lägsta driftnivå`; projEta=etaStr(t);}
+  else proj='I det närmaste i balans';
+  const wh=hFromTape(damTape, dam.calMode==='low'), wv=volAt(Math.max(0,Math.min(DAM.hMax,wh)));
+  return topbar('Vattenbalans','Damm-koll — magasinet vid Råda ås')+`<div class="view">
+   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Geometrin är hämtad ur byggritningen. Uttaget kommer från driftdatan; påfyllning och kalibrering matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
+
+   <div class="grid g-kpi">
+     <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Aktuell volym</h3><div class="val">${Math.round(V).toLocaleString('sv-SE')}<small> m³</small></div><div class="bar ${pct>101?'amber':pct<30?'red':'green'}"><i style="width:${Math.min(100,pct)}%"></i></div><div class="foot">${pct}% av snorkelnivån (${Math.round(V100).toLocaleString('sv-SE')} m³)</div></div>
+     <div class="card kpi"><h3>${icon('sliders','#7dd3fc',15)} Nivå & måttband</h3><div class="val">${h.toFixed(2)}<small> m djup</small></div><div class="foot">${Math.round(tapeNormal(h))} cm längs duk · ${Math.round(tapeLow(h))} cm i låga hörnet</div></div>
+     <div class="card kpi"><h3>${icon('gauge','#7dd3fc',15)} Nettoflöde nu</h3><div class="val ${net<0?'down':'up'}">${net>=0?'+':''}${net.toFixed(1)}<small> m³/h</small></div><div class="foot">${proj}${projEta?' · '+projEta:''}</div></div>
+     <div class="card kpi"><h3>${icon('clock','#7dd3fc',15)} Drifttid vid nuvarande uttag</h3><div class="val">≈ ${fmtDur(damDaysAt(totalWater())*24)}</div><div class="foot">uttag ${uttak.toFixed(0)} m³/h (${totalWater()} l/s)${dam.fill?' · pump på':' · pump av'}</div></div>
+   </div>
+
+   <div class="dam-grid">
+     <div class="card">
+       <h3>${icon('dam','#7dd3fc',15)} Tvärsnitt — vattennivå och bräddnivåer</h3>
+       ${damSVG(h)}
+     </div>
+     <div class="card dam-ctrl">
+       <h3>${icon('sliders','#7dd3fc',15)} Måttband — snabbkoll</h3>
+       <p class="muted small" style="margin:8px 0 2px">Dra måttbandet (0–631 cm längs duken) och se vilken volym det motsvarar.</p>
+       <input type="range" min="0" max="631" value="${damTape}" oninput="damSlide(this.value)">
+       <div class="readout">
+         <div><b id="ro_cm">${Math.round(damTape)} cm</b><span>längs duk</span></div>
+         <div><b id="ro_v">${Math.round(wv).toLocaleString('sv-SE')} m³</b><span>volym</span></div>
+         <div><b id="ro_p">${Math.round(wv/V100*100)} %</b><span>av 100 %</span></div>
+         <div><b id="ro_h">${Math.max(0,Math.min(DAM.hMax,wh)).toFixed(2)} m</b><span>djup</span></div>
+       </div>
+       <button class="linkbtn" style="margin-top:14px" onclick="damCalibFromTape()">Spara som ny kalibrering</button>
+     </div>
+   </div>
+
+   <div class="dam-grid">
+     <div class="card dam-ctrl">
+       <h3>${icon('temp','#7dd3fc',15)} Kalibrera med måttband</h3>
+       <p class="muted small" style="margin:8px 0 2px">Mät nivån fysiskt och synka modellen. Nollställer ackumulerad drift.</p>
+       <label>Mätt vid</label>
+       <div class="seg"><button class="${dam.calMode==='normal'?'on':''}" onclick="damMode('normal')">Normalt krön</button><button class="${dam.calMode==='low'?'on':''}" onclick="damMode('low')">Låga hörnet</button></div>
+       <label>Mått längs duken (cm)</label>
+       <input type="number" id="cal_cm" value="${Math.round(dam.calMode==='low'?tapeLow(h):tapeNormal(h))}" min="0" max="631">
+       <button class="linkbtn" style="margin-top:14px" onclick="damCalib()">Spara kalibrering</button>
+       <p class="muted small" style="margin-top:10px">Senaste kalibrering: ${etaStr(0)||'nu'} (${Math.round(dam.V0).toLocaleString('sv-SE')} m³).</p>
+     </div>
+     <div class="card dam-ctrl">
+       <h3>${icon('drop','#7dd3fc',15)} Påfyllningspump & förluster</h3>
+       <label>Påfyllningspump</label>
+       <div class="seg"><button class="${!dam.fill?'on':''}" onclick="damFill(false)">Av</button><button class="${dam.fill?'on':''}" onclick="damFill(true)">Pumpar nu</button></div>
+       <label>Pumpkapacitet (m³/dygn)</label>
+       <input type="number" id="dam_rate" value="${dam.fillRate}" onchange="damNum('fillRate',this.value)">
+       <label>Läckage / avdunstning (m³/dygn)</label>
+       <input type="number" id="dam_leak" value="${dam.leak}" step="0.5" onchange="damNum('leak',this.value)">
+       <p class="muted small" style="margin-top:10px">Vid 213 m³/dygn (≈2,5 l/s) fyller pumpen långsamt — den är mest en påfyllnad mellan passen, inte i takt med snökanonernas uttag.</p>
+     </div>
+   </div>
+
+   <div class="note" style="margin-top:14px">⚠️ <b>Verklighetskoll att stämma av:</b> dammen rymmer ≈ ${Math.round(V100).toLocaleString('sv-SE')} m³ användbart, men vid fullt uttag (45 l/s ≈ 3 900 m³/dygn) töms den på ungefär <b>ett dygn</b>, medan påfyllningspumpen bara ger 213 m³/dygn. Att "vattnet räcker några dygn" förutsätter alltså ett snitt­uttag på ≈ 15 l/s — det är sannolikt därför kanonerna stryps. Siffrorna (pumptak, lägsta driftnivå ${dam.floorH} m, läckage) är exempel tills vi vet de verkliga. Volymmodellen däremot är exakt och förankrad i ritningen.</div>
+  </div>`;
+}
+function damSlide(cm){cm=+cm; const h=Math.max(0,Math.min(DAM.hMax,hFromTape(cm,dam.calMode==='low'))); const v=volAt(h); damTape=cm;
+  const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t;};
+  set('ro_cm',Math.round(cm)+' cm'); set('ro_v',Math.round(v).toLocaleString('sv-SE')+' m³');
+  set('ro_p',Math.round(v/V100*100)+' %'); set('ro_h',h.toFixed(2)+' m');}
+function damCalibFromTape(){dam.V0=volAt(Math.max(0,Math.min(DAM.hMax,hFromTape(damTape,dam.calMode==='low'))));dam.t0=Date.now();invalidateDerived();render();}
+function damMode(m){dam.calMode=m;render();}
+function damCalib(){const cm=+document.getElementById('cal_cm').value; const h=Math.max(0,Math.min(DAM.hMax,hFromTape(cm,dam.calMode==='low'))); dam.V0=volAt(h); dam.t0=Date.now(); damTape=Math.round(tapeNormal(h)); invalidateDerived(); render();}
+function damFill(b){dam.fill=b;render();}
+function damNum(k,v){const n=parseFloat(v); if(!isNaN(n))dam[k]=n; render();}
+function invalidateDerived(){/* platshållare: här uppdateras översikt/rådgivare som läser dammens volym */}
+
+/* ============================================================
    VATTENRÅDGIVARE
    Räknar fram ett FÖRSLAG på fördelning — appen styr aldrig. Hård gräns:
    summan av vattenuttaget får inte överstiga pumpkapaciteten. Enheter med
@@ -548,10 +716,10 @@ function advise(){
   const elig=rows.filter(u=>u.tw<=FTHRESH);        // får köra
   const cold=[...elig].sort((a,b)=>a.tw-b.tw);     // kallast först
   const sumF=elig.reduce((s,u)=>s+u.fmax,0);
-  const resBudget=totalWater()*RESERVOIR_DAYS;     // l/s·dygn kvar i magasinet
+  const usable=usableVol(dam.V0), inflowD=damInflowM3d();  // m³ i magasinet resp. m³/dygn in
 
   let budget = advGoal==='last'
-    ? Math.min(sumF, PUMP_MAX, resBudget/advDays)   // lägre uttag → räcker längre
+    ? Math.min(sumF, PUMP_MAX, (usable/advDays + inflowD)/L2M3D)  // håll volymen i advDays dygn
     : Math.min(sumF, PUMP_MAX);                      // kör mot pumptaket
 
   if(advGoal==='cover'){
@@ -567,7 +735,7 @@ function advise(){
   const sugTot=round1(rows.reduce((s,u)=>s+u.sug,0));
   const runN=rows.filter(u=>u.sug>0).length;
   const cov=Math.min(2.3, runN*0.30);              // fler enheter → längre bana
-  const lastDays= sugTot>0 ? resBudget/sugTot : 99;
+  const lastDays= sugTot>0 ? damDaysAt(sugTot) : 99;  // ur dammens volym + påfyllning
   return {rows,sugTot,runN,cov,lastDays,pumpPct:Math.round(sugTot/PUMP_MAX*100)};
 }
 
@@ -698,8 +866,8 @@ function vForecast(){
    <div class="grid g-2" style="margin-top:14px">
      <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — prognos 48 h</h3><canvas id="cFc" height="160"></canvas></div>
      <div class="card"><h3>${icon('drop','#7dd3fc',15)} Vattenmagasin — så länge räcker det</h3>
-       <div class="val" style="font-size:1.7rem;font-weight:700;margin-top:6px">≈ ${RESERVOIR_DAYS.toFixed(1)} dygn <small class="muted" style="font-size:.85rem">vid nuvarande förbrukning</small></div>
-       <div class="bar green" style="margin-top:10px"><i style="width:${RESERVOIR_PCT}%"></i></div>
+       <div class="val" style="font-size:1.7rem;font-weight:700;margin-top:6px">≈ ${fmtDur(damDaysAt(totalWater())*24)} <small class="muted" style="font-size:.85rem">vid nuvarande uttag</small></div>
+       <div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}" style="margin-top:10px"><i style="width:${Math.min(100,damPct())}%"></i></div>
        <p class="muted small" style="line-height:1.6;margin-top:12px">Snöproduktion pågår oftast bara några dygn, max en vecka, innan vattnet är slut. Grafen hjälper till att planera: kör hårt medan fönstret är öppet och magasinet räcker.</p>
        <div class="note" style="margin-top:10px">Kopplas ihop med prognosmaskinen i snowgun-forecast — samma våttemperatur­modell och startgräns.</div>
      </div>
@@ -779,6 +947,7 @@ function render(){
   const m=document.getElementById('main');
   if(current==='overview')m.innerHTML=vOverview();
   else if(current==='water')m.innerHTML=vWater();
+  else if(current==='dam')m.innerHTML=vDam();
   else if(current==='advisor')m.innerHTML=vAdvisor();
   else if(current==='map')m.innerHTML=vMap();
   else if(current==='cannons')m.innerHTML=vUnits('kanon');
