@@ -51,7 +51,8 @@ Utifrån den kan vi bygga rätt bryggfrågor och färdigställa läs-only-kontot
 
 | Fil | Vad | När |
 |-----|-----|-----|
-| `db-sond.ps1` | Läs-only-sonden (kartlägger datorn + databasen) | Kör på plats, först |
+| `db-sond.ps1` | Läs-only-sonden (kartlägger datorn + databaserna) | Kör på plats, först |
+| `kor-sonden.cmd` | Startar sonden med ett dubbelklick | Tillsammans med sonden |
 | `skapa-lasonly-konto.sql` | Skapar bryggans egna läs-only-konto (`db_datareader`) | Senare, när vi sett rapporten |
 | `README.md` | Den här instruktionen | — |
 
@@ -61,7 +62,13 @@ Utifrån den kan vi bygga rätt bryggfrågor och färdigställa läs-only-kontot
    webbläsaren och ladda ner filen (eller ta ett USB-minne). Lägg den i en egen
    mapp, t.ex. `C:\Temp\sond\`.
 
-2. **Öppna PowerShell i den mappen.** Enklast:
+   **Enklaste sättet att köra:** ladda ner `kor-sonden.cmd` också, lägg den i
+   samma mapp och dubbelklicka på den. Den kör sonden, provar själv med
+   `GSS_Login` om Windows-inloggningen inte räcker (du skriver lösenordet), och
+   håller fönstret öppet efteråt. Då kan du hoppa över steg 2–4. Vill du hellre
+   skriva kommandona själv:
+
+2. **Öppna PowerShell i den mappen.** Så här:
    - Öppna mappen i Utforskaren.
    - Håll inne **Shift** och **högerklicka** på tom yta i mappen.
    - Välj **"Öppna PowerShell-fönster här"** (på Windows 11 kan det stå

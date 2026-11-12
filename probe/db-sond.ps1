@@ -50,7 +50,26 @@ $lines  = New-Object System.Collections.Generic.List[string]
 
 function Log([string]$s = "") { $lines.Add($s); Write-Host $s }
 function Head([string]$s) { Log ""; Log $s; Log ("-" * [Math]::Min(76, $s.Length)) }
-function Save-Report { $lines | Out-File -FilePath $report -Encoding utf8 }
+# Går mappen inte att skriva i (skrivskyddat USB-minne, C:\ utan rättigheter)
+# ska skriptet inte dö där - då hamnar rapporten i användarens temp-mapp.
+try { "" | Out-File -FilePath $report -Encoding utf8 }
+catch { $report = Join-Path $env:TEMP "db-sond-rapport_$stamp.txt" }
+function Save-Report {
+  try { $lines | Out-File -FilePath $report -Encoding utf8 }
+  catch { Write-Host "KUNDE INTE SPARA RAPPORTEN: $($_.Exception.Message)" }
+}
+
+# Tvättar bort sådant som inte ska lämna datorn ur fritext (loggrader och
+# textvärden): lösenord i anslutningssträngar, e-postadresser, telefonnummer.
+# Telefonnummer känns igen på att de börjar med + eller 0 - då lämnas datum
+# och mätvärden i fred.
+function Redact([string]$s) {
+  if (-not $s) { return $s }
+  $s = $s -replace '(?i)(password|pwd|mot de passe|mdp)\s*[=:]\s*[^;\s]+', '$1=<dolt>'
+  $s = $s -replace '[\w\.\-]+@[\w\-]+\.[\w\.\-]+', '<e-post>'
+  $s = $s -replace '(?<![\d\.,:/\-])(\+\d|0)[\d \-]{7,}\d(?![\d\.,:/])', '<nummer>'
+  return $s
+}
 
 Log "============================================================"
 Log " Läs-only-sond mot styrdatorn (version 2)"
@@ -103,10 +122,14 @@ try {
 
 # Python och Node? (inte nödvändigt - bryggan kan skrivas i PowerShell)
 foreach ($prog in @("python","py","node")) {
+  # Äldre Python skriver versionen på felkanalen. Med "Stop" blir det ett
+  # avbrott och programmet ser ut att saknas, därför "Continue" just här.
+  $ErrorActionPreference = "Continue"
   try {
     $v = & $prog --version 2>&1
     if ($v) { Log ("   $prog : " + ($v | Select-Object -First 1)) } else { Log "   $prog : finns inte" }
   } catch { Log "   $prog : finns inte" }
+  $ErrorActionPreference = "Stop"
 }
 
 # ODBC-drivrutiner för SQL Server (behövs bara om bryggan blir Python)
@@ -165,11 +188,17 @@ try {
   Log ("   HTTPS med TLS 1.2 -> www.gstatic.com : OK (svar " + [int]$resp.StatusCode + ")")
   # Molnets klocka mot datorns: en klocka som går fel ger fel tidsstämplar.
   $srvDate = $resp.Headers["Date"]
-  if ($srvDate) {
-    $skew = ((Get-Date).ToUniversalTime() - [DateTime]::Parse($srvDate).ToUniversalTime()).TotalSeconds
-    Log ("   Datorns klocka mot molnets: " + [Math]::Round($skew) + " s skillnad")
-  }
   $resp.Close()
+  # Egen try: ett datum som inte går att tolka ska inte få HTTPS-provet att
+  # se misslyckat ut.
+  try {
+    if ($srvDate) {
+      $inv = [System.Globalization.CultureInfo]::InvariantCulture
+      $srvUtc = [DateTime]::Parse($srvDate, $inv, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+      $skew = ((Get-Date).ToUniversalTime() - $srvUtc).TotalSeconds
+      Log ("   Datorns klocka mot molnets: " + [Math]::Round($skew) + " s skillnad")
+    }
+  } catch { Log "   Datorns klocka mot molnets: gick inte att jämföra" }
 } catch { Log "   HTTPS med TLS 1.2 -> www.gstatic.com : MISSLYCKADES ($($_.Exception.Message))" }
 
 # =================== 0b. Styrsystemets loggar ===============================
@@ -191,8 +220,10 @@ if ($GsLog -ne "") {
 }
 # SQL Servers egen ERRORLOG ligger i instansens Log-mapp.
 $sqlLogRoots = @()
-foreach ($b in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
-  if (-not $b) { continue }
+# ProgramW6432 behövs om skriptet råkar köras i 32-bitars PowerShell: där
+# pekar ProgramFiles på (x86)-mappen och 64-bitars SQL Server hittas inte.
+$pfDirs = @($env:ProgramW6432, $env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ } | Select-Object -Unique
+foreach ($b in @($pfDirs)) {
   $ms = Join-Path $b "Microsoft SQL Server"
   if (Test-Path $ms) {
     Get-ChildItem -Path $ms -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer -and $_.Name -like "MSSQL*" } | ForEach-Object {
@@ -203,48 +234,74 @@ foreach ($b in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
 }
 
 # Mönster vi räknar. SQL Server och GSSystem loggar på FRANSKA på den här
-# datorn. Franska mönster skrivs utan accenter, så matchningen inte beror på
-# hur loggfilen är teckenkodad.
+# datorn. Franska mönster skrivs som bitar UTAN accenter ("s refus" för
+# "accès refusé"), så matchningen inte beror på hur loggfilen är teckenkodad.
+# En accent mitt i mönstret skulle aldrig träffa.
 $groups = @(
   @("minnesfel",        @("insufficient system memory","out of memory","insuffisante","not enough storage","cannot allocate")),
-  @("timeout",          @("timeout expired","timeout period")),
+  @("timeout",          @("timeout expired","timeout period","lai d'attente","expiration du d")),
   @("watchdog/krasch",  @("watchdog","ne fonctionne plus","crashed")),
   @("overflow (VB6)",   @("passement de capacit")),
   @("SQL-fel vid lagring", @("erreur enregistrement")),
-  @("behörighet",       @("permission refus","access denied","acces refus")),
+  @("behörighet",       @("permission refus","access denied","s refus")),
   @("dongel",           @("dongle"))
 )
 
+# Läser filen EN gång, rad för rad. Minnet blir detsamma hur stor filen än är
+# (SQL Servers ERRORLOG kan vara tiotals MB på en server som sällan startas
+# om), och filen öppnas så att GSSystem kan fortsätta skriva i den.
+# Teckentabell: datorns egen (GSSystem skriver så); filer med BOM, som
+# ERRORLOG i UTF-16, känns igen ändå.
 function Scan-LogFile($f, [bool]$tail) {
   $sizeKb = [Math]::Round($f.Length / 1KB)
   $shown = (Split-Path -Leaf $f.DirectoryName) + "\" + $f.Name
   Log ("   " + $shown + "  (" + $sizeKb + " kB, ändrad " + $f.LastWriteTime.ToString('yyyy-MM-dd HH:mm') + ")")
   if ($f.Length -eq 0) { Log "      (tom)"; return }
-  if ($f.Length -gt 20MB) { Log "      (för stor för att läsas här - hoppar över)"; return }
+  $counts = @{}; $lasts = @{}
+  $queue = New-Object System.Collections.Generic.Queue[string]
+  $n = 0
+  $sr = $null
+  try {
+    $fs = New-Object System.IO.FileStream($f.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::Default, $true)
+    while ($true) {
+      $ln = $sr.ReadLine()
+      if ($ln -eq $null) { break }
+      $n++
+      $t = $ln.Trim()
+      if ($t -eq "") { continue }
+      foreach ($g in $groups) {
+        foreach ($pat in $g[1]) {
+          if ($t.IndexOf($pat, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            if ($counts.ContainsKey($g[0])) { $counts[$g[0]]++ } else { $counts[$g[0]] = 1 }
+            $lasts[$g[0]] = $t
+            break
+          }
+        }
+      }
+      if ($tail) { $queue.Enqueue($t); if ($queue.Count -gt 12) { [void]$queue.Dequeue() } }
+    }
+  } catch {
+    # Syns i rapporten: annars ser en fil som inte gick att öppna ut precis
+    # som en fil utan fel.
+    Log ("      KUNDE INTE LÄSAS: " + $_.Exception.Message)
+    return
+  } finally { if ($sr) { $sr.Close() } }
   foreach ($g in $groups) {
-    try {
-      # -Encoding default = datorns ANSI-teckentabell, som GSSystem skriver i.
-      # Utan den läses é som skräptecken. Filer med BOM (SQL Servers
-      # ERRORLOG är UTF-16) känns igen ändå.
-      $found = @(Select-String -Path $f.FullName -Pattern $g[1] -SimpleMatch -Encoding default -ErrorAction SilentlyContinue)
-      if ($found.Count -gt 0) {
-        $last = $found[$found.Count - 1].Line.Trim()
-        if ($last.Length -gt 150) { $last = $last.Substring(0, 147) + "..." }
-        Log ("      " + $g[0] + ": " + $found.Count + " rader. Senaste: " + $last)
-      }
-    } catch {}
+    if ($counts.ContainsKey($g[0])) {
+      $last = Redact $lasts[$g[0]]
+      if ($last.Length -gt 150) { $last = $last.Substring(0, 147) + "..." }
+      Log ("      " + $g[0] + ": " + $counts[$g[0]] + " rader. Senaste: " + $last)
+    }
   }
+  if ($counts.Count -eq 0) { Log "      (inga fel av de slag vi letar efter, $n rader lästa)" }
   if ($tail) {
-    try {
-      $all = @(Get-Content -Path $f.FullName -ErrorAction Stop)
-      Log ("      Sista raderna (av " + $all.Count + "):")
-      $from = [Math]::Max(0, $all.Count - 12)
-      for ($i = $from; $i -lt $all.Count; $i++) {
-        $t = $all[$i].Trim(); if ($t -eq "") { continue }
-        if ($t.Length -gt 170) { $t = $t.Substring(0, 167) + "..." }
-        Log ("        " + $t)
-      }
-    } catch { Log "      (kunde inte läsa filen: $($_.Exception.Message))" }
+    Log ("      Sista raderna (av " + $n + "):")
+    foreach ($t in $queue.ToArray()) {
+      $t = Redact $t
+      if ($t.Length -gt 170) { $t = $t.Substring(0, 167) + "..." }
+      Log ("        " + $t)
+    }
   }
 }
 
@@ -257,21 +314,31 @@ if ($logRoots.Count -eq 0) {
     Log "   GSSystems mapp: $root"
     try {
       # .log i BdD, .rap och GSSystem*.tmp i concept - det är där GSSystem skriver.
-      $files = Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue |
+      # @(...) runt allt: i PowerShell 2 går en foreach över "ingenting" annars
+      # ett varv med ett tomt värde.
+      $files = @(Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue |
         Where-Object { -not $_.PSIsContainer -and ($_.Extension -match '^\.(log|rap)$' -or $_.Name -match '^GSSystem.*\.tmp$') } |
-        Sort-Object FullName
-      if (-not $files) { Log "      (inga loggfiler hittades här)" }
-      foreach ($f in $files) { Scan-LogFile $f $true }
+        Sort-Object LastWriteTime -Descending)
+      if ($files.Count -eq 0) { Log "      (inga loggfiler hittades här)" }
+      # De 60 senast ändrade läses. Skulle mappen ha tusentals gamla rapporter
+      # tar det annars flera minuter och rapporten blir oläslig.
+      $take = [Math]::Min(60, $files.Count)
+      for ($i = 0; $i -lt $take; $i++) { Scan-LogFile $files[$i] $true }
+      if ($files.Count -gt $take) { Log ("      ... och " + ($files.Count - $take) + " äldre loggfiler som inte lästes.") }
     } catch { Log "      (kunde inte läsa mappen: $($_.Exception.Message))" }
   }
 }
-foreach ($root in $sqlLogRoots) {
+foreach ($root in @($sqlLogRoots)) {
   Log "   SQL Servers loggmapp: $root"
   try {
-    $files = Get-ChildItem -Path $root -ErrorAction SilentlyContinue |
-      Where-Object { -not $_.PSIsContainer -and $_.Name -like "ERRORLOG*" } | Sort-Object Name
+    $files = @(Get-ChildItem -Path $root -ErrorAction Stop |
+      Where-Object { -not $_.PSIsContainer -and $_.Name -like "ERRORLOG*" } | Sort-Object Name)
+    if ($files.Count -eq 0) { Log "      (inga ERRORLOG-filer gick att lista)" }
     foreach ($f in $files) { Scan-LogFile $f $false }
-  } catch { Log "      (kunde inte läsa mappen: $($_.Exception.Message))" }
+  } catch {
+    Log "      KUNDE INTE LÄSAS: $($_.Exception.Message)"
+    Log "      (mappen kräver ofta administratör - öppna PowerShell med 'Kör som administratör' om du vill ha med den)"
+  }
 }
 if ($sqlLogRoots.Count -eq 0) { Log "   SQL Servers loggmapp hittades inte under Program Files." }
 
@@ -297,23 +364,44 @@ if ($User -ne "") {
 # vi provar dem i tur och ordning. Ingen databas anges: vi hamnar i
 # inloggningens förvalda och byter sedan till var och en.
 if ($Server -ne "") { $servers = @($Server) }
-else { $servers = @("127.0.0.1\SQLEXPRESS,1433", "localhost\SQLEXPRESS", ".\SQLEXPRESS", "127.0.0.1,1433") }
+else {
+  $servers = @("127.0.0.1\SQLEXPRESS,1433", "localhost\SQLEXPRESS", ".\SQLEXPRESS", "127.0.0.1,1433")
+  # Heter instansen något annat än SQLEXPRESS syns det på tjänstens namn
+  # (MSSQL$NAMN). Lägg till de instanser som faktiskt finns på datorn.
+  try {
+    Get-Service | Where-Object { $_.Name -like 'MSSQL$*' } | ForEach-Object {
+      $inst = ".\" + $_.Name.Substring(6)
+      if ($servers -notcontains $inst) { $servers += $inst }
+    }
+    if (Get-Service | Where-Object { $_.Name -eq 'MSSQLSERVER' }) { $servers += "." }
+  } catch {}
+}
+
+# Normalt redan inläst, men det kostar inget att vara säker i äldre PowerShell.
+try { Add-Type -AssemblyName System.Data } catch {}
 
 $conn = $null
 foreach ($srv in $servers) {
-  $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-  $b["Data Source"] = $srv
-  $b["Connect Timeout"] = 6
-  $b["Application Name"] = "snogrupp-sond"
-  if ($User -ne "") { $b["User ID"] = $User; $b["Password"] = $pw } else { $b["Integrated Security"] = $true }
-  $try = New-Object System.Data.SqlClient.SqlConnection $b.ConnectionString
+  $try = $null
   try {
+    $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+    $b["Data Source"] = $srv
+    # master finns alltid och alla inloggningar når den. Utan detta hamnar vi
+    # i inloggningens förvalda databas, och är den borta misslyckas allt.
+    $b["Initial Catalog"] = "master"
+    $b["Connect Timeout"] = 6
+    $b["Application Name"] = "snogrupp-sond"
+    if ($User -ne "") { $b["User ID"] = $User; $b["Password"] = $pw } else { $b["Integrated Security"] = $true }
+    $try = New-Object System.Data.SqlClient.SqlConnection $b.ConnectionString
     $try.Open()
     $conn = $try
     Log "   ANSLUTNING OK mot $srv ($authNote)."
     break
   } catch {
-    $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+    # Gå inåt till SQL Servers eget fel, men inte förbi det: längst in ligger
+    # ofta ett Windows-fel med sämre text.
+    $ex = $_.Exception
+    while ($ex.InnerException -and -not ($ex -is [System.Data.SqlClient.SqlException])) { $ex = $ex.InnerException }
     $msg = ($ex.Message -replace "[\r\n]+", " ")
     if ($msg.Length -gt 160) { $msg = $msg.Substring(0, 157) + "..." }
     Log "   $srv : $msg"
@@ -335,6 +423,8 @@ if (-not $conn) {
     Log "   powershell -ExecutionPolicy Bypass -File .\db-sond.ps1 -User GSS_Login"
     Log "(du får då skriva lösenordet - det står i SECRETS.md hemma)."
   }
+  Log "Svarade ingen adress alls? Titta på raderna 'Tjänst MSSQL...' i avsnitt 0:"
+  Log "heter tjänsten MSSQL`$NAMN är adressen .\NAMN. Ange den med -Server `".\NAMN`"."
   Save-Report
   Write-Host ""
   Write-Host "Rapport (miljö och loggar finns med, databasen saknas) sparad: $report"
@@ -342,6 +432,38 @@ if (-not $conn) {
 }
 
 # ---- hjälpfunktioner för läsning --------------------------------------------
+# Gäller hela anslutningen, som ett skyddsnät om en fråga skulle sakna NOLOCK:
+# läs utan att ta lås, vänta högst fem sekunder på andras lås, och ge alltid
+# vika om vi skulle hamna i en låsning med styrprogrammet.
+try {
+  $cmd0 = $conn.CreateCommand()
+  $cmd0.CommandText = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SET LOCK_TIMEOUT 5000; SET DEADLOCK_PRIORITY LOW;"
+  [void]$cmd0.ExecuteNonQuery()
+} catch { Log "   (kunde inte sätta läs-inställningarna: $($_.Exception.Message))" }
+
+# Windows-inloggningen släpps ofta in på servern utan att få läsa GSSystems
+# databaser. Då är det bättre att säga det NU än att skriva "klart" över en
+# rapport utan databasinnehåll.
+try {
+  $cmd1 = $conn.CreateCommand()
+  $cmd1.CommandText = "SELECT COUNT(*) FROM sys.databases WHERE database_id > 4 AND HAS_DBACCESS(name) = 1"
+  $nAccess = [int]$cmd1.ExecuteScalar()
+  if ($nAccess -eq 0) {
+    Log ""
+    Log "!!! Inloggningen fungerade, men kontot får inte läsa någon av databaserna."
+    if ($User -eq "") {
+      Log "!!! Kör igen med styrsystemets inloggning:"
+      Log "!!!    powershell -ExecutionPolicy Bypass -File .\db-sond.ps1 -User GSS_Login"
+    }
+    $conn.Close()
+    Save-Report
+    Write-Host ""
+    Write-Host "Rapport (miljö och loggar finns med, databasen saknas) sparad: $report"
+    exit 1
+  }
+  Log "   Kontot når $nAccess databas(er) utöver systemets egna."
+} catch { Log "   (kunde inte kontrollera databasåtkomsten i förväg: $($_.Exception.Message))" }
+
 function Invoke-Read([string]$sql) {
   $cmd = $conn.CreateCommand()
   $cmd.CommandText = $sql
@@ -355,19 +477,27 @@ function Invoke-Read([string]$sql) {
 
 # Kolumner och tabeller som kan bära lösenord, telefonnummer eller licenser.
 # Rapporten lämnar datorn, så sådant ska inte följa med.
-$secretCol   = '(?i)pass|pwd|mdp|motdepasse|secret|token'
-$secretTable = '(?i)smtp|mail|sms|user|utilisat|login|pass|mdp|licen|dongle|hasp|operateur|operator'
+$secretCol   = '(?i)pass|pwd|mdp|motdepasse|secret|token|phone|gsm|portable|mobile|mail|serial|licen'
+$secretTable = '(?i)smtp|mail|sms|user|utilisat|login|pass|mdp|licen|dongle|hasp|operateur|operator|contact|astreinte|personn|destinat|abonn'
+# En rad i en nyckel/värde-tabell ("SmtpPassword" = "...") avslöjas av att
+# något av dess textvärden ser ut så här. Då döljs hela raden.
+$secretVal   = '(?i)password|passwd|pwd|mot de passe|motdepasse|mdp|smtp|token'
 
 function Show-Rows($dt, [int]$max) {
   $i = 0
   foreach ($r in $dt.Rows) {
     $i++; if ($i -gt $max) { break }
     $parts = New-Object System.Collections.Generic.List[string]
+    $hide = $false
     foreach ($c in $dt.Columns) {
       $v = $r[$c]
       if ($v -is [System.DBNull]) { continue }
       if ($v -is [byte[]]) { $s = "<bin " + $v.Length + " byte>" }
       elseif ($v -is [datetime]) { $s = $v.ToString("yyyy-MM-dd HH:mm:ss") }
+      elseif ($v -is [string]) {
+        if ($v -match $secretVal) { $hide = $true }
+        $s = Redact $v
+      }
       else { $s = "$v" }
       $s = ($s -replace "[\r\n]+", " ").Trim()
       if ($s -eq "") { continue }
@@ -375,7 +505,8 @@ function Show-Rows($dt, [int]$max) {
       if ($s.Length -gt 60) { $s = $s.Substring(0, 57) + "..." }
       $parts.Add($c.ColumnName + "=" + $s)
     }
-    Log ("      #" + $i + ": " + ($parts.ToArray() -join " | "))
+    if ($hide) { Log ("      #" + $i + ": (raden visas inte - den ser ut att röra lösenord eller e-post)") }
+    else { Log ("      #" + $i + ": " + ($parts.ToArray() -join " | ")) }
   }
 }
 function Show-Table($dt) {
@@ -454,7 +585,9 @@ $dbNames = @()
 try {
   $dt = Invoke-Read "SELECT name, database_id, state_desc, recovery_model_desc, create_date FROM sys.databases ORDER BY database_id"
   Show-Table $dt
-  foreach ($r in $dt.Rows) { if ([int]$r["database_id"] -gt 4 -and ("" + $r["state_desc"]) -eq "ONLINE") { $dbNames += ("" + $r["name"]) } }
+  # Bara GSSystems egna (de heter alla Live_...). Ligger något annat program
+  # på samma server är det inte vår sak att läsa ur det.
+  foreach ($r in $dt.Rows) { if ([int]$r["database_id"] -gt 4 -and ("" + $r["state_desc"]) -eq "ONLINE" -and ("" + $r["name"]) -like "Live*") { $dbNames += ("" + $r["name"]) } }
 } catch { Log "   FEL: $($_.Exception.Message)" }
 try {
   $dt = Invoke-Read "SELECT DB_NAME(database_id) AS db, type_desc, CAST(size AS bigint)*8/1024 AS storlek_MB, physical_name FROM sys.master_files WHERE database_id > 4 ORDER BY database_id, file_id"
@@ -465,6 +598,7 @@ if ($dbNames.Count -eq 0) { $dbNames = @("Live_Snowstar","Live_stat_SQL","Live_e
 # =================== 6. Varje databas: tabeller, kolumner, smakprov ==========
 # Radantal ur sys.partitions. Smakprov: små tabeller visas hela (det är där
 # nuläget och apparatlistorna finns), stora bara med de tre senaste raderna.
+$dbRead = 0
 foreach ($db in $dbNames) {
   Head "6. DATABAS $db"
   try { $conn.ChangeDatabase($db) }
@@ -488,6 +622,7 @@ ORDER BY t.name
 "@
   } catch { Log "   Tabellistan: FEL: $($_.Exception.Message)"; continue }
   Log ("   " + $tables.Rows.Count + " tabeller.")
+  $dbRead++
 
   # --- kolumner, alla tabeller i en fråga ---
   $colsOf = @{}
@@ -515,7 +650,7 @@ FROM sys.indexes i
 JOIN sys.tables t         ON t.object_id = i.object_id
 JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1
 JOIN sys.columns c        ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-WHERE i.index_id > 0
+WHERE i.index_id > 0 AND i.is_disabled = 0 AND i.is_hypothetical = 0
 "@
     foreach ($r in $dt.Rows) {
       $tn = "" + $r["tabell"]
@@ -530,6 +665,8 @@ WHERE i.index_id > 0
   if ($db -match '(?i)language') { $allLimit = 3000 }
 
   foreach ($t in $tables.Rows) {
+   # Ett oväntat fel i en tabell ska inte avbryta alla databaser.
+   try {
     $tn = "" + $t["tabell"]; $sch = "" + $t["sch"]; $n = [long]$t["rader"]
     $cl = @(); if ($colsOf.ContainsKey($tn)) { $cl = $colsOf[$tn].ToArray() }
     Log ""
@@ -557,14 +694,28 @@ WHERE i.index_id > 0
     if ($dateCol) {
       $indexed = $leadCols.ContainsKey($tn) -and ($leadCols[$tn] -contains $dateCol.ToLower())
       # Sortera bara när det är billigt: liten tabell eller index på datumet.
-      if ($n -le 300000 -or $indexed) { $order = " ORDER BY " + (Q $dateCol) + " DESC"; $note = " (senaste först)" }
+      # Utan index läser SQL Server HELA tabellen för att hitta de senaste
+      # raderna - därför en låg gräns. 20 000 rader är några megabyte.
+      if ($n -le 20000 -or $indexed) { $order = " ORDER BY " + (Q $dateCol) + " DESC"; $note = " (senaste först)" }
       else { $note = " (osorterat - stor tabell utan datumindex, raderna kan vara gamla)" }
     }
+    $base = "SELECT TOP " + $top + " * FROM " + (Q $sch) + "." + (Q $tn) + " WITH (NOLOCK)"
     try {
-      $dt = Invoke-Read ("SELECT TOP " + $top + " * FROM " + (Q $sch) + "." + (Q $tn) + " WITH (NOLOCK)" + $order)
+      $dt = Invoke-Read ($base + $order)
       Log ("      " + $dt.Rows.Count + " rader visas" + $note + ":")
       Show-Rows $dt $top
-    } catch { Log "      (hoppar över: $($_.Exception.Message))" }
+    } catch {
+      # Sorteringen kan misslyckas (datumkolumnen är text, eller tiden tog
+      # slut). Hellre osorterade rader än inga.
+      if ($order -ne "") {
+        try {
+          $dt = Invoke-Read $base
+          Log ("      " + $dt.Rows.Count + " rader visas (osorterat - sorteringen misslyckades):")
+          Show-Rows $dt $top
+        } catch { Log "      (hoppar över: $($_.Exception.Message))" }
+      } else { Log "      (hoppar över: $($_.Exception.Message))" }
+    }
+   } catch { Log "      (fel i den här tabellen, går vidare: $($_.Exception.Message))" }
   }
   Save-Report
 }
@@ -572,9 +723,19 @@ WHERE i.index_id > 0
 $conn.Close()
 
 $secs = [Math]::Round(((Get-Date) - $started).TotalSeconds)
+if ($dbRead -eq 0) {
+  Log ""
+  Log "!!! INGEN DATABAS GICK ATT LÄSA med $authNote."
+  Log "!!! Rapporten har dator- och loggdelen, men inget ur databaserna."
+  Log "!!! Kör igen:  powershell -ExecutionPolicy Bypass -File .\db-sond.ps1 -User GSS_Login"
+  Save-Report
+  Write-Host ""
+  Write-Host "Rapport sparad: $report"
+  exit 1
+}
 Log ""
 Log "============================================================"
-Log " KLART på $secs s. Inget skrevs till databasen."
+Log " KLART på $secs s. $dbRead databas(er) lästa. Inget skrevs till databasen."
 Log " Ta med den här filen tillbaka:"
 Log "   $report"
 Log "============================================================"
