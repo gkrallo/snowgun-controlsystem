@@ -13,6 +13,8 @@
   som prognosappen (ingen bygg).
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 :root{
   --bg:#0a111e; --bg2:#0e1829; --panel:#13203360; --panel-solid:#132033;
@@ -220,6 +222,23 @@ canvas{max-width:100%}
 .linkbtn{background:#132544;border:1px solid var(--border);color:var(--accent);border-radius:9px;
   padding:7px 12px;font-size:.82rem;font-weight:600;cursor:pointer}
 .note{background:#0c1a2b;border:1px dashed var(--border-hi);border-radius:12px;padding:11px 14px;color:var(--muted);font-size:.8rem;line-height:1.55}
+
+/* ---------- karta (Leaflet) ---------- */
+#opsmap{height:min(62vh,560px);width:100%;background:#0a111e}
+.leaflet-container{background:#0a111e;font-family:inherit}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel-solid);color:var(--text);border:1px solid var(--border-hi);box-shadow:var(--shadow)}
+.leaflet-popup-content{margin:9px 12px;font-size:.82rem;line-height:1.5}
+.leaflet-popup-content b{color:#fff}
+.leaflet-container a.leaflet-popup-close-button{color:var(--muted)}
+.leaflet-bar a{background:#132033;color:var(--text);border-bottom:1px solid var(--border)}
+.leaflet-bar a:hover{background:var(--panel-hi)}
+.leaflet-control-attribution{background:#0c1a2bcc!important;color:var(--muted2)!important}
+.leaflet-control-attribution a{color:var(--accent)!important}
+.umark{min-width:26px;height:26px;padding:0 5px;border-radius:999px;display:grid;place-items:center;
+  border:2px solid #0a111e;box-shadow:0 2px 8px #0009;font-weight:800;font-size:.7rem;color:#06121f;white-space:nowrap}
+.map-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+.map-legend .row{gap:7px}
+.map-legend i{width:13px;height:13px;border-radius:50%;display:inline-block;flex:0 0 auto}
 </style>
 </head>
 <body>
@@ -290,9 +309,59 @@ let alarms = [
   {id:3, sev:'crit', title:'Pumphus — uttag nära kapacitetstak', meta:'41 / 45 l/s · automatisk strypning aktiv', ack:false},
 ];
 
+/* Sparbanksspåret och de tjugo brunnarna — samma koordinater som prognosappen
+   (BUILTIN_TRACK / BUILTIN_WELLS i snowgun-forecast). Brunn 7 bär väderstationen;
+   brunn 20 är reserv. Används bara för att rita kartan. */
+const TRACK = {
+  centre:[58.50452,13.08813],
+  pts:[
+  [58.50683,13.08698],[58.50683,13.08673],[58.50681,13.08653],[58.50676,13.08639],
+  [58.50667,13.08624],[58.50655,13.08612],[58.50641,13.08604],[58.50632,13.08602],
+  [58.50615,13.08605],[58.50598,13.08615],[58.50589,13.08624],[58.50567,13.08651],
+  [58.50536,13.08696],[58.50527,13.08707],[58.50436,13.08757],[58.50365,13.08802],
+  [58.50358,13.08803],[58.50347,13.088],[58.50288,13.08762],[58.5027,13.08752],
+  [58.50255,13.08748],[58.50244,13.08749],[58.50227,13.08764],[58.50184,13.08812],
+  [58.5017,13.08824],[58.50161,13.08825],[58.50121,13.08816],[58.50104,13.08815],
+  [58.50032,13.08867],[58.50006,13.0888],[58.49997,13.08881],[58.49985,13.08885],
+  [58.49981,13.08889],[58.4998,13.08894],[58.4998,13.08904],[58.49986,13.0892],
+  [58.49988,13.08923],[58.49995,13.08924],[58.50008,13.08913],[58.5003,13.08886],
+  [58.50056,13.08859],[58.50088,13.08836],[58.50104,13.08828],[58.50122,13.08824],
+  [58.5014,13.08824],[58.50173,13.08828],[58.50193,13.08825],[58.50202,13.08815],
+  [58.50237,13.08764],[58.5025,13.08753],[58.50261,13.08748],[58.5027,13.08749],
+  [58.50276,13.08754],[58.50322,13.08798],[58.50338,13.08811],[58.50359,13.08815],
+  [58.50372,13.08811],[58.50448,13.0876],[58.50509,13.08723],[58.50534,13.08705],
+  [58.50548,13.0869],[58.5058,13.0865],[58.50604,13.08627],[58.50615,13.0862],
+  [58.50627,13.08617],[58.50646,13.08616],[58.50654,13.08619],[58.50665,13.0863],
+  [58.50676,13.08648],[58.50679,13.08674],[58.5068,13.08717],[58.50682,13.08763],
+  [58.50691,13.08829],[58.50693,13.08847],[58.50692,13.08874],[58.50689,13.08888],
+  [58.50685,13.08904],[58.50663,13.08973],[58.50661,13.08992],[58.50661,13.09008],
+  [58.50667,13.09038],[58.50677,13.09061],[58.50685,13.0907],[58.50691,13.09073],
+  [58.50697,13.09072],[58.50709,13.09066],[58.5072,13.09055],[58.50747,13.0902],
+  [58.5075,13.09013],[58.50753,13.09001],[58.50755,13.08978],[58.50754,13.08963],
+  [58.50752,13.08957],[58.50746,13.08947],[58.50735,13.0894],[58.50717,13.08933],
+  [58.50712,13.08929],[58.50704,13.08887],[58.50693,13.08796],[58.50688,13.08753],
+  [58.50683,13.08698]
+  ]
+};
+const WELLS = [
+  {no:1,lat:58.500038,lon:13.088891},{no:2,lat:58.50081,lon:13.088443},
+  {no:3,lat:58.501464,lon:13.088295},{no:4,lat:58.502066,lon:13.088121},
+  {no:5,lat:58.502645,lon:13.087593},{no:6,lat:58.50315,lon:13.088064},
+  {no:7,lat:58.503781,lon:13.087922,station:true},{no:8,lat:58.504247,lon:13.08773},
+  {no:9,lat:58.504722,lon:13.087461},{no:10,lat:58.505265,lon:13.087402},
+  {no:11,lat:58.505641,lon:13.086717},{no:12,lat:58.506026,lon:13.086323},
+  {no:13,lat:58.506739,lon:13.08604},{no:14,lat:58.506874,lon:13.087089},
+  {no:15,lat:58.507007,lon:13.088262},{no:16,lat:58.506981,lon:13.089118},
+  {no:17,lat:58.506829,lon:13.090311},{no:18,lat:58.507088,lon:13.090475},
+  {no:19,lat:58.507521,lon:13.089579},{no:20,lat:58.50341,lon:13.086911,spare:true},
+];
+/* enheternas lägesfärger på kartan (matchar statuschippen) */
+const UCOL={run:'#34d399',standby:'#60a5fa',limit:'#fbbf24',alarm:'#f87171',off:'#9fb0c7'};
+
 const NAV = [
   {id:'overview', label:'Översikt',    icon:'grid'},
   {id:'water',    label:'Vattenbalans',icon:'drop'},
+  {id:'map',      label:'Karta',       icon:'map'},
   {id:'cannons',  label:'Kanoner',     icon:'fan'},
   {id:'lances',   label:'Lansar',      icon:'lance'},
   {id:'alarms',   label:'Larm',        icon:'bell'},
@@ -312,6 +381,7 @@ function icon(name,c='currentColor',s=20){
     bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
     temp:'<path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0z"/>',
     track:'<path d="M4 20c4-1 4-7 8-8s4-7 8-8"/>',
+    map:'<path d="M9 4L3 7v13l6-3 6 3 6-3V4l-6 3-6-3z"/><path d="M9 4v13M15 7v13"/>',
   }[name]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
@@ -438,6 +508,49 @@ function vWater(){
   </div>`;
 }
 
+function vMap(){
+  return topbar('Driftövervakning','Karta — enheter på spåret')+`<div class="view">
+   <div class="card" style="padding:0;overflow:hidden"><div id="opsmap"></div></div>
+   <div class="map-legend">
+     ${Object.keys(UCOL).map(k=>`<span class="row"><i style="background:${UCOL[k]};border:1px solid #0a111e"></i><span class="muted small">${STATE[k][1]}</span></span>`).join('')}
+     <span class="row"><i style="background:#0e2a3d;border:2px solid #22d3ee"></i><span class="muted small">Väderstation (br 7)</span></span>
+     <span class="row"><i style="background:#1a2a42;border:1px solid #8ba0bd;width:9px;height:9px"></i><span class="muted small">Brunn</span></span>
+   </div>
+   <div class="note" style="margin-top:12px">Enheterna sitter vid sin brunn, färgade efter läge — tryck för detaljer. Spårlinjen och brunnarna är desamma som i prognosappen (brunn 1, 10, 13, 16 och 17 ligger där spåret delar sig och hamnar därför lite utanför den inspelade linjen). Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
+  </div>`;
+}
+let mapInst=null;
+function initMap(){
+  const el=document.getElementById('opsmap'); if(!el||!window.L) return;
+  if(mapInst){try{mapInst.remove();}catch(e){} mapInst=null;}
+  mapInst=L.map(el,{zoomControl:true,attributionControl:true,scrollWheelZoom:true});
+  // Flygbild från Esri (förval i prognosappen); referrerPolicy satt om OSM används
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {maxZoom:19,attribution:'Flygbild © Esri'}).addTo(mapInst);
+  const line=L.polyline(TRACK.pts,{color:'#38bdf8',weight:3,opacity:.9}).addTo(mapInst);
+  const fit=()=>{if(mapInst){mapInst.invalidateSize();mapInst.fitBounds(line.getBounds().pad(0.12));}};
+  fit();
+  // containern kan sakna sin höjd när kartan skapas (vyn fejdas in) — passa in igen
+  // när layouten satt sig, annars hamnar zoomen på världsnivå.
+  setTimeout(fit,60);
+  // brunnar som små punkter, väderstationen (br 7) markerad
+  WELLS.forEach(w=>{
+    const st=!!w.station;
+    L.circleMarker([w.lat,w.lon],{radius:st?6:4,color:st?'#22d3ee':'#8ba0bd',weight:st?2:1,
+      fillColor:st?'#0e2a3d':'#1a2a42',fillOpacity:.95})
+     .addTo(mapInst).bindPopup(st?`<b>Brunn ${w.no}</b><br>Styrsystemets väderstation`:`Brunn ${w.no}${w.spare?' · reserv':''}`);
+  });
+  // enheter vid sina brunnar, färgade efter läge
+  cannons.forEach(c=>{
+    const w=WELLS.find(x=>x.no===c.brunn); if(!w) return;
+    const ic=L.divIcon({className:'',html:`<div class="umark" style="background:${UCOL[c.state]}">${c.id}</div>`,
+      iconSize:[28,26],iconAnchor:[14,13]});
+    L.marker([w.lat,w.lon],{icon:ic}).addTo(mapInst)
+     .bindPopup(`<b>${c.namn}</b> · ${STATE[c.state][1]}<br>Brunn ${c.brunn} · steg ${c.steg}<br>`+
+       `Vatten ${c.eau.toFixed(1)} l/s · Våttemp ${c.tw.toFixed(1)} °C`);
+  });
+}
+
 function vUnits(typ){
   const list=cannons.filter(c=>c.typ===typ);
   const t=typ==='kanon'?'Kanoner':'Lansar';
@@ -555,11 +668,12 @@ function render(){
   const m=document.getElementById('main');
   if(current==='overview')m.innerHTML=vOverview();
   else if(current==='water')m.innerHTML=vWater();
+  else if(current==='map')m.innerHTML=vMap();
   else if(current==='cannons')m.innerHTML=vUnits('kanon');
   else if(current==='lances')m.innerHTML=vUnits('lans');
   else if(current==='alarms')m.innerHTML=vAlarms();
   else if(current==='forecast')m.innerHTML=vForecast();
-  requestAnimationFrame(drawCharts);
+  requestAnimationFrame(()=>{drawCharts();if(current==='map')initMap();});
 }
 function ackOne(id){const a=alarms.find(x=>x.id===id);if(a)a.ack=true;render()}
 function ackAll(){alarms.forEach(a=>a.ack=true);render()}
