@@ -265,8 +265,13 @@ canvas{max-width:100%}
 @media(max-width:820px){.dam-grid{grid-template-columns:1fr}}
 .dam-svg{width:100%;height:auto;display:block;margin-top:4px}
 .dam-ctrl label{display:block;color:var(--muted);font-size:.76rem;margin:12px 0 5px}
-.dam-ctrl input[type=number]{width:100%;background:#0c1626;border:1px solid var(--border);
-  color:var(--text);border-radius:9px;padding:9px 11px;font-size:.9rem}
+.dam-ctrl input[type=number],.dam-ctrl input[type=datetime-local]{width:100%;background:#0c1626;
+  border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px 11px;font-size:.9rem}
+.dam-ctrl input[type=datetime-local]{color-scheme:dark}
+.dam-ctrl input:disabled{opacity:.45}
+.dtrow{display:flex;gap:10px;margin-top:4px}
+.dtrow>div{flex:1 1 0;min-width:0}
+.dtrow label{margin-top:8px}
 .dam-ctrl input[type=range]{width:100%;accent-color:var(--ice);margin-top:4px}
 .seg{display:inline-flex;background:#0c1626;border:1px solid var(--border);border-radius:9px;overflow:hidden}
 .seg button{background:transparent;border:0;color:var(--muted);padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer}
@@ -586,7 +591,7 @@ const DAMLV=[
 
 /* tillstånd — simulerat i prototypen. Senaste kalibrering = "nu".
    Riktig app: V0/t0 i localStorage eller Firebase, uttaget från driftdatan. */
-let dam={ V0:3743, t0:Date.now(), fill:false, fillRate:213, leak:2.0, floorH:0.5, calMode:'normal' };
+let dam={ V0:3743, t0:Date.now(), fill:false, fillStart:null, fillStop:null, fillRate:213, leak:2.0, floorH:0.5, calMode:'normal' };
 let damTape=Math.round(tapeNormal(hFromVol(dam.V0)));  // måttbandsreglagets läge
 
 /* flöden */
@@ -598,6 +603,18 @@ const floorVol=()=>volAt(dam.floorH);               // lägsta driftnivå (pumpi
 const usableVol=v=>Math.max(0,v-floorVol());
 function damPct(){return Math.round(dam.V0/V100*100);}
 function damDaysAt(lps){const net=lps*L2M3D - damInflowM3d(); return net<=0?99:usableVol(dam.V0)/net;}
+
+/* påfyllningens klockslag. Man glömmer ofta trycka igång när fyllningen startar
+   och kommer på det först efter en stund — därför går både start och stopp att
+   sätta i efterhand, så den faktiska pumptiden (och tillförd volym) blir rätt. */
+const toLocalDT=ts=>{ if(!ts)return ''; const d=new Date(ts), p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+const fmtDT=ts=>{ if(!ts)return '–'; const d=new Date(ts), p=n=>String(n).padStart(2,'0');
+  const wd=['sön','mån','tis','ons','tor','fre','lör'][d.getDay()];
+  return `${wd} ${p(d.getDate())}/${d.getMonth()+1} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+function damFillSession(){ const start=dam.fillStart; if(!start)return null;
+  const stop=dam.fill?Date.now():dam.fillStop; if(!stop||stop<=start)return null;
+  const h=(stop-start)/3600e3; return {h, vol:h/24*dam.fillRate}; }
 
 function fmtDur(h){ if(!isFinite(h)||h>24*30)return '30+ dygn'; if(h>=24)return (h/24).toFixed(1)+' dygn'; if(h>=1)return h.toFixed(1)+' h'; return Math.max(1,Math.round(h*60))+' min'; }
 function etaStr(h){ if(!isFinite(h)||h>24*30||h<=0)return ''; const d=new Date(Date.now()+h*3600e3);
@@ -679,6 +696,13 @@ function vDam(){
        <h3>${icon('drop','#7dd3fc',15)} Påfyllningspump & förluster</h3>
        <label>Påfyllningspump</label>
        <div class="seg"><button class="${!dam.fill?'on':''}" onclick="damFill(false)">Av</button><button class="${dam.fill?'on':''}" onclick="damFill(true)">Pumpar nu</button></div>
+       <div class="dtrow">
+         <div><label>Start</label><input type="datetime-local" id="fill_start" value="${toLocalDT(dam.fillStart)}" onchange="damFillTime('start',this.value)"></div>
+         <div><label>Stopp</label><input type="datetime-local" id="fill_stop" value="${toLocalDT(dam.fillStop)}" ${dam.fill?'disabled':''} onchange="damFillTime('stop',this.value)"></div>
+       </div>
+       <p class="muted small" style="margin:8px 0 0">${(()=>{const s=damFillSession();
+         if(dam.fill)return s?`Pumpar sedan ${fmtDT(dam.fillStart)} — ${fmtDur(s.h)}, ca ${Math.round(s.vol).toLocaleString('sv-SE')} m³ tillfört hittills.`:`Pumpar nu. Glömde du trycka igång? Sätt den riktiga starttiden ovan.`;
+         return s?`Senaste pass: ${fmtDT(dam.fillStart)} → ${fmtDT(dam.fillStop)} — ${fmtDur(s.h)}, ca ${Math.round(s.vol).toLocaleString('sv-SE')} m³ tillfört.`:`Pumpen är av. Klockslagen går att rätta i efterhand om de blev fel.`;})()}</p>
        <label>Pumpkapacitet (m³/dygn)</label>
        <input type="number" id="dam_rate" value="${dam.fillRate}" onchange="damNum('fillRate',this.value)">
        <label>Läckage / avdunstning (m³/dygn)</label>
@@ -697,7 +721,10 @@ function damSlide(cm){cm=+cm; const h=Math.max(0,Math.min(DAM.hMax,hFromTape(cm,
 function damCalibFromTape(){dam.V0=volAt(Math.max(0,Math.min(DAM.hMax,hFromTape(damTape,dam.calMode==='low'))));dam.t0=Date.now();invalidateDerived();render();}
 function damMode(m){dam.calMode=m;render();}
 function damCalib(){const cm=+document.getElementById('cal_cm').value; const h=Math.max(0,Math.min(DAM.hMax,hFromTape(cm,dam.calMode==='low'))); dam.V0=volAt(h); dam.t0=Date.now(); damTape=Math.round(tapeNormal(h)); invalidateDerived(); render();}
-function damFill(b){dam.fill=b;render();}
+function damFill(b){ if(b && !dam.fill){dam.fillStart=Date.now(); dam.fillStop=null;}
+  if(!b && dam.fill){dam.fillStop=Date.now();} dam.fill=b; render(); }
+function damFillTime(which,v){ const ts=v?new Date(v).getTime():null;
+  if(which==='start')dam.fillStart=ts; else dam.fillStop=ts; render(); }
 function damNum(k,v){const n=parseFloat(v); if(!isNaN(n))dam[k]=n; render();}
 function invalidateDerived(){/* platshållare: här uppdateras översikt/rådgivare som läser dammens volym */}
 
