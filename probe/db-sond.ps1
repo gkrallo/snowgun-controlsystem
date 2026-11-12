@@ -127,8 +127,16 @@ if ($logRoots.Count -eq 0) {
   Log "   (hitta mappen: högerklicka GSSystem-ikonen -> Öppna filplats)."
 } else {
   # Mönster vi letar efter (gemener - Select-String är skiftlägesokänsligt).
-  $patterns = @("insufficient system memory","out of memory","outofmemory",
-                "cannot allocate","not enough storage","watchdog")
+  # VIKTIGT: SQL Server på styrdatorn loggar på FRANSKA. Franska mönster skrivs
+  # utan accenter ("insuffisante", "passement de capacit"), så matchningen inte
+  # beror på hur loggfilen är teckenkodad (ANSI vs UTF-8).
+  $patterns = @(
+    "insufficient system memory","out of memory","outofmemory",
+    "cannot allocate","not enough storage",      # engelska minnesfel
+    "insuffisante",                               # fr. minne: "Memoire ... insuffisante"
+    "watchdog","ne fonctionne plus","crashed",    # watchdog / krasch
+    "passement de capacit",                       # fr. VB6-overflow: "Depassement de capacite"
+    "timeout expired")                            # frågor som hinner ta slut (strain)
   $hits = New-Object System.Collections.Generic.List[object]
   $scanned = 0
   foreach ($root in ($logRoots | Select-Object -Unique)) {

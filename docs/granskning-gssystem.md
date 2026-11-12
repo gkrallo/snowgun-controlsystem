@@ -120,6 +120,42 @@ utrustning det gäller):
 Det finns alltså redan **exakt de datakällor som efterfrågades**: kanoner,
 lans, pumpsystem (vatten-/lufttryck) och väder/larm, i samma databas.
 
+## Vad loggarna avslöjar (två filer, två olika saker)
+
+Kristian plockade fram raderna ur styrdatorns loggar 12 november 2026. De två
+felloggarna säger helt olika saker, och det är värt att hålla isär:
+
+**`GSS_Stat_report.log` — minnesbristen (relevant för bryggan).** Här står de
+riktiga minnesfelen, från statistik-rapporteringen mot SQL Server:
+
+> `GSS_STAT_REPORT -> Timer1_Tick_1 (5  There is insufficient system memory in resource pool 'internal' to run this query.)`
+
+Samma fel loggas också **på franska** (`Mémoire système insuffisante dans le
+pool de ressources 'internal'`, `Mémoire disponible insuffisante dans le pool
+de mémoires tampons`) plus `Execution Timeout Expired`. SQL Server-instansen är
+alltså fransk-lokaliserad. De exempel vi har är från julen 2022, under drift.
+**Detta är skälet till att bryggan måste vara snål** — läs bara små
+nulägestabeller, `WITH (NOLOCK)`, inga tunga frågor. Att GSSystems egen
+statistik-rapport knäcker SQL Server på minne betyder att en till läsare på
+samma instans måste väga lätt.
+
+**`errurs.log` — programkrascher, INTE minne.** Här står två andra sorters fel,
+som vi varken kan eller ska röra (det är tillverkarens VB6-kod):
+
+- `Dépassement de capacité` (franska för *overflow*, VB6-fel 6) i dialog-
+  rutinerna (`DialogSGC400`, `DialogModbus`, `Dialog`, `DialogYA`). Återkommer
+  glest 2022–2026. En bugg i GSSystem, inte vårt problem.
+- `Watchdog général GSSystem, GSSystem0 ne fonctionne plus` följt av
+  `Exit GSSystem crashed`. Noterbart: de två vi ser inträffar **30/03/2025
+  03:00:00** och **29/03/2026 03:00:00** — exakt sista söndagen i mars, när
+  klockan ställs fram till 03. Watchdog-"kraschen" är alltså sannolikt en
+  sommartids-artefakt (klockan hoppar förbi timmen), inte en minneskrasch.
+- Raderna `(0 : Exit from GSSystem)` är **normala avstängningar**, inte fel.
+
+Sonden (`probe/db-sond.ps1`, avsnitt 0b) söker numera efter alla dessa mönster,
+inklusive de franska, och skriver ut fil, rad och datum — så vi ser om något av
+det fortfarande pågår när vi väl är vid datorn.
+
 ## Hur jag föreslår att ni går vidare
 
 1. **Bekräfta var SQL Server faktiskt sitter.** Logga in på kontrollrums-PC:n
