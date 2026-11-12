@@ -196,6 +196,10 @@ a{color:inherit}
 .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
 
 canvas{max-width:100%}
+/* Chart.js ritar efter FÖRÄLDERNS storlek. Ligger canvasen direkt i kortet
+   mäter den hela kortet (rubrik och allt) och växer för varje omritning.
+   Därför en egen låda med fast höjd runt varje graf. */
+.chartbox{position:relative;height:190px;margin-top:10px}
 .section-title{font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin:26px 2px 10px}
 
 /* mobile bottom nav */
@@ -213,8 +217,16 @@ canvas{max-width:100%}
   #botnav a .badge{position:absolute;top:0;right:50%;margin-right:-22px;background:var(--alarm);color:#fff;
     font-size:.6rem;font-weight:700;min-width:15px;height:15px;border-radius:999px;display:grid;place-items:center;padding:0 3px}
   .topbar h2{font-size:1.15rem}
+  /* smala skärmar: namnkolumnen får inte äta upp stapeln */
+  .flow-row{grid-template-columns:104px 1fr 70px;gap:8px}
+  .flow-row .u-well{display:none}
+  .adv-row{grid-template-columns:1fr 54px 12px 96px;gap:6px}
+  .chartbox{height:175px}
+  .live{font-size:.74rem;padding:6px 10px}
 }
+.live.stale{color:#ffe0a3;background:#2b2410;border-color:#fbbf2455}
 .view{animation:fade .35s ease}
+.soft .view{animation:none}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .muted{color:var(--muted)} .small{font-size:.82rem}
 .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -316,7 +328,7 @@ canvas{max-width:100%}
     <div class="side-foot">
       <div class="avatar">KP</div>
       <div style="flex:1"><div style="font-size:.84rem;font-weight:600">Kristian</div><small>Snögruppen</small></div>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64789b" stroke-width="2" stroke-linecap="round" style="cursor:pointer" onclick="logout()"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64789b" stroke-width="2" stroke-linecap="round" style="cursor:pointer;padding:9px;margin:-9px;box-sizing:content-box" onclick="logout()" role="button" aria-label="Logga ut"><title>Logga ut</title><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
     </div>
   </aside>
 
@@ -332,6 +344,15 @@ canvas{max-width:100%}
 // flödet UT ur dammen (Kristian, verkligt värde). All vattenflödesskala i appen
 // är m³/h, så som snögruppen själv pratar om flöden.
 const PUMP_MAX = 70;        // m³/h — verkligt pumptak / dammens maxuttag
+// 70 är ABSOLUT max: går uttaget över det börjar pumparna slå av och på. Därför
+// siktar snögruppen på högst 69. Allt som planerar eller varnar (rådgivaren,
+// mätare, färger) räknar mot målet; taket visas som gränsen man inte får nå.
+const PUMP_TARGET = 69;     // m³/h — det vi siktar på som mest
+// Läge mot pumpen: 'over' = över taket (pumparna kan börja pendla),
+// 'at' = över målet, 'near' = inom 10 % under målet, annars 'ok'.
+function pumpState(q){ return q>PUMP_MAX?'over':q>PUMP_TARGET?'at':q>PUMP_TARGET*0.9?'near':'ok'; }
+const PUMP_TXT={over:'Över pumptaket — pumparna kan börja slå av och på',
+  at:'Över målet 69 — ingen marginal kvar till taket', near:'Nära målet 69 m³/h', ok:'Inom kapacitet'};
 // Vattenmagasinets nivå och drifttid räknas numera ur dammodellen (se Damm-koll
 // längre ner): damPct() och damDaysAt(m³/h), grundade på byggritningens geometri.
 
@@ -353,7 +374,7 @@ let cannons = [
 let alarms = [
   {id:1, sev:'warn', title:'Kanon 2 — begränsat vattenflöde', meta:'Strypt pga pumpkapacitet · sedan 21:42', ack:false},
   {id:2, sev:'info', title:'Lans 2 — låg lufttemperatur, nära startgräns', meta:'Våttemp -6.0 °C · 22:05', ack:false},
-  {id:3, sev:'crit', title:'Pumphus — uttag nära kapacitetstak', meta:'62 / 70 m³/h · automatisk strypning aktiv', ack:false},
+  {id:3, sev:'crit', title:'Pumphus — uttag nära kapacitetstak', meta:'62 m³/h · mål 69, tak 70 · automatisk strypning aktiv', ack:false},
 ];
 
 /* Sparbanksspåret och de tjugo brunnarna — samma koordinater som prognosappen
@@ -454,13 +475,32 @@ let current='overview', charts={};
 function go(id){current=id;render();if(window.innerWidth<=860)window.scrollTo(0,0)}
 function buildNav(){
   const a=activeAlarms().length;
-  document.getElementById('nav').innerHTML=NAV.map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
-  document.getElementById('botnav').innerHTML=NAV.filter(n=>!['forecast','advisor','lances'].includes(n.id)).map(n=>`<a class="${n.id===current?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
+  const cur=current==='unit'?backTo:current;      // i enhetsvyn lyser vyn man kom ifrån
+  document.getElementById('nav').innerHTML=NAV.map(n=>`<a class="${n.id===cur?'active':''}" onclick="go('${n.id}')">${icon(n.icon)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
+  // Telefonens rad rymmer sex knappar. Kanoner och lansar delar därför på en
+  // ("Enheter", med växel i vyn); rådgivaren nås från Vatten och körfönstret
+  // från Översikt.
+  const mob=NAV.filter(n=>!['forecast','advisor','lances'].includes(n.id));
+  const on=n=>n.id===cur||(n.id==='cannons'&&cur==='lances')||(n.id==='water'&&cur==='advisor')||(n.id==='overview'&&cur==='forecast');
+  document.getElementById('botnav').innerHTML=mob.map(n=>`<a class="${on(n)?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.id==='cannons'?'Enheter':n.id==='water'?'Vatten':n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
 }
 
+/* Hård regel: gammal data får aldrig se live ut. Stämpeln visar klockslaget
+   för senaste värdet och slår om till varning när det är äldre än 90 s —
+   då har bryggan eller nätet tystnat. (I prototypen kommer "värdena" från
+   simuleringen var femte sekund.) */
+let lastData=Date.now();
+const STALE_S=90;
+function liveHTML(){
+  const d=new Date(lastData), t=hhmm(d)+':'+String(d.getSeconds()).padStart(2,'0');
+  return (Date.now()-lastData)/1000>STALE_S
+    ? `<span class="live stale" id="liveChip">⚠ Gammal data · senast ${t}</span>`
+    : `<span class="live" id="liveChip"><span class="dot"></span>Live · ${t}</span>`;
+}
+function refreshLive(){const e=document.getElementById('liveChip');if(e)e.outerHTML=liveHTML();}
 function topbar(crumb,title,extra=''){
   return `<div class="topbar"><div><div class="crumb">${crumb}</div><h2>${title}</h2></div>
-    <div class="row">${extra}<span class="live"><span class="dot"></span>Live · uppdaterad nyss</span></div></div>`;
+    <div class="row">${extra}${liveHTML()}</div></div>`;
 }
 
 /* ============================================================
@@ -468,21 +508,22 @@ function topbar(crumb,title,extra=''){
    ============================================================ */
 function vOverview(){
   const run=running().length, tw=cannons.find(c=>c.state==='run')?.tw??-6.3;
-  const wpct=Math.round(totalWater()/PUMP_MAX*100);
+  const wpct=Math.round(totalWater()/PUMP_MAX*100), ps=pumpState(totalWater());
+  const nOff=cannons.filter(c=>c.state==='off').length;
   const aa=activeAlarms();
   const banner = aa.length
     ? `<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${aa.length} aktiva larm</b> <span class="muted small">· allvarligast: ${aa.find(a=>a.sev==='crit')?.title||aa[0].title}</span></div><button class="linkbtn" onclick="go('alarms')">Visa larm</button></div>`
     : `<div class="banner ok">${icon('bell','#34d399')}<div style="flex:1"><b>Inga aktiva larm</b> <span class="muted small">· allt rullar på</span></div></div>`;
   return topbar('Driftövervakning','Översikt')+ `<div class="view">${banner}
   <div class="grid g-kpi">
-    <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} I drift</h3><div class="val">${run}<small> / ${cannons.length} enheter</small></div><div class="foot">${cannons.filter(c=>c.state==='limit').length} strypta · 1 avstängd</div></div>
-    <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Vattenuttag</h3><div class="val">${totalWater()}<small> / ${PUMP_MAX} m³/h</small></div><div class="bar ${wpct>90?'red':wpct>75?'amber':''}"><i style="width:${wpct}%"></i></div><div class="foot warn">${wpct>90?'Nära pumpkapacitet':'Inom kapacitet'}</div></div>
+    <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} I drift</h3><div class="val">${run}<small> / ${cannons.length} enheter</small></div><div class="foot">${cannons.filter(c=>c.state==='limit').length} strypta · ${nOff} ${nOff===1?'avstängd':'avstängda'}</div></div>
+    <div class="card kpi" style="cursor:pointer" onclick="go('water')"><h3>${icon('drop','#7dd3fc',15)} Vattenuttag</h3><div class="val">${totalWater()}<small> / ${PUMP_TARGET} m³/h</small></div><div class="bar ${ps==='over'||ps==='at'?'red':ps==='near'?'amber':''}"><i style="width:${Math.min(100,wpct)}%"></i></div><div class="foot ${ps==='ok'?'':ps==='near'?'warn':'down'}">${PUMP_TXT[ps]} · tak ${PUMP_MAX}</div></div>
     <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${tw.toFixed(1)}<small> °C</small></div><div class="foot up">▼ sjunker · bra för produktion</div></div>
     <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">≈ ${fmtDur(damDaysAt(totalWater())*24)} kvar vid nuvarande uttag</div></div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
-    <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — senaste 12 h</h3><canvas id="cTw" height="150"></canvas></div>
+    <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — senaste 12 h</h3><div class="chartbox"><canvas id="cTw"></canvas></div></div>
     <div class="card"><h3>${icon('clock','#7dd3fc',15)} Körfönster från prognosen</h3>
       <div class="row" style="margin-top:8px"><span class="chip s-run"><span class="d"></span>Går att köra nu</span></div>
       <p class="muted small" style="line-height:1.6;margin:11px 0 0">Gynnsamma förhållanden håller i sig <b style="color:var(--text)">till ca 09:00 imorgon</b>, därefter stiger våttemperaturen över startgränsen under eftermiddagen. Nästa fönster: natten mot torsdag.</p>
@@ -513,20 +554,25 @@ function unitCard(c){
 }
 
 function vWater(){
-  const tot=totalWater(), pct=Math.round(tot/PUMP_MAX*100), head=(PUMP_MAX-tot).toFixed(1);
-  const near=pct>90;
+  const tot=totalWater(), pct=Math.round(tot/PUMP_MAX*100), head=Math.max(0,PUMP_TARGET-tot).toFixed(1);
+  const ps=pumpState(tot), near=ps!=='ok', hot=ps==='over'||ps==='at';
+  const gcol=hot?'#f87171':near?'#fbbf24':'#22d3ee';
   return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
   <div class="card">
     <h3>${icon('gauge','#7dd3fc',15)} Pumphus</h3>
     <div class="pumpwrap" style="margin-top:14px">
-      <div class="gauge" style="--p:${pct};--gcol:${near?'#fbbf24':'#22d3ee'}"><div class="gv"><b>${pct}%</b><span>av kapacitet</span></div></div>
+      <div class="gauge" style="--p:${Math.min(100,pct)};--gcol:${gcol}"><div class="gv"><b>${tot}</b><span>m³/h · mål ${PUMP_TARGET}</span></div></div>
       <div class="pstat">
-        <div class="big">${tot} m³/h <span class="muted" style="font-weight:500">av ${PUMP_MAX} m³/h</span></div>
-        <div class="bar ${near?'amber':''}" style="max-width:340px"><i style="width:${pct}%"></i></div>
-        <p>${near
-          ? '<b style="color:var(--limit)">Nära kapacitetstaket.</b> Systemet stryper flera kanoner så att fler kan vara igång samtidigt — mindre produktion per kanon, men större del av spåret täcks.'
-          : 'God marginal. Marginal kvar: <b>'+head+' m³/h</b> — går att öka produktionen eller starta fler enheter.'}</p>
-        <p class="muted small">Pumptaket (${PUMP_MAX} m³/h) är det verkliga — pumparna som matar kanonerna, och därmed högsta flödet ur dammen.</p>
+        <div class="big">${tot} m³/h <span class="muted" style="font-weight:500">· mål högst ${PUMP_TARGET} · tak ${PUMP_MAX}</span></div>
+        <div class="bar ${hot?'red':near?'amber':''}" style="max-width:340px"><i style="width:${Math.min(100,pct)}%"></i></div>
+        <p>${ps==='over'
+          ? '<b style="color:var(--alarm)">Över pumptaket.</b> Över '+PUMP_MAX+' m³/h kan pumparna börja slå av och på. Minska uttaget.'
+          : ps==='at'
+          ? '<b style="color:var(--alarm)">Över målet '+PUMP_TARGET+' m³/h.</b> Ingen marginal kvar till taket '+PUMP_MAX+' — där börjar pumparna slå av och på.'
+          : ps==='near'
+          ? '<b style="color:var(--limit)">Nära målet.</b> Marginal kvar till '+PUMP_TARGET+' m³/h: <b>'+head+' m³/h</b>. Systemet stryper flera kanoner så att fler kan vara igång samtidigt.'
+          : 'God marginal. Kvar till målet '+PUMP_TARGET+' m³/h: <b>'+head+' m³/h</b> — går att öka produktionen eller starta fler enheter.'}</p>
+        <p class="muted small">${PUMP_MAX} m³/h är pumparnas absoluta max och därmed högsta flödet ur dammen. Kommer uttaget över det kan pumparna börja slå av och på, så vi siktar på högst ${PUMP_TARGET}.</p>
       </div>
     </div>
   </div>
@@ -542,13 +588,14 @@ function vWater(){
       </div>`}).join('')}
     <div class="flow-row" style="margin-top:4px;border-top:2px solid var(--border-hi);padding-top:11px">
       <div class="fname">${icon('drop','#22d3ee',18)} <b>Summa uttag</b></div>
-      <div class="flow-track"><div class="flow-fill ${near?'amber':''}" style="width:${pct}%"></div></div>
+      <div class="flow-track"><div class="flow-fill ${near?'amber':''}" style="width:${Math.min(100,pct)}%"></div></div>
       <div class="flow-val"><b>${tot}</b> <small>m³/h</small></div>
     </div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
-    <div class="card"><h3>${icon('drop','#7dd3fc',15)} Uttag vs kapacitet — senaste 12 h</h3><canvas id="cWater" height="150"></canvas></div>
+    <div class="card"><h3>${icon('drop','#7dd3fc',15)} Uttag vs kapacitet — senaste 12 h</h3><div class="chartbox"><canvas id="cWater"></canvas></div>
+      <div class="legend"><span><i style="background:#22d3ee"></i>Uttag</span><span><i style="background:#fbbf24"></i>Mål ${PUMP_TARGET}</span><span><i style="background:#f87171"></i>Tak ${PUMP_MAX}</span></div></div>
     <div class="card"><h3>${icon('track','#7dd3fc',15)} Täckning & strategi</h3>
       <div class="val" style="font-size:1.5rem;font-weight:700;margin-top:6px">≈ 1,8 <small class="muted" style="font-size:.9rem">av 2,3 km täcks nu</small></div>
       <div class="bar" style="margin-top:10px"><i style="width:78%"></i></div>
@@ -749,8 +796,8 @@ function advise(){
   const usable=usableVol(dam.V0), inflowD=damInflowM3d();  // m³ i magasinet resp. m³/dygn in
 
   let budget = advGoal==='last'
-    ? Math.min(sumF, PUMP_MAX, (usable/advDays + inflowD)/24)  // m³/h: håll volymen i advDays dygn
-    : Math.min(sumF, PUMP_MAX);                      // kör mot pumptaket
+    ? Math.min(sumF, PUMP_TARGET, (usable/advDays + inflowD)/24)  // m³/h: håll volymen i advDays dygn
+    : Math.min(sumF, PUMP_TARGET);                   // kör mot målet 69, aldrig mot taket 70
 
   if(advGoal==='cover'){
     // sprid tunt på alla behöriga så fler brunnar täcks
@@ -766,7 +813,7 @@ function advise(){
   const runN=rows.filter(u=>u.sug>0).length;
   const cov=Math.min(2.3, runN*0.30);              // fler enheter → längre bana
   const lastDays= sugTot>0 ? damDaysAt(sugTot) : 99;  // ur dammens volym + påfyllning
-  return {rows,sugTot,runN,cov,lastDays,pumpPct:Math.round(sugTot/PUMP_MAX*100)};
+  return {rows,sugTot,runN,cov,lastDays,pumpPct:Math.round(sugTot/PUMP_TARGET*100)};
 }
 
 function vAdvisor(){
@@ -788,7 +835,7 @@ function vAdvisor(){
    </div>
 
    <div class="grid g-kpi" style="margin-top:14px">
-     <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Föreslaget uttag</h3><div class="val">${r.sugTot}<small> / ${PUMP_MAX} m³/h</small></div><div class="bar ${r.pumpPct>95?'red':r.pumpPct>85?'amber':''}"><i style="width:${Math.min(100,r.pumpPct)}%"></i></div><div class="foot">${r.pumpPct}% av pumpkapaciteten</div></div>
+     <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Föreslaget uttag</h3><div class="val">${r.sugTot}<small> / ${PUMP_TARGET} m³/h</small></div><div class="bar ${r.pumpPct>100?'red':r.pumpPct>90?'amber':''}"><i style="width:${Math.min(100,r.pumpPct)}%"></i></div><div class="foot">${r.pumpPct}% av målet ${PUMP_TARGET} · tak ${PUMP_MAX}</div></div>
      <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} Enheter i drift</h3><div class="val">${r.runN}<small> / ${cannons.length}</small></div><div class="foot">${cannons.length-r.runN} vilande i förslaget</div></div>
      <div class="card kpi"><h3>${icon('track','#7dd3fc',15)} Täckning</h3><div class="val">≈ ${r.cov.toFixed(1)}<small> km</small></div><div class="bar"><i style="width:${Math.round(r.cov/2.3*100)}%"></i></div><div class="foot">av 2,3 km</div></div>
      <div class="card kpi"><h3>${icon('clock','#7dd3fc',15)} Vattnet räcker</h3><div class="val">≈ ${r.lastDays>30?'30+':r.lastDays.toFixed(1)}<small> dygn</small></div><div class="foot">vid föreslaget uttag</div></div>
@@ -811,7 +858,7 @@ function vAdvisor(){
         </div>`}).join('')}
    </div>
 
-   <div class="note" style="margin-top:14px">Logiken är en <b>skiss</b>: hård gräns = summan ≤ pumpkapacitet, och enheter med lägst våttemperatur prioriteras (bäst snö per liter). Vilka rattar som faktiskt går att läsa och ställa (flöde, dyssteg, luft) bekräftas när uppkopplingen finns — tills dess är siffrorna exempel. Våttemperaturen per plats är tänkt att komma från samma modell som prognosappen.</div>
+   <div class="note" style="margin-top:14px">Logiken är en <b>skiss</b>: hård gräns = summan ≤ ${PUMP_TARGET} m³/h (en under pumptaket ${PUMP_MAX}, där pumparna börjar slå av och på), och enheter med lägst våttemperatur prioriteras (bäst snö per liter). Vilka rattar som faktiskt går att läsa och ställa (flöde, dyssteg, luft) bekräftas när uppkopplingen finns — tills dess är siffrorna exempel. Våttemperaturen per plats är tänkt att komma från samma modell som prognosappen.</div>
   </div>`;
 }
 function setAdv(g){advGoal=g;render()}
@@ -863,7 +910,9 @@ function initMap(){
 function vUnits(typ){
   const list=cannons.filter(c=>c.typ===typ);
   const t=typ==='kanon'?'Kanoner':'Lansar';
-  return topbar('Enheter',t)+`<div class="view"><div class="grid g-units">${list.map(unitCard).join('')}</div>
+  // växeln gör lansarna nåbara på telefonen, där de saknar egen knapp i raden
+  const sw=`<div class="seg"><button class="${typ==='kanon'?'on':''}" onclick="go('cannons')">Kanoner</button><button class="${typ==='lans'?'on':''}" onclick="go('lances')">Lansar</button></div>`;
+  return topbar('Enheter',t,sw)+`<div class="view"><div class="grid g-units">${list.map(unitCard).join('')}</div>
    <div class="note" style="margin-top:16px">Tryck på en enhet för detaljer och trendkurvor. Lägen och steg speglar styrsystemets egen inkoppling — appen bara visar, styr aldrig.</div></div>`;
 }
 
@@ -894,7 +943,7 @@ function vForecast(){
      ${timelineHTML()}
    </div>
    <div class="grid g-2" style="margin-top:14px">
-     <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — prognos 48 h</h3><canvas id="cFc" height="160"></canvas></div>
+     <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — prognos 48 h</h3><div class="chartbox"><canvas id="cFc"></canvas></div></div>
      <div class="card"><h3>${icon('drop','#7dd3fc',15)} Vattenmagasin — så länge räcker det</h3>
        <div class="val" style="font-size:1.7rem;font-weight:700;margin-top:6px">≈ ${fmtDur(damDaysAt(totalWater())*24)} <small class="muted" style="font-size:.85rem">vid nuvarande uttag</small></div>
        <div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}" style="margin-top:10px"><i style="width:${Math.min(100,damPct())}%"></i></div>
@@ -912,10 +961,14 @@ function timelineHTML(){
 }
 
 /* ---------- unit detail (modal-ish, reuse main) ---------- */
-let backTo='overview';
-function openUnit(id){
-  const c=cannons.find(x=>x.id===id); backTo=current;
-  document.getElementById('main').innerHTML=topbar('Enhet / '+(c.typ==='kanon'?'Kanon':'Lans'),c.namn,
+/* Enhetsvyn är en egen vy i routern. Förut skrevs den rakt in i sidan utan att
+   routern visste om det, och uppdateringen var femte sekund ritade då om
+   översikten ovanpå — man kastades ut ur enheten man tittade på. */
+let backTo='overview', unitId=null;
+function openUnit(id){ if(current!=='unit')backTo=current; unitId=id; go('unit'); }
+function vUnit(){
+  const c=cannons.find(x=>x.id===unitId); if(!c)return vOverview();
+  return topbar('Enhet / '+(c.typ==='kanon'?'Kanon':'Lans'),c.namn,
     `<button class="linkbtn" onclick="go('${backTo}')">← Tillbaka</button>`)+`<div class="view">
     <div class="grid g-kpi">
       <div class="card kpi"><h3>Status</h3><div style="margin-top:10px">${chip(c.state)}</div><div class="foot" style="margin-top:9px">Brunn ${c.brunn} · steg ${c.steg}</div></div>
@@ -923,59 +976,107 @@ function openUnit(id){
       <div class="card kpi"><h3>Luft</h3><div class="val">${c.air.toFixed(1)}<small> ${c.typ==='kanon'?'m³/min':'l/s'}</small></div></div>
       <div class="card kpi"><h3>Våttemp vid enheten</h3><div class="val">${c.tw.toFixed(1)}<small> °C</small></div></div>
     </div>
-    <div class="card" style="margin-top:14px"><h3>${icon('drop','#7dd3fc',15)} Vattenflöde — senaste timmen</h3><canvas id="cUnit" height="150"></canvas></div>
+    <div class="card" style="margin-top:14px"><h3>${icon('drop','#7dd3fc',15)} Vattenflöde — senaste timmen</h3><div class="chartbox"><canvas id="cUnit"></canvas></div></div>
     <div class="note" style="margin-top:14px">Trenden hjälper att se om en strypning håller eller om flödet vandrar — t.ex. när pumptrycket pressas av att fler enheter startar.</div>
   </div>`;
-  drawUnitChart(c);
 }
 
 /* ============================================================
    CHARTS
    ============================================================ */
-const CH_BASE={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-  scales:{x:{grid:{color:'#ffffff0c'},ticks:{color:'#64789b',maxRotation:0,font:{size:10}}},
-          y:{grid:{color:'#ffffff0c'},ticks:{color:'#64789b',font:{size:10}}}}};
-function mkGrad(ctx,c1,c2){const g=ctx.createLinearGradient(0,0,0,160);g.addColorStop(0,c1);g.addColorStop(1,c2);return g}
-function line(id,labels,data,col,fill){
-  const el=document.getElementById(id);if(!el)return;const ctx=el.getContext('2d');
-  if(charts[id])charts[id].destroy();
-  charts[id]=new Chart(ctx,{type:'line',data:{labels,datasets:[{data,borderColor:col,borderWidth:2,
-    backgroundColor:fill?mkGrad(ctx,col+'44','#ffffff00'):'transparent',fill:!!fill,tension:.4,pointRadius:0,pointHoverRadius:4}]},options:CH_BASE});
+/* Tidsaxlar visar KLOCKSLAG, inte "−6 h": den som tittar vill veta när något
+   hände ("uttaget steg vid 03") och jämföra med vad som gjordes då. Punkterna
+   läggs på jämna klockslag och den sista är "nu". */
+const WD=['sön','mån','tis','ons','tor','fre','lör'];
+const hhmm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+const isEven=d=>d.getSeconds()===0&&d.getMilliseconds()===0;
+function timeAxis(hoursBack,stepMin){
+  const step=stepMin*60000, now=Date.now(), last=Math.floor(now/step)*step, n=Math.round(hoursBack*60/stepMin);
+  const ts=[]; for(let i=n;i>=0;i--)ts.push(new Date(last-i*step));
+  if(now-last>60000)ts.push(new Date(now));         // sista punkten = nu
+  return ts;
 }
+// Skriv bara ut etikett på jämna klockslag — annars blir axeln oläslig på en
+// telefon. null = ingen etikett och ingen stödlinje där.
+const tickHours=(ts,h)=>(v,i)=>{const d=ts[i];return d&&isEven(d)&&d.getMinutes()===0&&d.getHours()%h===0?hhmm(d):null};
+const tickMins=(ts,m)=>(v,i)=>{const d=ts[i];return d&&isEven(d)&&d.getMinutes()%m===0?hhmm(d):null};
+// sträck ut några hållpunkter till m värden (exempeldata tills historiken finns)
+const interp=(a,m)=>Array.from({length:m},(_,i)=>{const x=i/(m-1)*(a.length-1),k=Math.min(a.length-2,Math.floor(x));
+  return +(a[k]+(a[k+1]-a[k])*(x-k)).toFixed(1)});
+
+let softRender=false;   // sant när vyn bara fräschas upp med nya värden
+function chOpts(ts,unit,xTick,yExtra){
+  return {responsive:true,maintainAspectRatio:false,animation:softRender?false:{duration:450},
+    interaction:{mode:'index',intersect:false},   // ett finger var som helst på grafen räcker
+    plugins:{legend:{display:false},tooltip:{callbacks:{
+      title:it=>{const d=ts[it[0].dataIndex];return d?WD[d.getDay()]+' '+hhmm(d):''},
+      label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString('sv-SE',{maximumFractionDigits:1})} ${unit}`}}},
+    scales:{x:{grid:{color:'#ffffff0c'},ticks:{color:'#8ba0bd',maxRotation:0,autoSkip:false,font:{size:11},callback:xTick}},
+            y:Object.assign({grid:{color:'#ffffff0c'},ticks:{color:'#8ba0bd',font:{size:11}}},yExtra||{})}};
+}
+function mkGrad(ctx,c1,c2){const g=ctx.createLinearGradient(0,0,0,190);g.addColorStop(0,c1);g.addColorStop(1,c2);return g}
+const flat=(n,v,label,col)=>({data:Array(n).fill(v),label,borderColor:col,borderWidth:1.5,borderDash:[5,4],tension:0,pointRadius:0,pointHoverRadius:0});
+function chart(id,ts,datasets,opts){
+  const el=document.getElementById(id);if(!el||!window.Chart)return;
+  if(charts[id])charts[id].destroy();
+  const ctx=el.getContext('2d');
+  datasets.forEach(d=>{if(d.fill)d.backgroundColor=mkGrad(ctx,d.borderColor+'44','#ffffff00')});
+  charts[id]=new Chart(ctx,{type:'line',data:{labels:ts.map(hhmm),datasets},options:opts});
+}
+const series=(data,label,col)=>({data,label,borderColor:col,borderWidth:2,tension:.4,pointRadius:0,pointHoverRadius:4,fill:true});
+
 function drawCharts(){
   if(current==='overview'){
-    line('cTw',['−12h','−10','−8','−6','−4','−2','nu'],[-3.1,-3.8,-4.6,-5.2,-5.9,-6.1,-6.4],'#38bdf8',true);
+    const ts=timeAxis(12,30);
+    chart('cTw',ts,[series(interp([-3.1,-3.8,-4.6,-5.2,-5.9,-6.1,-6.4],ts.length),'Våttemp','#38bdf8'),
+      flat(ts.length,FTHRESH,'Startgräns','#fbbf2499')],chOpts(ts,'°C',tickHours(ts,2)));
   }
   if(current==='water'){
-    const l=['−12h','−10','−8','−6','−4','−2','nu'];
-    const el=document.getElementById('cWater');if(el){if(charts.cWater)charts.cWater.destroy();
-      charts.cWater=new Chart(el.getContext('2d'),{type:'line',data:{labels:l,datasets:[
-        {data:[44,52,60,65,67,64,totalWater()],label:'Uttag',borderColor:'#22d3ee',borderWidth:2,tension:.4,pointRadius:0,backgroundColor:mkGrad(el.getContext('2d'),'#22d3ee33','#ffffff00'),fill:true},
-        {data:Array(7).fill(PUMP_MAX),label:'Kapacitet',borderColor:'#f8717199',borderWidth:1.5,borderDash:[5,4],tension:0,pointRadius:0}
-      ]},options:CH_BASE});}
+    const ts=timeAxis(12,30);
+    const d=interp([44,52,60,65,67,64,totalWater()],ts.length); d[d.length-1]=totalWater();
+    // Y-axeln börjar inte på noll: det som spelar roll är avståndet upp till
+    // målet och taket, och det syns inte om hela skalan 0–70 ska få plats.
+    const lo=Math.max(0,Math.floor((Math.min(...d)-8)/10)*10);
+    chart('cWater',ts,[series(d,'Uttag','#22d3ee'),
+      flat(ts.length,PUMP_TARGET,'Mål','#fbbf24'),
+      Object.assign(flat(ts.length,PUMP_MAX,'Tak','#f87171'),{borderDash:[]})],
+      chOpts(ts,'m³/h',tickHours(ts,2),{min:lo,max:PUMP_MAX+4,ticks:{color:'#8ba0bd',font:{size:11},stepSize:10,includeBounds:false}}));
   }
   if(current==='forecast'){
-    const lab=[];for(let h=0;h<=48;h+=4)lab.push(h+'h');
-    const d=[-6.3,-6.6,-6.1,-5.2,-3.9,-2.1,-0.8,-1.9,-3.6,-5.4,-6.2,-6.5,-6.1];
-    const el=document.getElementById('cFc');if(el){if(charts.cFc)charts.cFc.destroy();
-      charts.cFc=new Chart(el.getContext('2d'),{type:'line',data:{labels:lab,datasets:[
-        {data:d,borderColor:'#38bdf8',borderWidth:2,tension:.4,pointRadius:0,backgroundColor:mkGrad(el.getContext('2d'),'#38bdf833','#ffffff00'),fill:true},
-        {data:Array(lab.length).fill(-2.5),borderColor:'#fbbf2499',borderWidth:1.5,borderDash:[5,4],pointRadius:0,tension:0}
-      ]},options:CH_BASE});}
+    // framåt: varannan timme i 48 h, från nästa jämna tvåtimmarsslag
+    // Jämna slag i LOKAL tid. Räknat i millisekunder hamnar de på jämna
+    // UTC-timmar, alltså udda svenska, och då blev axeln utan etiketter.
+    const f=new Date(); f.setMinutes(0,0,0); f.setHours(f.getHours()+1); if(f.getHours()%2)f.setHours(f.getHours()+1);
+    const ts=Array.from({length:25},(_,i)=>{const t=new Date(f); t.setHours(f.getHours()+2*i); return t});
+    const d=interp([-6.3,-6.6,-6.1,-5.2,-3.9,-2.1,-0.8,-1.9,-3.6,-5.4,-6.2,-6.5,-6.1],ts.length);
+    const tick=(v,i)=>{const t=ts[i];if(!t||t.getHours()%6!==0)return null;return t.getHours()===0?WD[t.getDay()]:hhmm(t)};
+    chart('cFc',ts,[series(d,'Våttemp','#38bdf8'),flat(ts.length,FTHRESH,'Startgräns','#fbbf2499')],chOpts(ts,'°C',tick));
+  }
+  if(current==='unit'){
+    const c=cannons.find(x=>x.id===unitId); if(!c)return;
+    const ts=timeAxis(1,5);
+    // historiken är påhittad men ska stå stilla mellan uppfräschningarna
+    if(!unitHist[c.id]||unitHist[c.id].length!==ts.length){const base=c.eau||4;
+      unitHist[c.id]=ts.map((_,i)=>+(base+Math.sin(i/2)*0.5+(Math.random()-.5)*0.3).toFixed(1));}
+    const d=unitHist[c.id].slice(); d[d.length-1]=c.eau;
+    chart('cUnit',ts,[series(d,'Vattenflöde','#22d3ee')],chOpts(ts,'m³/h',tickMins(ts,15)));
   }
 }
-function drawUnitChart(c){
-  const base=c.eau||4;const d=Array.from({length:12},(_,i)=>+(base+Math.sin(i/2)*0.5+(Math.random()-.5)*0.3).toFixed(1));
-  line('cUnit',['−60m','−50','−40','−30','−20','−10','nu'].concat([]),d.slice(0,7),'#22d3ee',true);
-}
+let unitHist={};
 
 /* ============================================================
    RENDER + LIVE
    ============================================================ */
-function render(){
+/* soft = vyn fräschas bara upp med nya värden (var femte sekund). Då ska
+   varken sidan tona in på nytt eller graferna rita upp sig från noll — det
+   blinkade hela tiden annars. */
+function render(soft){
+  softRender=!!soft;
   buildNav();
   const m=document.getElementById('main');
-  if(current==='overview')m.innerHTML=vOverview();
+  m.classList.toggle('soft',softRender);
+  if(current==='unit')m.innerHTML=vUnit();
+  else if(current==='overview')m.innerHTML=vOverview();
   else if(current==='water')m.innerHTML=vWater();
   else if(current==='dam')m.innerHTML=vDam();
   else if(current==='advisor')m.innerHTML=vAdvisor();
@@ -995,9 +1096,13 @@ setInterval(()=>{
     c.eau=Math.max(0,+(c.eau+(Math.random()-.5)*0.25).toFixed(1));
     c.tw=+(c.tw+(Math.random()-.5)*0.08).toFixed(1);
   });
-  // only cheap refresh when on data-heavy views
-  if(['overview','water','cannons','lances'].includes(current)) render();
+  lastData=Date.now();
+  // rita bara om vyer som visar mätvärden; övriga får bara ny tidsstämpel
+  if(['overview','water','cannons','lances','unit'].includes(current)) render(true);
+  else refreshLive();
 },5000);
+// Stämpeln ska åldras även om inga nya värden kommer — det är hela poängen.
+setInterval(refreshLive,15000);
 
 /* ---------- login ---------- */
 function login(){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');render()}

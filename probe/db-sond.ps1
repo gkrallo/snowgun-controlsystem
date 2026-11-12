@@ -1,259 +1,428 @@
 ﻿# ============================================================================
-#  Snögruppen - läs-only-sond mot styrsystemets databas (Live_Snowstar)
+#  Snögruppen - läs-only-sond mot styrdatorn och styrsystemets databaser
 #  ----------------------------------------------------------------------------
-#  Körs EN gång på styrdatorn för att kartlägga databasen inför bryggan.
+#  Körs EN gång på styrdatorn för att kartlägga allt bryggan behöver veta.
 #
 #  Vad den gör:
+#    * tittar på datorn (minne, processer, nät, klocka) och på GSSystems loggar.
 #    * ansluter till SQL Server och LÄSER (SELECT) - skriver aldrig något till
 #      databasen, skapar inget konto, ändrar inga inställningar.
+#    * går igenom ALLA GSSystems databaser. Granskningen av programfilerna
+#      visade att de är fyra (Live_Snowstar, Live_stat_SQL, Live_event_SQL,
+#      Live_Language) - den första versionen av sonden såg bara en.
 #    * alla läsningar använder WITH (NOLOCK) så styrprogrammet aldrig kan låsas.
-#    * radantal hämtas ur systemtabeller (ögonblickligt), inte via COUNT(*) som
-#      skulle skanna de stora statistiktabellerna.
+#    * radantal hämtas ur systemtabeller (ögonblickligt), inte via COUNT(*).
+#    * stora tabeller sorteras bara om de har ett index på datum - annars visas
+#      tre rader osorterat, så att ingen stor tabell skannas.
 #    * sparar allt i en textfil bredvid skriptet (db-sond-rapport_DATUM.txt).
 #
 #  Vad den INTE gör:
-#    * inget nätverk ut - inget skickas någonstans. Rapporten stannar på datorn
-#      tills DU tar med den.
-#    * inga tunga frågor, inga JOIN:ar, bara TOP 5 ur de små nulägestabellerna.
+#    * skickar ingen data någonstans. Den provar bara om datorn NÅR molnet
+#      (en tom förfrågan). Rapporten stannar på datorn tills DU tar med den.
+#    * visar inga rader ur tabeller som kan innehålla lösenord eller
+#      telefonnummer (smtp, sms, användare) - bara deras kolumner.
 #
-#  Krav: ingenting att installera. Windows PowerShell 5.1 (finns på alla
-#  Windows) och .NET:s inbyggda SqlClient räcker.
+#  Krav: ingenting att installera. Windows PowerShell (2.0 eller senare) och
+#  .NET:s inbyggda SqlClient räcker.
 # ============================================================================
 
 param(
-  # Standard är den instans GSSystem använder. Ändra bara om du vet att den
-  # heter något annat.
-  [string]$Server   = "127.0.0.1\SQLEXPRESS",
-  [string]$Database = "Live_Snowstar",
-  # Lämna User tom för att prova Windows-inloggning (om du är inloggad som en
-  # användare med åtkomst). Ange -User för SQL-inloggning (då frågas lösenord).
-  [string]$User     = "",
-  # Mapp där GSSystems loggfiler ligger. Lämna tom så letar skriptet själv.
-  # Ange -GsLog "C:\...\GSSystem" om auto-sökningen missar.
-  [string]$GsLog    = ""
+  # Lämna tom: skriptet provar de adresser GSSystem själv använder, i tur och
+  # ordning. Ange bara om du vet att instansen heter något annat.
+  [string]$Server = "",
+  # Lämna tom för att prova Windows-inloggning. Ange -User för SQL-inloggning
+  # (då frågas lösenordet - det skrivs aldrig ut och sparas inte).
+  [string]$User   = "",
+  # Mapp där GSSystem ligger. Lämna tom så letar skriptet själv.
+  [string]$GsLog  = ""
 )
 
 $ErrorActionPreference = "Stop"
-$stamp  = Get-Date -Format "yyyyMMdd-HHmmss"
-$report = Join-Path $PSScriptRoot "db-sond-rapport_$stamp.txt"
+$started = Get-Date
+$stamp   = Get-Date -Format "yyyyMMdd-HHmmss"
+
+# $PSScriptRoot finns först i PowerShell 3. Styrdatorn kan vara äldre.
+$here = $PSScriptRoot
+if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $here) { $here = (Get-Location).Path }
+$report = Join-Path $here "db-sond-rapport_$stamp.txt"
 $lines  = New-Object System.Collections.Generic.List[string]
 
-function Log([string]$s="") { $lines.Add($s); Write-Host $s }
+function Log([string]$s = "") { $lines.Add($s); Write-Host $s }
+function Head([string]$s) { Log ""; Log $s; Log ("-" * [Math]::Min(76, $s.Length)) }
+function Save-Report { $lines | Out-File -FilePath $report -Encoding utf8 }
 
 Log "============================================================"
-Log " Läs-only-sond mot styrsystemets databas"
+Log " Läs-only-sond mot styrdatorn (version 2)"
 Log " Tid:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Log " Server: $Server   Databas: $Database"
 Log " Dator:  $env:COMPUTERNAME   Användare: $env:USERNAME"
 Log "============================================================"
-Log ""
 
-# =================== 0. Miljö på datorn (för bryggan) =======================
+# =================== 0. Miljö på datorn =====================================
 # Körs före databasen, så vi får svaret även om DB-anslutningen misslyckas.
-# Avgör vilket språk bryggan skrivs i och om datorn alls når molnet.
-Log "0. MILJÖ PÅ DATORN (avgör hur bryggan byggs)"
-Log "--------------------------------------------"
+# Avgör vilket språk bryggan skrivs i, hur lätt den måste vara och om datorn
+# alls når molnet.
+Head "0. MILJÖ PÅ DATORN (avgör hur bryggan byggs)"
 Log ("   PowerShell: " + $PSVersionTable.PSVersion.ToString())
-Log ("   OS: " + (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption)
 
-# Python och Node? (inte nödvändigt, men avgör bryggans språk)
+# Get-CimInstance finns först i PowerShell 3 - Get-WmiObject fungerar överallt.
+try {
+  $os = Get-WmiObject Win32_OperatingSystem
+  Log ("   OS: " + $os.Caption + " " + $os.OSArchitecture + " (version " + $os.Version + ")")
+  $totMb  = [Math]::Round($os.TotalVisibleMemorySize / 1024)
+  $freeMb = [Math]::Round($os.FreePhysicalMemory / 1024)
+  Log ("   Arbetsminne: $totMb MB totalt, $freeMb MB ledigt just nu")
+  $boot = $os.ConvertToDateTime($os.LastBootUpTime)
+  Log ("   Senaste omstart: " + $boot.ToString('yyyy-MM-dd HH:mm') +
+       " (" + [Math]::Round(((Get-Date) - $boot).TotalDays, 1) + " dygn sedan)")
+} catch { Log "   OS/minne: kunde inte läsas ($($_.Exception.Message))" }
+try {
+  $cpu = Get-WmiObject Win32_Processor | Select-Object -First 1
+  Log ("   Processor: " + $cpu.Name.Trim() + " (" + $cpu.NumberOfLogicalProcessors + " trådar)")
+} catch {}
+try {
+  $d = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='C:'"
+  Log ("   Disk C: " + [Math]::Round($d.FreeSpace / 1GB, 1) + " GB ledigt av " +
+       [Math]::Round($d.Size / 1GB, 1) + " GB")
+} catch {}
+
+# Klocka och tidszon. Mätvärdena får tidsstämplar - då måste vi veta om
+# datorns klocka går rätt och hur den hanterar sommartid (watchdog-raderna i
+# GSSystems logg faller alla kl 03:00 natten då klockan ställs fram).
+try {
+  $tz = [System.TimeZone]::CurrentTimeZone
+  Log ("   Tidszon: " + $tz.StandardName + ", UTC" + $tz.GetUtcOffset((Get-Date)).ToString() +
+       ", sommartid just nu: " + $tz.IsDaylightSavingTime((Get-Date)))
+} catch {}
+
+# .NET-version (avgör bl.a. om TLS 1.2 finns, som molnet kräver)
+try {
+  $rel = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction Stop).Release
+  Log "   .NET Framework 4.x, Release-nummer: $rel (378389 = 4.5, 461808 = 4.7.2, 528040 = 4.8)"
+} catch { Log "   .NET Framework 4.x: hittades inte i registret" }
+
+# Python och Node? (inte nödvändigt - bryggan kan skrivas i PowerShell)
 foreach ($prog in @("python","py","node")) {
   try {
     $v = & $prog --version 2>&1
-    if ($LASTEXITCODE -eq 0 -or $v) { Log ("   $prog : " + ($v | Select-Object -First 1)) }
-    else { Log "   $prog : finns inte" }
+    if ($v) { Log ("   $prog : " + ($v | Select-Object -First 1)) } else { Log "   $prog : finns inte" }
   } catch { Log "   $prog : finns inte" }
 }
 
-# ODBC-drivrutiner för SQL Server (behövs om bryggan blir Python med pyodbc)
+# ODBC-drivrutiner för SQL Server (behövs bara om bryggan blir Python)
 try {
   $odbc = Get-ItemProperty "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers" -ErrorAction Stop
   $sqlDrivers = $odbc.PSObject.Properties |
     Where-Object { $_.Name -match "SQL Server" } | ForEach-Object { $_.Name }
   if ($sqlDrivers) { Log ("   ODBC SQL-drivrutiner: " + ($sqlDrivers -join "; ")) }
   else { Log "   ODBC SQL-drivrutiner: inga SQL Server-drivrutiner hittades" }
-} catch { Log "   ODBC-drivrutiner: kunde inte läsas ($($_.Exception.Message))" }
+} catch { Log "   ODBC-drivrutiner: kunde inte läsas" }
 
-# Når datorn molnet UTÅT på 443? (bryggan skickar bara ut, aldrig in)
-foreach ($hostName in @("firestore.googleapis.com","www.googleapis.com")) {
+# Vilka av styrsystemets program går, och hur mycket minne tar de?
+# Bryggan ska väga lätt bredvid dem.
+Log "   Processer (styrsystemet och SQL Server):"
+try {
+  $procs = Get-Process | Where-Object { $_.ProcessName -match '^(GSS|Server\d|SMScontrol|sqlservr|Statistiques|recup_stat|Gestion_base)' } |
+    Sort-Object ProcessName
+  if (-not $procs) { Log "      (inga hittades - går GSSystem just nu?)" }
+  foreach ($p in $procs) {
+    $st = ""; try { $st = "  startad " + $p.StartTime.ToString('yyyy-MM-dd HH:mm') } catch {}
+    Log ("      " + $p.ProcessName.PadRight(22) + [Math]::Round($p.WorkingSet64 / 1MB).ToString().PadLeft(6) + " MB" + $st)
+  }
+} catch { Log "      kunde inte läsas ($($_.Exception.Message))" }
+
+# SQL Servers tjänster. SQL Browser avgör om instansnamnet går att slå upp.
+try {
+  Get-Service | Where-Object { $_.Name -match '^(MSSQL|SQLBrowser|SQLAgent|SQLWriter)' } | ForEach-Object {
+    Log ("   Tjänst " + $_.Name + ": " + $_.Status)
+  }
+} catch {}
+
+# Når datorn molnet UTÅT? (bryggan skickar bara ut, aldrig in)
+# Först ren TCP mot de adresser Firebase använder, sedan en riktig HTTPS-
+# förfrågan: gamla Windows saknar ofta TLS 1.2 som förval, och då räcker det
+# inte att porten är öppen.
+foreach ($hostName in @("firestore.googleapis.com","identitytoolkit.googleapis.com","securetoken.googleapis.com")) {
   try {
     $c = New-Object System.Net.Sockets.TcpClient
-    $iar = $c.BeginConnect($hostName,443,$null,$null)
-    $ok = $iar.AsyncWaitHandle.WaitOne(4000,$false)
+    $iar = $c.BeginConnect($hostName, 443, $null, $null)
+    $ok = $iar.AsyncWaitHandle.WaitOne(4000, $false)
     if ($ok -and $c.Connected) { Log "   Utgående 443 -> $hostName : OK" }
     else { Log "   Utgående 443 -> $hostName : NÅDDE INTE (kolla brandvägg/proxy)" }
     $c.Close()
   } catch { Log "   Utgående 443 -> $hostName : fel ($($_.Exception.Message))" }
 }
-Log ""
+try {
+  # 3072 = TLS 1.2. Skrivet som tal eftersom namnet saknas i gamla .NET.
+  try { [System.Net.ServicePointManager]::SecurityProtocol = 3072 } catch { Log "   TLS 1.2 går inte att slå på i den här .NET-versionen" }
+  $uri = New-Object System.Uri "https://www.gstatic.com/generate_204"
+  $px = [System.Net.WebRequest]::GetSystemWebProxy().GetProxy($uri)
+  if ($px -and $px.AbsoluteUri -ne $uri.AbsoluteUri) { Log ("   Proxy används för utgående trafik: " + $px.Host + ":" + $px.Port) }
+  else { Log "   Proxy: ingen (direkt ut)" }
+  $req = [System.Net.WebRequest]::Create($uri)
+  $req.Timeout = 8000
+  $resp = $req.GetResponse()
+  Log ("   HTTPS med TLS 1.2 -> www.gstatic.com : OK (svar " + [int]$resp.StatusCode + ")")
+  # Molnets klocka mot datorns: en klocka som går fel ger fel tidsstämplar.
+  $srvDate = $resp.Headers["Date"]
+  if ($srvDate) {
+    $skew = ((Get-Date).ToUniversalTime() - [DateTime]::Parse($srvDate).ToUniversalTime()).TotalSeconds
+    Log ("   Datorns klocka mot molnets: " + [Math]::Round($skew) + " s skillnad")
+  }
+  $resp.Close()
+} catch { Log "   HTTPS med TLS 1.2 -> www.gstatic.com : MISSLYCKADES ($($_.Exception.Message))" }
 
-# =================== 0b. Styrsystemets loggar (PC:ns hälsa) =================
-# Granskningen av programfilerna visade minnesfel ("insufficient system
-# memory") och watchdog-krascher i loggarna. Här kollar vi om de FORTFARANDE
-# dyker upp - det avgör hur snålt bryggan måste köra. Bara läsning av filer,
-# inget ändras. Körs före DB-anslutningen så vi får svaret även om DB tiger.
-Log "0b. STYRSYSTEMETS LOGGAR (dyker minnesfelen fortfarande upp?)"
-Log "------------------------------------------------------------"
+# =================== 0b. Styrsystemets loggar ===============================
+# Granskningen av programfilerna visade minnesfel i SQL Server (en kväll,
+# 24 december 2022), watchdog-rader varje vår och en del andra fel. Här ser vi
+# vad som hänt sedan dess. Bara läsning av filer, inget ändras.
+Head "0b. STYRSYSTEMETS LOGGAR"
 
-# Leta reda på var loggarna ligger. Ange -GsLog om sökningen missar (hitta
-# mappen: högerklicka GSSystem-ikonen -> Öppna filplats).
 $logRoots = @()
 if ($GsLog -ne "") {
   if (Test-Path $GsLog) { $logRoots += $GsLog }
   else { Log "   Angiven -GsLog finns inte: $GsLog" }
 } else {
-  $cand = @("C:\GSSystem","C:\Sufag","C:\MND","C:\Snow")
-  if ($env:ProgramFiles)        { $cand += (Join-Path $env:ProgramFiles "GSSystem") }
+  $cand = @("C:\GSSystem","D:\GSSystem","C:\Sufag","C:\MND")
+  if ($env:ProgramFiles) { $cand += (Join-Path $env:ProgramFiles "GSSystem") }
   $pf86 = ${env:ProgramFiles(x86)}
-  if ($pf86)                    { $cand += (Join-Path $pf86 "GSSystem") }
+  if ($pf86) { $cand += (Join-Path $pf86 "GSSystem") }
   foreach ($root in $cand) { if (Test-Path $root) { $logRoots += $root } }
-
-  # SQL Servers egen ERRORLOG - "insufficient system memory" är klassiskt ETT
-  # SQL Server-fel, inte bara GSSystems. Leta upp Log-mappen för instanserna.
-  foreach ($b in @("$env:ProgramFiles\Microsoft SQL Server","${env:ProgramFiles(x86)}\Microsoft SQL Server")) {
-    if ($b -and (Test-Path $b)) {
-      Get-ChildItem -Path $b -Directory -Filter "MSSQL*" -ErrorAction SilentlyContinue | ForEach-Object {
-        $lp = Join-Path $_.FullName "MSSQL\Log"
-        if (Test-Path $lp) { $logRoots += $lp }
-      }
+}
+# SQL Servers egen ERRORLOG ligger i instansens Log-mapp.
+$sqlLogRoots = @()
+foreach ($b in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+  if (-not $b) { continue }
+  $ms = Join-Path $b "Microsoft SQL Server"
+  if (Test-Path $ms) {
+    Get-ChildItem -Path $ms -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer -and $_.Name -like "MSSQL*" } | ForEach-Object {
+      $lp = Join-Path $_.FullName "MSSQL\Log"
+      if (Test-Path $lp) { $sqlLogRoots += $lp }
     }
+  }
+}
+
+# Mönster vi räknar. SQL Server och GSSystem loggar på FRANSKA på den här
+# datorn. Franska mönster skrivs utan accenter, så matchningen inte beror på
+# hur loggfilen är teckenkodad.
+$groups = @(
+  @("minnesfel",        @("insufficient system memory","out of memory","insuffisante","not enough storage","cannot allocate")),
+  @("timeout",          @("timeout expired","timeout period")),
+  @("watchdog/krasch",  @("watchdog","ne fonctionne plus","crashed")),
+  @("overflow (VB6)",   @("passement de capacit")),
+  @("SQL-fel vid lagring", @("erreur enregistrement")),
+  @("behörighet",       @("permission refus","access denied","acces refus")),
+  @("dongel",           @("dongle"))
+)
+
+function Scan-LogFile($f, [bool]$tail) {
+  $sizeKb = [Math]::Round($f.Length / 1KB)
+  $shown = (Split-Path -Leaf $f.DirectoryName) + "\" + $f.Name
+  Log ("   " + $shown + "  (" + $sizeKb + " kB, ändrad " + $f.LastWriteTime.ToString('yyyy-MM-dd HH:mm') + ")")
+  if ($f.Length -eq 0) { Log "      (tom)"; return }
+  if ($f.Length -gt 20MB) { Log "      (för stor för att läsas här - hoppar över)"; return }
+  foreach ($g in $groups) {
+    try {
+      # -Encoding default = datorns ANSI-teckentabell, som GSSystem skriver i.
+      # Utan den läses é som skräptecken. Filer med BOM (SQL Servers
+      # ERRORLOG är UTF-16) känns igen ändå.
+      $found = @(Select-String -Path $f.FullName -Pattern $g[1] -SimpleMatch -Encoding default -ErrorAction SilentlyContinue)
+      if ($found.Count -gt 0) {
+        $last = $found[$found.Count - 1].Line.Trim()
+        if ($last.Length -gt 150) { $last = $last.Substring(0, 147) + "..." }
+        Log ("      " + $g[0] + ": " + $found.Count + " rader. Senaste: " + $last)
+      }
+    } catch {}
+  }
+  if ($tail) {
+    try {
+      $all = @(Get-Content -Path $f.FullName -ErrorAction Stop)
+      Log ("      Sista raderna (av " + $all.Count + "):")
+      $from = [Math]::Max(0, $all.Count - 12)
+      for ($i = $from; $i -lt $all.Count; $i++) {
+        $t = $all[$i].Trim(); if ($t -eq "") { continue }
+        if ($t.Length -gt 170) { $t = $t.Substring(0, 167) + "..." }
+        Log ("        " + $t)
+      }
+    } catch { Log "      (kunde inte läsa filen: $($_.Exception.Message))" }
   }
 }
 
 if ($logRoots.Count -eq 0) {
-  Log "   Hittade ingen loggmapp automatiskt."
-  Log "   Kör igen med sökväg till GSSystems mapp, t.ex.:"
-  Log "      .\db-sond.ps1 -GsLog `"C:\GSSystem`""
+  Log "   Hittade ingen GSSystem-mapp automatiskt."
+  Log "   Kör igen med sökväg till mappen, t.ex.:  .\db-sond.ps1 -GsLog `"C:\GSSystem`""
   Log "   (hitta mappen: högerklicka GSSystem-ikonen -> Öppna filplats)."
 } else {
-  # Mönster vi letar efter (gemener - Select-String är skiftlägesokänsligt).
-  # VIKTIGT: SQL Server på styrdatorn loggar på FRANSKA. Franska mönster skrivs
-  # utan accenter ("insuffisante", "passement de capacit"), så matchningen inte
-  # beror på hur loggfilen är teckenkodad (ANSI vs UTF-8).
-  $patterns = @(
-    "insufficient system memory","out of memory","outofmemory",
-    "cannot allocate","not enough storage",      # engelska minnesfel
-    "insuffisante",                               # fr. minne: "Memoire ... insuffisante"
-    "watchdog","ne fonctionne plus","crashed",    # watchdog / krasch
-    "passement de capacit",                       # fr. VB6-overflow: "Depassement de capacite"
-    "timeout expired")                            # frågor som hinner ta slut (strain)
-  $hits = New-Object System.Collections.Generic.List[object]
-  $scanned = 0
-  foreach ($root in ($logRoots | Select-Object -Unique)) {
-    Log "   Söker i: $root"
+  foreach ($root in $logRoots) {
+    Log "   GSSystems mapp: $root"
     try {
-      $files = Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -match '\.(log|txt)$' -or $_.Name -match 'log' } |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 40
-      foreach ($f in $files) {
-        $scanned++
-        try {
-          $found = Select-String -Path $f.FullName -Pattern $patterns -SimpleMatch -ErrorAction SilentlyContinue
-          foreach ($m in $found) {
-            $hits.Add([pscustomobject]@{ Fil=$f.Name; Rad=$m.LineNumber;
-              Text=($m.Line.Trim()); Andrad=$f.LastWriteTime })
-          }
-        } catch {}
-      }
+      # .log i BdD, .rap och GSSystem*.tmp i concept - det är där GSSystem skriver.
+      $files = Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { -not $_.PSIsContainer -and ($_.Extension -match '^\.(log|rap)$' -or $_.Name -match '^GSSystem.*\.tmp$') } |
+        Sort-Object FullName
+      if (-not $files) { Log "      (inga loggfiler hittades här)" }
+      foreach ($f in $files) { Scan-LogFile $f $true }
     } catch { Log "      (kunde inte läsa mappen: $($_.Exception.Message))" }
   }
-  Log "   Loggfiler genomsökta: $scanned (de 40 senast ändrade per mapp)"
-  if ($hits.Count -eq 0) {
-    Log "   Inga minnes-/watchdog-rader hittades. (Bra tecken.)"
-  } else {
-    $senaste = ($hits | Sort-Object Andrad -Descending | Select-Object -First 1).Andrad
-    Log ("   HITTADE " + $hits.Count + " rad(er). Senaste berörda loggfil ändrad: " +
-         $senaste.ToString('yyyy-MM-dd HH:mm'))
-    Log "   Exempel (senaste först) - FIL : RAD : text:"
-    foreach ($h in ($hits | Sort-Object Andrad -Descending | Select-Object -First 8)) {
-      $t = $h.Text; if ($t.Length -gt 80) { $t = $t.Substring(0,77) + "..." }
-      Log ("      " + $h.Andrad.ToString('yyyy-MM-dd') + "  " + $h.Fil + " : " + $h.Rad + " : " + $t)
-    }
-  }
 }
-Log ""
+foreach ($root in $sqlLogRoots) {
+  Log "   SQL Servers loggmapp: $root"
+  try {
+    $files = Get-ChildItem -Path $root -ErrorAction SilentlyContinue |
+      Where-Object { -not $_.PSIsContainer -and $_.Name -like "ERRORLOG*" } | Sort-Object Name
+    foreach ($f in $files) { Scan-LogFile $f $false }
+  } catch { Log "      (kunde inte läsa mappen: $($_.Exception.Message))" }
+}
+if ($sqlLogRoots.Count -eq 0) { Log "   SQL Servers loggmapp hittades inte under Program Files." }
 
-# ---- bygg anslutningssträng (SQL- eller Windows-inloggning) ----------------
+# Spara det vi har hittills - om något går snett längre ner finns det ändå.
+Save-Report
+
+# =================== 1. Anslutning ==========================================
+Head "1. ANSLUTNING TILL SQL SERVER"
+
+$pw = ""
 if ($User -ne "") {
-  $sec = Read-Host "Lösenord för SQL-inloggningen '$User'" -AsSecureString
+  $sec  = Read-Host "Lösenord för SQL-inloggningen '$User'" -AsSecureString
   $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
   $pw   = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
   [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-  $connStr = "Server=$Server;Database=$Database;User Id=$User;Password=$pw;" +
-             "Encrypt=False;TrustServerCertificate=True;Connect Timeout=6;" +
-             "Application Name=snogrupp-sond"
   $authNote = "SQL-inloggning som '$User'"
 } else {
-  $connStr = "Server=$Server;Database=$Database;Integrated Security=SSPI;" +
-             "Encrypt=False;TrustServerCertificate=True;Connect Timeout=6;" +
-             "Application Name=snogrupp-sond"
   $authNote = "Windows-inloggning ($env:USERNAME)"
 }
 
-# ---- hjälpfunktion: kör en SELECT och returnera en DataTable -----------------
-function Invoke-Read([System.Data.SqlClient.SqlConnection]$conn, [string]$sql) {
+# GSSystem använder olika skrivsätt i olika program (SQL.ini, exe.config).
+# Vilket som fungerar beror på om SQL Browser går och om TCP är påslaget, så
+# vi provar dem i tur och ordning. Ingen databas anges: vi hamnar i
+# inloggningens förvalda och byter sedan till var och en.
+if ($Server -ne "") { $servers = @($Server) }
+else { $servers = @("127.0.0.1\SQLEXPRESS,1433", "localhost\SQLEXPRESS", ".\SQLEXPRESS", "127.0.0.1,1433") }
+
+$conn = $null
+foreach ($srv in $servers) {
+  $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+  $b["Data Source"] = $srv
+  $b["Connect Timeout"] = 6
+  $b["Application Name"] = "snogrupp-sond"
+  if ($User -ne "") { $b["User ID"] = $User; $b["Password"] = $pw } else { $b["Integrated Security"] = $true }
+  $try = New-Object System.Data.SqlClient.SqlConnection $b.ConnectionString
+  try {
+    $try.Open()
+    $conn = $try
+    Log "   ANSLUTNING OK mot $srv ($authNote)."
+    break
+  } catch {
+    $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+    $msg = ($ex.Message -replace "[\r\n]+", " ")
+    if ($msg.Length -gt 160) { $msg = $msg.Substring(0, 157) + "..." }
+    Log "   $srv : $msg"
+    # 18456 = servern svarade men godtog inte inloggningen. Då hjälper det
+    # inte att prova fler adresser - det är kontot som är fel.
+    if ($ex -is [System.Data.SqlClient.SqlException] -and $ex.Number -eq 18456) {
+      Log "   Servern svarar, men inloggningen godtogs inte."
+      break
+    }
+  }
+}
+$pw = ""
+
+if (-not $conn) {
+  Log ""
+  Log "ANSLUTNING MISSLYCKADES ($authNote)."
+  if ($User -eq "") {
+    Log "Tips: kör med styrsystemets SQL-inloggning i stället:"
+    Log "   powershell -ExecutionPolicy Bypass -File .\db-sond.ps1 -User GSS_Login"
+    Log "(du får då skriva lösenordet - det står i SECRETS.md hemma)."
+  }
+  Save-Report
+  Write-Host ""
+  Write-Host "Rapport (miljö och loggar finns med, databasen saknas) sparad: $report"
+  exit 1
+}
+
+# ---- hjälpfunktioner för läsning --------------------------------------------
+function Invoke-Read([string]$sql) {
   $cmd = $conn.CreateCommand()
   $cmd.CommandText = $sql
   $cmd.CommandTimeout = 15
   $da = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
   $dt = New-Object System.Data.DataTable
   [void]$da.Fill($dt)
-  return $dt
+  # Kommat hindrar PowerShell från att veckla ut tabellen till lösa rader.
+  return ,$dt
 }
 
-function Show-Table([System.Data.DataTable]$dt, [int]$maxCol = 4000) {
+# Kolumner och tabeller som kan bära lösenord, telefonnummer eller licenser.
+# Rapporten lämnar datorn, så sådant ska inte följa med.
+$secretCol   = '(?i)pass|pwd|mdp|motdepasse|secret|token'
+$secretTable = '(?i)smtp|mail|sms|user|utilisat|login|pass|mdp|licen|dongle|hasp|operateur|operator'
+
+function Show-Rows($dt, [int]$max) {
+  $i = 0
+  foreach ($r in $dt.Rows) {
+    $i++; if ($i -gt $max) { break }
+    $parts = New-Object System.Collections.Generic.List[string]
+    foreach ($c in $dt.Columns) {
+      $v = $r[$c]
+      if ($v -is [System.DBNull]) { continue }
+      if ($v -is [byte[]]) { $s = "<bin " + $v.Length + " byte>" }
+      elseif ($v -is [datetime]) { $s = $v.ToString("yyyy-MM-dd HH:mm:ss") }
+      else { $s = "$v" }
+      $s = ($s -replace "[\r\n]+", " ").Trim()
+      if ($s -eq "") { continue }
+      if ($c.ColumnName -match $secretCol) { $s = "<dolt>" }
+      if ($s.Length -gt 60) { $s = $s.Substring(0, 57) + "..." }
+      $parts.Add($c.ColumnName + "=" + $s)
+    }
+    Log ("      #" + $i + ": " + ($parts.ToArray() -join " | "))
+  }
+}
+function Show-Table($dt) {
   if ($dt.Rows.Count -eq 0) { Log "   (inga rader)"; return }
-  $cols = $dt.Columns | ForEach-Object { $_.ColumnName }
+  $cols = @($dt.Columns | ForEach-Object { $_.ColumnName })
   Log ("   " + ($cols -join " | "))
   foreach ($r in $dt.Rows) {
     $vals = foreach ($c in $cols) {
-      $v = "$($r[$c])"
-      if ($v.Length -gt 60) { $v = $v.Substring(0,57) + "..." }
+      $v = ("" + $r[$c]) -replace "[\r\n]+", " "
+      if ($v.Length -gt 70) { $v = $v.Substring(0, 67) + "..." }
       $v
     }
     Log ("   " + ($vals -join " | "))
   }
 }
+function Q([string]$name) { return "[" + $name.Replace("]", "]]") + "]" }
 
-$conn = New-Object System.Data.SqlClient.SqlConnection $connStr
+# =================== 2. Server, version och minne ============================
+Head "2. SERVER, VERSION OCH MINNE"
 try {
-  $conn.Open()
-  Log "ANSLUTNING OK ($authNote)."
-  Log ""
-} catch {
-  Log "ANSLUTNING MISSLYCKADES ($authNote):"
-  Log "   $($_.Exception.Message)"
-  Log ""
-  if ($User -eq "") {
-    Log "Tips: kör med SQL-inloggning i stället, t.ex.:"
-    Log "   .\db-sond.ps1 -User GSS_Login"
-    Log "(du far da skriva losenordet - det hamtas ur styrsystemets installningar)."
-  }
-  $lines | Out-File -FilePath $report -Encoding utf8
-  Write-Host ""
-  Write-Host "Rapport (med felet) sparad: $report"
-  exit 1
-}
-
-# =================== 1. Version och grunduppgifter ===========================
-Log "1. SERVER OCH VERSION"
-Log "---------------------"
-try {
-  $dt = Invoke-Read $conn "SELECT @@VERSION AS v, SERVERPROPERTY('InstanceDefaultDataPath') AS datapath, DB_NAME() AS db"
+  $dt = Invoke-Read "SELECT @@VERSION AS v, @@LANGUAGE AS sprak, SERVERPROPERTY('Collation') AS kollation, SERVERPROPERTY('Edition') AS utgava, GETDATE() AS servertid, SUSER_SNAME() AS inloggad_som, DB_NAME() AS forvald_db"
   foreach ($r in $dt.Rows) {
-    Log ("   " + ($r["v"] -replace "`r?`n"," "))
-    Log ("   Datafiler: " + $r["datapath"])
-    Log ("   Ansluten databas: " + $r["db"])
+    Log ("   " + (("" + $r["v"]) -replace "\s+", " "))
+    Log ("   Utgåva: " + $r["utgava"] + "   Språk: " + $r["sprak"] + "   Kollation: " + $r["kollation"])
+    Log ("   Serverns klocka: " + ([datetime]$r["servertid"]).ToString('yyyy-MM-dd HH:mm:ss') + "   Inloggad som: " + $r["inloggad_som"] + "   Förvald databas: " + $r["forvald_db"])
   }
 } catch { Log "   FEL: $($_.Exception.Message)" }
-Log ""
-
-# =================== 2. Nätverk (TCP/IP och port) ============================
-# Avgörande för bryggan: lyssnar servern på TCP och i så fall på vilken port?
-Log "2. NÄTVERKSPROTOKOLL (för bryggan senare)"
-Log "-----------------------------------------"
+# Minnestaket. SQL Express har ett eget tak på buffertminnet (1 GB i äldre
+# versioner) - det var det som tog slut julen 2022.
 try {
-  $dt = Invoke-Read $conn @"
+  $dt = Invoke-Read "SELECT name, CAST(value_in_use AS bigint) AS varde FROM sys.configurations WHERE name LIKE '%server memory%' ORDER BY name"
+  foreach ($r in $dt.Rows) { Log ("   " + $r["name"] + ": " + $r["varde"]) }
+} catch { Log "   Minnesinställningar: kunde inte läsas ($($_.Exception.Message))" }
+try {
+  $dt = Invoke-Read "SELECT physical_memory_in_use_kb/1024 AS anvant_MB, memory_utilization_percentage AS andel_procent, process_physical_memory_low AS lagt_fysiskt, process_virtual_memory_low AS lagt_virtuellt FROM sys.dm_os_process_memory"
+  Log "   SQL Servers minne just nu:"; Show-Table $dt
+} catch { Log "   SQL Servers minne just nu: kräver VIEW SERVER STATE (går inte med det här kontot)" }
+try {
+  $dt = Invoke-Read "SELECT sqlserver_start_time FROM sys.dm_os_sys_info"
+  foreach ($r in $dt.Rows) { Log ("   SQL Server startad: " + ([datetime]$r[0]).ToString('yyyy-MM-dd HH:mm')) }
+} catch {}
+
+# =================== 3. Nätverk (TCP/IP och port) ============================
+# Bryggan körs på samma dator, så det här är mest för att veta läget.
+Head "3. NÄTVERKSPROTOKOLL"
+try {
+  $dt = Invoke-Read @"
 SELECT registry_key, value_name, value_data
 FROM sys.dm_server_registry
 WHERE registry_key LIKE '%SuperSocketNetLib%Tcp%'
@@ -261,97 +430,156 @@ WHERE registry_key LIKE '%SuperSocketNetLib%Tcp%'
 ORDER BY registry_key, value_name
 "@
   Show-Table $dt
-} catch { Log "   Kunde inte läsa (kräver VIEW SERVER STATE): $($_.Exception.Message)" }
-Log ""
-
-# =================== 3. Inloggningar och roller =============================
-# För att planera ett eget läs-only-konto (db_datareader) i stället för det
-# hårdkodade GSS_Login.
-Log "3. INLOGGNINGAR OCH MINA RÄTTIGHETER"
-Log "------------------------------------"
+} catch { Log "   Kunde inte läsa (kräver VIEW SERVER STATE eller nyare SQL Server)" }
 try {
-  $dt = Invoke-Read $conn @"
-SELECT name, type_desc, is_disabled
-FROM sys.server_principals
-WHERE type IN ('S','U','G') AND name NOT LIKE '##%'
-ORDER BY type_desc, name
-"@
+  $dt = Invoke-Read "SELECT program_name AS program, COUNT(*) AS anslutningar FROM sys.dm_exec_sessions WHERE is_user_process = 1 GROUP BY program_name ORDER BY COUNT(*) DESC"
+  Log "   Program som är anslutna just nu:"; Show-Table $dt
+} catch { Log "   Anslutna program: kräver VIEW SERVER STATE" }
+
+# =================== 4. Inloggningar och roller =============================
+# För att planera ett eget läs-only-konto i stället för GSS_Login.
+Head "4. INLOGGNINGAR OCH MINA RÄTTIGHETER"
+try {
+  $dt = Invoke-Read "SELECT name, type_desc, is_disabled FROM sys.server_principals WHERE type IN ('S','U','G') AND name NOT LIKE '##%' ORDER BY type_desc, name"
   Show-Table $dt
 } catch { Log "   FEL: $($_.Exception.Message)" }
 try {
-  $dt = Invoke-Read $conn @"
-SELECT SUSER_SNAME() AS inloggad_som,
-       IS_SRVROLEMEMBER('sysadmin') AS ar_sysadmin,
-       IS_MEMBER('db_datareader') AS kan_lasa_allt,
-       IS_MEMBER('db_owner') AS ar_db_owner
-"@
+  $dt = Invoke-Read "SELECT IS_SRVROLEMEMBER('sysadmin') AS ar_sysadmin, IS_SRVROLEMEMBER('securityadmin') AS far_skapa_konton"
   Show-Table $dt
 } catch { Log "   FEL: $($_.Exception.Message)" }
-Log ""
 
-# =================== 4. Alla tabeller med radantal ==========================
-# Radantal ur sys.partitions - ögonblickligt, skannar ingenting.
-Log "4. TABELLER OCH RADANTAL (störst först)"
-Log "--------------------------------------"
+# =================== 5. Databaserna ==========================================
+Head "5. DATABASER PÅ SERVERN"
+$dbNames = @()
 try {
-  $dt = Invoke-Read $conn @"
+  $dt = Invoke-Read "SELECT name, database_id, state_desc, recovery_model_desc, create_date FROM sys.databases ORDER BY database_id"
+  Show-Table $dt
+  foreach ($r in $dt.Rows) { if ([int]$r["database_id"] -gt 4 -and ("" + $r["state_desc"]) -eq "ONLINE") { $dbNames += ("" + $r["name"]) } }
+} catch { Log "   FEL: $($_.Exception.Message)" }
+try {
+  $dt = Invoke-Read "SELECT DB_NAME(database_id) AS db, type_desc, CAST(size AS bigint)*8/1024 AS storlek_MB, physical_name FROM sys.master_files WHERE database_id > 4 ORDER BY database_id, file_id"
+  Log "   Filer:"; Show-Table $dt
+} catch { Log "   Filstorlekar: kunde inte läsas med det här kontot" }
+if ($dbNames.Count -eq 0) { $dbNames = @("Live_Snowstar","Live_stat_SQL","Live_event_SQL","Live_Language") }
+
+# =================== 6. Varje databas: tabeller, kolumner, smakprov ==========
+# Radantal ur sys.partitions. Smakprov: små tabeller visas hela (det är där
+# nuläget och apparatlistorna finns), stora bara med de tre senaste raderna.
+foreach ($db in $dbNames) {
+  Head "6. DATABAS $db"
+  try { $conn.ChangeDatabase($db) }
+  catch { Log "   Kommer inte åt databasen: $($_.Exception.Message)"; continue }
+
+  try {
+    $dt = Invoke-Read "SELECT IS_MEMBER('db_datareader') AS datareader, IS_MEMBER('db_datawriter') AS datawriter, IS_MEMBER('db_owner') AS db_owner"
+    Log "   Mina roller här:"; Show-Table $dt
+  } catch {}
+
+  # --- tabeller och radantal ---
+  $tables = $null
+  try {
+    $tables = Invoke-Read @"
 SELECT s.name AS sch, t.name AS tabell, SUM(p.rows) AS rader
 FROM sys.tables t
-JOIN sys.schemas s   ON t.schema_id = s.schema_id
+JOIN sys.schemas s    ON t.schema_id = s.schema_id
 JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0,1)
 GROUP BY s.name, t.name
-ORDER BY SUM(p.rows) DESC, t.name
+ORDER BY t.name
 "@
-  Show-Table $dt
-} catch { Log "   FEL: $($_.Exception.Message)" }
-Log ""
+  } catch { Log "   Tabellistan: FEL: $($_.Exception.Message)"; continue }
+  Log ("   " + $tables.Rows.Count + " tabeller.")
 
-# =================== 5. Kolumner för nyckeltabellerna =======================
-# De tabeller granskningen pekade ut. De numrerade kolumnerna i SGC*_Main är
-# det vi behöver mappa mot kontrollrumsskärmen.
-$nyckel = @("stat_piste_canon_y","alarms_techno","TH_Main","Wind_Main","SGC300_Main","SGC400_Main")
-Log "5. KOLUMNER I NYCKELTABELLERNA"
-Log "------------------------------"
-foreach ($tbl in $nyckel) {
-  Log "  [$tbl]"
+  # --- kolumner, alla tabeller i en fråga ---
+  $colsOf = @{}
   try {
-    $dt = Invoke-Read $conn @"
-SELECT c.column_id AS nr, c.name AS kolumn, ty.name AS typ,
-       c.max_length AS bredd, c.is_nullable AS kan_vara_null
-FROM sys.columns c
-JOIN sys.types ty ON c.user_type_id = ty.user_type_id
-WHERE c.object_id = OBJECT_ID('$tbl')
-ORDER BY c.column_id
+    $dt = Invoke-Read @"
+SELECT t.name AS tabell, c.name AS kol, ty.name AS typ
+FROM sys.tables t
+JOIN sys.columns c ON c.object_id = t.object_id
+JOIN sys.types ty  ON c.user_type_id = ty.user_type_id
+ORDER BY t.name, c.column_id
 "@
-    if ($dt.Rows.Count -eq 0) { Log "   (tabellen finns inte eller saknar åtkomst)" }
-    else { Show-Table $dt }
-  } catch { Log "   FEL: $($_.Exception.Message)" }
-  Log ""
-}
+    foreach ($r in $dt.Rows) {
+      $tn = "" + $r["tabell"]
+      if (-not $colsOf.ContainsKey($tn)) { $colsOf[$tn] = New-Object System.Collections.Generic.List[string] }
+      $colsOf[$tn].Add(("" + $r["kol"]) + ":" + ("" + $r["typ"]))
+    }
+  } catch { Log "   Kolumner: FEL: $($_.Exception.Message)" }
 
-# =================== 6. Smakprov ur nulägestabellerna =======================
-# TOP 5 WITH (NOLOCK) ur de små, aktuella tabellerna. Hjälper att se hur ett
-# "nu-värde" ser ut, och att mappa de numrerade kolumnerna mot skärmen.
-Log "6. SMAKPROV - TOP 5 RADER (WITH NOLOCK)"
-Log "--------------------------------------"
-foreach ($tbl in $nyckel) {
-  Log "  [$tbl]"
+  # --- index: vilken kolumn leder varje index? Avgör om sortering är billig ---
+  $leadCols = @{}
   try {
-    $dt = Invoke-Read $conn "SELECT TOP 5 * FROM [$tbl] WITH (NOLOCK)"
-    Show-Table $dt
-  } catch { Log "   (hoppar över: $($_.Exception.Message))" }
-  Log ""
+    $dt = Invoke-Read @"
+SELECT t.name AS tabell, c.name AS kol
+FROM sys.indexes i
+JOIN sys.tables t         ON t.object_id = i.object_id
+JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1
+JOIN sys.columns c        ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+WHERE i.index_id > 0
+"@
+    foreach ($r in $dt.Rows) {
+      $tn = "" + $r["tabell"]
+      if (-not $leadCols.ContainsKey($tn)) { $leadCols[$tn] = @() }
+      $leadCols[$tn] += ("" + $r["kol"]).ToLower()
+    }
+  } catch {}
+
+  # I språkdatabasen ligger texterna som förklarar de numrerade kolumnerna -
+  # där vill vi ha mer än ett smakprov.
+  $allLimit = 100
+  if ($db -match '(?i)language') { $allLimit = 3000 }
+
+  foreach ($t in $tables.Rows) {
+    $tn = "" + $t["tabell"]; $sch = "" + $t["sch"]; $n = [long]$t["rader"]
+    $cl = @(); if ($colsOf.ContainsKey($tn)) { $cl = $colsOf[$tn].ToArray() }
+    Log ""
+    Log ("   [" + $tn + "]  " + $n + " rader, " + $cl.Count + " kolumner")
+    if ($cl.Count -gt 0) {
+      # radbryt kolumnlistan så filen går att läsa
+      $line = "      kol: "
+      foreach ($c in $cl) {
+        if (($line.Length + $c.Length) -gt 118) { Log $line; $line = "           " }
+        $line += $c + "  "
+      }
+      Log $line.TrimEnd()
+    }
+    if ($n -eq 0) { continue }
+    if ($tn -match $secretTable) { Log "      (rader visas inte - tabellen kan innehålla lösenord eller telefonnummer)"; continue }
+
+    $names = @($cl | ForEach-Object { ($_ -split ":")[0] })
+    $dateCol = $null
+    foreach ($cand in @("DateUpd","date","dateRap","Date_Heure","datetime")) {
+      foreach ($nm in $names) { if ($nm -ieq $cand) { $dateCol = $nm; break } }
+      if ($dateCol) { break }
+    }
+    $top = 3; if ($n -le $allLimit) { $top = [int]$n }
+    $order = ""; $note = ""
+    if ($dateCol) {
+      $indexed = $leadCols.ContainsKey($tn) -and ($leadCols[$tn] -contains $dateCol.ToLower())
+      # Sortera bara när det är billigt: liten tabell eller index på datumet.
+      if ($n -le 300000 -or $indexed) { $order = " ORDER BY " + (Q $dateCol) + " DESC"; $note = " (senaste först)" }
+      else { $note = " (osorterat - stor tabell utan datumindex, raderna kan vara gamla)" }
+    }
+    try {
+      $dt = Invoke-Read ("SELECT TOP " + $top + " * FROM " + (Q $sch) + "." + (Q $tn) + " WITH (NOLOCK)" + $order)
+      Log ("      " + $dt.Rows.Count + " rader visas" + $note + ":")
+      Show-Rows $dt $top
+    } catch { Log "      (hoppar över: $($_.Exception.Message))" }
+  }
+  Save-Report
 }
 
 $conn.Close()
 
+$secs = [Math]::Round(((Get-Date) - $started).TotalSeconds)
+Log ""
 Log "============================================================"
-Log " KLART. Inget skrevs till databasen."
+Log " KLART på $secs s. Inget skrevs till databasen."
 Log " Ta med den här filen tillbaka:"
 Log "   $report"
 Log "============================================================"
 
-$lines | Out-File -FilePath $report -Encoding utf8
+Save-Report
 Write-Host ""
 Write-Host "Rapport sparad: $report"
 Write-Host "Det är den filen du tar med hem (lägg på Drive igen eller på ett USB-minne)."

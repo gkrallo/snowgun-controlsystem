@@ -120,6 +120,71 @@ utrustning det gäller):
 Det finns alltså redan **exakt de datakällor som efterfrågades**: kanoner,
 lans, pumpsystem (vatten-/lufttryck) och väder/larm, i samma databas.
 
+## Omgranskning 12 november 2026 — rättelser och nya fynd
+
+Zip-filen gicks igenom en gång till, den här gången med SQL-frågorna
+utplockade ur alla programfilerna. Det ändrar bilden på flera punkter. Där det
+här avsnittet säger emot texten ovan gäller det här.
+
+**Databaserna är fyra, inte en.** Alla ligger i samma SQL Server-instans och
+nås med samma inloggning:
+
+| Databas | Innehåll | Vem skriver |
+|---|---|---|
+| `Live_Snowstar` | Nuläget: en `*_Main`-tabell per apparattyp, apparatlistan (`Gun`, `Com port_Main`), anläggningens summor (`Set up installation`), pumphus (`Water departure_Main`) | `Server1.exe`–`Server8.exe` |
+| `Live_stat_SQL` | Statistik med **riktiga kolumnnamn**: `stat_piste_canon_sgc300/sgc400/y`, `stat_piste_sonde_th`, `stat_SDM_depart_eau` m.fl. | `GSS_stat_record.exe` |
+| `Live_event_SQL` | Händelser och larm, och `*_actuel`-tabellerna som larmlogiken jämför mot | `GSS_stat_record.exe` |
+| `Live_Language` | Texter på olika språk — troligen också namnen på de numrerade kolumnerna | — |
+
+Sondens första version tittade bara i `Live_Snowstar`. Den går nu igenom alla.
+
+**Statistiktabellerna är facit för kolumnerna.** `stat_piste_canon_sgc400`
+har kolumnerna `temperature`, `humidite`, `temperature_humide`, `pression_eau`,
+`debit_eau_reel`, `debit_eau_theorique`, `debit_air_theorique`, `etat`, och
+`stat_SDM_depart_eau` har bland annat `debit_eau_mesure`, `niveau_lac`
+(magasinsnivå), `debit_disponible` och `debit_autorise`. De fylls ur de
+numrerade kolumnerna i `Live_Snowstar`, så genom att jämföra värden går
+numren att översätta utan att gissa. (`stat_piste_canon_y`, som den första
+granskningen pekade ut, är bara en av flera — och troligen inte vår apparattyp.)
+
+**Det finns en färdig tabell för aktiva larm:** `defaut_actif`, som programmet
+läser med `WHERE def_actif = 1 ORDER BY date`. Och en händelselogg, `Journal`.
+Larmen behöver alltså inte räknas fram ur statusbitar.
+
+**`*_Main`-tabellerna har en kolumn `DateUpd`.** GSSystem läser dem själv med
+`WHERE DateUpd > förra gången`. Bryggan kan göra likadant och hämtar då bara
+det som ändrats.
+
+**Nuläget skrivs var 20:e sekund** (syns på tidsstämplarna i `journal.log`).
+Tätare än så finns inget att hämta.
+
+**Apparaterna.** Loggarna visar sju `SGC400` (nr 1–7, Modbus-adress 3–9) som
+startas och stoppas genom alla säsonger 2021–2026, och fyra `SGC300` (nr 1–4,
+adress 1–4) med enstaka rader. Gissningen ovan, "SGC300 = fläktkanoner,
+SGC400 = lansar", håller alltså inte — anläggningen har sex kanoner och två
+lansar. Vilken apparat som är vilken avgörs av apparatlistan i sondrapporten.
+
+**Minnesbristen var en kväll, inte ett tillstånd.** Alla minnesfel och nästan
+alla timeouts i loggarna är från **24 december 2022 mellan 19:16 och 21:16**:
+`GSS_Stat_report.log` (4 minnesfel), `SMSController.log` (868 timeouts) och
+GSSystems egen logg (17 timeouts) — samma två timmar. SQL Server Express har
+ett tak på sitt buffertminne, och den kvällen slog något i det. Efter det
+finns inga minnesfel. Bryggan ska ändå väga lätt, men "gammal, minnesansträngd
+dator" var en för stark slutsats av en enda kväll.
+
+**Ett annat fel värt att känna till:** 12 februari 2025 loggades 284 rader
+`La sous-requête a retourné plusieurs valeurs` för SGC300 nr 5 — en apparat
+fanns dubbelt i en tabell, och statistiken för den gick inte att spara på en
+och en halv timme. Tillverkarens fel, inte vårt, men det visar att tabellerna
+kan innehålla dubbletter. Bryggan får inte anta en rad per apparat.
+
+**Övrigt.** `GSS_STAT_REPORT.exe` har en adress till en tjänst hos
+tillverkaren inlagd (`http://213.190.79.2/WSDamage/…`) — styrdatorn kan alltså
+redan prata utåt i någon mån. `SMScontroller.exe` skickar SMS och e-post vid
+larm; dess tabeller (`Config_SMS_*`, `smtp`, `SmsPort`) innehåller
+telefonnummer och lösenord, och sonden visar därför inga rader ur dem.
+Loggfilen heter `erreurs.log` och ligger i `C:\GSSystem\BdD\`.
+
 ## Vad loggarna avslöjar (två filer, två olika saker)
 
 Kristian plockade fram raderna ur styrdatorns loggar 12 november 2026. De två
@@ -139,17 +204,20 @@ nulägestabeller, `WITH (NOLOCK)`, inga tunga frågor. Att GSSystems egen
 statistik-rapport knäcker SQL Server på minne betyder att en till läsare på
 samma instans måste väga lätt.
 
-**`errurs.log` — programkrascher, INTE minne.** Här står två andra sorters fel,
+**`erreurs.log` — programkrascher, INTE minne.** Här står två andra sorters fel,
 som vi varken kan eller ska röra (det är tillverkarens VB6-kod):
 
 - `Dépassement de capacité` (franska för *overflow*, VB6-fel 6) i dialog-
-  rutinerna (`DialogSGC400`, `DialogModbus`, `Dialog`, `DialogYA`). Återkommer
-  glest 2022–2026. En bugg i GSSystem, inte vårt problem.
+  rutinerna (`DialogSGC400`, `DialogModbus`, `Dialog`, `DialogYA`). Elva gånger
+  mellan november 2024 och april 2026. En bugg i GSSystem, inte vårt problem.
 - `Watchdog général GSSystem, GSSystem0 ne fonctionne plus` följt av
   `Exit GSSystem crashed`. Noterbart: de två vi ser inträffar **30/03/2025
   03:00:00** och **29/03/2026 03:00:00** — exakt sista söndagen i mars, när
-  klockan ställs fram till 03. Watchdog-"kraschen" är alltså sannolikt en
-  sommartids-artefakt (klockan hoppar förbi timmen), inte en minneskrasch.
+  klockan ställs fram till 03. De äldre loggarna (`concept\GSSystem*.tmp`)
+  visar samma sak 2020, 2021, 2022 och 2023: varje år, samma natt, samma
+  sekund. Watchdog-"kraschen" är alltså en sommartids-artefakt (klockan hoppar
+  förbi timmen), inte en minneskrasch. Den enda watchdog-raden som inte faller
+  den natten är 30/09/2022 10:50.
 - Raderna `(0 : Exit from GSSystem)` är **normala avstängningar**, inte fel.
 
 Sonden (`probe/db-sond.ps1`, avsnitt 0b) söker numera efter alla dessa mönster,

@@ -67,9 +67,13 @@ medvetet tänka om hela säkerhetsbilden.
    genomsökning av de stora statistiktabellerna (de växer hela säsongen).
 4. **Tung analys bara mot en återställd kopia** av backupen
    (`BdD\Live_Snowstar.dat`), aldrig mot den skarpa databasen.
-5. **Bryggan ska vara lätt.** Kontrollrums-PC:n är gammal och ansträngd —
-   loggarna visar riktiga minnesfel ("insufficient system memory") och
-   watchdog-krascher. Liten minnesanvändning, inga tunga beräkningar.
+5. **Bryggan ska vara lätt.** SQL Server Express har ett tak på sitt
+   buffertminne, och 24 december 2022 tog det slut: två timmar av
+   "insufficient system memory" och hundratals timeouts i GSSystems egna
+   program. Det är den enda kvällen i loggarna, så datorn är inte kroniskt
+   ansträngd — men det visar vad som händer när något läser för mycket.
+   Liten minnesanvändning, inga tunga frågor. (Watchdog-raderna i loggen är
+   däremot ofarliga: de faller varje år kl 03:00 natten till sommartid.)
 
 ### Mot nätet och säkerheten
 6. **Bara utåtgående trafik.** Öppna aldrig en port *in* mot kontrollrums-PC:n.
@@ -95,6 +99,12 @@ medvetet tänka om hela säkerhetsbilden.
 12. **Skriv bara vid ändring** (dödband — hoppa över småskvalp), och håll
     pollintervallet rimligt (15–30 s, aldrig 1 s). Realtime Database för
     strömmen (billig per datamängd), Firestore bara för sällan ändrad data.
+
+### Mot pumparna
+13. **Sikta på 69 m³/h, aldrig 70.** 70 m³/h är pumparnas absoluta max och
+    högsta flödet ur dammen. Kommer uttaget över det kan pumparna börja slå av
+    och på. Allt i appen som föreslår eller varnar räknar därför mot 69
+    (`PUMP_TARGET`); 70 (`PUMP_MAX`) visas bara som gränsen man inte får nå.
 
 ---
 
@@ -124,16 +134,18 @@ privata repon, och vi vill inte servera den här appen publikt ändå.
 
 ---
 
-## Öppna frågor och nästa steg
+## Nästa steg
 
-1. **Bekräfta SQL-schemat** med en försiktig, read-only-probe på kontrollrums-
-   PC:n innan något byggs — särskilt de numrerade kolumnerna i `SGC300_Main`
-   m.fl., som i dag är kvalificerade gissningar.
-2. **Bestäm hosting** för övervakningsappen (Firebase Hosting eller internt).
-3. **Skapa läs-only SQL-kontot** på PC:n.
-4. **Välj språk för bryggan** (Python eller Node — båda fungerar; Python med
-   `pyodbc` är enkelt mot SQL Server).
-5. **Bygg bryggan**, sedan appen.
+Stegen, i ordning och med vad som ska vara sant efter vart och ett, står i
+[`plan-brygga-firebase.md`](plan-brygga-firebase.md). Vem som får se datan och
+hur man släpper in någon står i [`anvandarhantering.md`](anvandarhantering.md).
 
-Inget av detta är gjort ännu — allt bygger på offline-granskning av
-programfilerna.
+I korthet: sonden på styrdatorn (ett besök) → mappa kolumnerna hemma →
+Realtime Database, regler och konton i Firebase → läs-only-konto och bryggan
+på styrdatorn (ett besök) → appen på riktiga värden.
+
+Två val är gjorda sedan första versionen av det här dokumentet: bryggan skrivs
+i **PowerShell** (inget behöver installeras på styrdatorn), och den loggar in
+som ett **eget Firebase-konto**, inte med en servicekonto-nyckel.
+
+Inget av detta är byggt ännu — allt bygger på granskning av programfilerna.

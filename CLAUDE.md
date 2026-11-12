@@ -39,13 +39,16 @@ I korthet:
 3. **Bara små nulägestabeller.** Tung analys sker mot en återställd kopia av
    backupen, aldrig skarpa databasen.
 4. **Bryggan lätt och utåtgående.** Kör på PC:n, öppna aldrig en port in.
-   Gammal, minnesansträngd maskin.
+   SQL Server Express tog slut på minne en kväll (24 dec 2022) — läs lite.
 5. **Lösenord/nycklar aldrig i git.** Se `SECRETS.md` (gitignore-ad).
 6. **Firebase-regler låsta:** bara bryggan skriver, bara inloggade läser.
 7. **Tidsstämpel på allt** — appen varnar för gammal data, visar aldrig stale
    som live.
 8. **Bryggan auto-startar** vid omboot. **Budgetlarm** i Google Cloud, skriv
    bara vid ändring.
+9. **Sikta på 69 m³/h, aldrig 70.** 70 är pumparnas absoluta max — över det
+   börjar de slå av och på. Förslag och varningar räknar mot `PUMP_TARGET`
+   (69); `PUMP_MAX` (70) visas bara som gränsen. Vattenflöden anges i m³/h.
 
 ## Idéer under utredning
 
@@ -68,25 +71,41 @@ I korthet:
 
 - GSSystem är ett VB6-program (v7.2.14, site `LIDKOPING2`) som pratar **Modbus**
   över seriell COM-port mot kanoner/lansar och lagrar allt i en lokal
-  **Microsoft SQL Server (SQLEXPRESS)**-databas `Live_Snowstar` på
-  kontrollrums-PC:n.
-- Anslutningssträngar och tabellnamn låg i **klartext** i `GSSystem.exe` — ingen
-  dekompilering behövdes.
-- Namngivna, direkt läsbara tabeller: `stat_piste_canon_y` (kanonstatus, flöden,
-  våttemperatur), `alarms_techno` (larm), `TH_Main`/`Wind_Main` (väder, troligen
-  brunn 7-stationen). Apparattabeller som `SGC300_Main`/`SGC400_Main` har
-  numrerade kolumner och måste mappas mot kontrollrumsskärmen.
+  **Microsoft SQL Server (SQLEXPRESS)** på kontrollrums-PC:n.
+- Databaserna är **fyra**: `Live_Snowstar` (nuläge, numrerade kolumner),
+  `Live_stat_SQL` (statistik med riktiga kolumnnamn — facit för numren),
+  `Live_event_SQL` (larm och händelser) och `Live_Language` (texter).
+- Anslutningssträngar och SQL-frågor ligger i **klartext** i programfilerna —
+  ingen dekompilering behövdes.
+- `*_Main`-tabellerna har `DateUpd` och skrivs var 20:e sekund. Aktiva larm
+  finns färdiga i `defaut_actif`.
+- Loggarna ligger i `C:\GSSystem\BdD\` (`erreurs.log`, `GSS_Stat_report.log`)
+  och `C:\GSSystem\concept\` (`*.rap`), på franska.
 
 ## Plan framåt
 
-1. Bekräfta om SQL Server bara lyssnar lokalt eller på nätverket.
-2. Skapa ett eget läs-only SQL-konto (`db_datareader`), inte det inbyggda.
-3. Bryggtjänst (Python/Node) på kontrollrums-PC:n som pollar och skriver till
-   Firestore i `snoprognos`-projektet.
-4. Appen läser Firestore i realtid (`onSnapshot`).
+Se [`docs/plan-brygga-firebase.md`](docs/plan-brygga-firebase.md) och
+[`docs/anvandarhantering.md`](docs/anvandarhantering.md). I korthet:
+
+1. Sonden (`probe/db-sond.ps1`) körs en gång på styrdatorn.
+2. Kolumnerna mappas hemma mot rapporten och foton av skärmen.
+3. Realtime Database, regler, medlemslista och bryggkonto i Firebase.
+4. Läs-only SQL-konto och bryggan (PowerShell, schemalagd uppgift) på
+   styrdatorn.
+5. Appen byter simuleringen mot riktiga värden och läggs på Firebase Hosting.
+
+## Filer
+
+- `app/index.html` — appen, en fil, ingen bygg. Simulerad data tills bryggan
+  finns. Skriv aldrig över den i sin helhet när en riktad ändring räcker.
+- `probe/` — sonden och skriptet för läs-only-kontot. `db-sond.ps1` **måste
+  sparas som UTF-8 med BOM** och får inte innehålla typografiska tankstreck
+  eller citattecken — Windows PowerShell 5.1 läser annars filen fel och
+  skriptet går inte att köra. Kontrollera efter varje ändring.
+- `docs/` — granskningen, arkitekturen, planen, användarhanteringen, idéerna.
 
 ## Relation till forecast-repot
 
-Firebase-projektet (`snoprognos`) och appen som ska visa datan ligger i
-`snowgun-forecast`. Det här repot är kunskaps- och verktygssidan av samma
-arbete — brygg-koden kommer troligen att bo här.
+Firebase-projektet (`snoprognos`) delas med prognosappen i `snowgun-forecast`,
+men driftappen och bryggan bor här. De två apparna har var sin medlemslista
+med flit.
