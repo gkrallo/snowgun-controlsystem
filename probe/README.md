@@ -13,6 +13,13 @@ Resultatet blir en textfil, `db-sond-rapport_DATUM-TID.txt`, bredvid skriptet.
   eller Node finns, vilka ODBC-drivrutiner som är installerade, och om datorn
   når molnet utåt på port 443. Det avgör hur bryggan byggs — så vi slipper en
   andra resa bara för att kolla förutsättningarna.
+- **Loggkollen** (körs också före databasen): söker igenom GSSystems loggmapp
+  och SQL Servers `ERRORLOG` efter minnesfel ("insufficient system memory") och
+  watchdog-krascher — samma sak som dök upp i zip-granskningen. Så ser vi om
+  felen fortfarande pågår, vilken fil och rad de står på, och hur snålt bryggan
+  måste köra. Hittas inte GSSystems mapp automatiskt, kör om med sökvägen:
+  `.\db-sond.ps1 -GsLog "C:\...\GSSystem"` (hitta mappen genom att högerklicka
+  GSSystem-ikonen → Öppna filplats).
 - **Databasen:** version, om TCP/IP är på och vilken port, inloggningar och
   roller, alla tabeller med radantal, kolumnerna i nyckeltabellerna och några
   smakprovsrader.
@@ -65,6 +72,11 @@ Utifrån den kan vi bygga rätt bryggfrågor och färdigställa läs-only-kontot
    Heter instansen något annat än `127.0.0.1\SQLEXPRESS` kan du ange den:
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\db-sond.ps1 -Server "DATORNAMN\SQLEXPRESS"
+   ```
+   Skriver loggkollen *"Hittade ingen loggmapp automatiskt"*, peka på GSSystems
+   mapp så den hittar loggarna (flaggorna går att kombinera):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\db-sond.ps1 -GsLog "C:\GSSystem"
    ```
 
 5. **Ta med rapporten hem.** Sökvägen skrivs ut sist i fönstret

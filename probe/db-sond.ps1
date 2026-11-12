@@ -27,7 +27,10 @@ param(
   [string]$Database = "Live_Snowstar",
   # Lämna User tom för att prova Windows-inloggning (om du är inloggad som en
   # användare med åtkomst). Ange -User för SQL-inloggning (då frågas lösenord).
-  [string]$User     = ""
+  [string]$User     = "",
+  # Mapp där GSSystems loggfiler ligger. Lämna tom så letar skriptet själv.
+  # Ange -GsLog "C:\...\GSSystem" om auto-sökningen missar.
+  [string]$GsLog    = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -81,6 +84,84 @@ foreach ($hostName in @("firestore.googleapis.com","www.googleapis.com")) {
     else { Log "   Utgående 443 -> $hostName : NÅDDE INTE (kolla brandvägg/proxy)" }
     $c.Close()
   } catch { Log "   Utgående 443 -> $hostName : fel ($($_.Exception.Message))" }
+}
+Log ""
+
+# =================== 0b. Styrsystemets loggar (PC:ns hälsa) =================
+# Granskningen av programfilerna visade minnesfel ("insufficient system
+# memory") och watchdog-krascher i loggarna. Här kollar vi om de FORTFARANDE
+# dyker upp - det avgör hur snålt bryggan måste köra. Bara läsning av filer,
+# inget ändras. Körs före DB-anslutningen så vi får svaret även om DB tiger.
+Log "0b. STYRSYSTEMETS LOGGAR (dyker minnesfelen fortfarande upp?)"
+Log "------------------------------------------------------------"
+
+# Leta reda på var loggarna ligger. Ange -GsLog om sökningen missar (hitta
+# mappen: högerklicka GSSystem-ikonen -> Öppna filplats).
+$logRoots = @()
+if ($GsLog -ne "") {
+  if (Test-Path $GsLog) { $logRoots += $GsLog }
+  else { Log "   Angiven -GsLog finns inte: $GsLog" }
+} else {
+  $cand = @("C:\GSSystem","C:\Sufag","C:\MND","C:\Snow")
+  if ($env:ProgramFiles)        { $cand += (Join-Path $env:ProgramFiles "GSSystem") }
+  $pf86 = ${env:ProgramFiles(x86)}
+  if ($pf86)                    { $cand += (Join-Path $pf86 "GSSystem") }
+  foreach ($root in $cand) { if (Test-Path $root) { $logRoots += $root } }
+
+  # SQL Servers egen ERRORLOG - "insufficient system memory" är klassiskt ETT
+  # SQL Server-fel, inte bara GSSystems. Leta upp Log-mappen för instanserna.
+  foreach ($b in @("$env:ProgramFiles\Microsoft SQL Server","${env:ProgramFiles(x86)}\Microsoft SQL Server")) {
+    if ($b -and (Test-Path $b)) {
+      Get-ChildItem -Path $b -Directory -Filter "MSSQL*" -ErrorAction SilentlyContinue | ForEach-Object {
+        $lp = Join-Path $_.FullName "MSSQL\Log"
+        if (Test-Path $lp) { $logRoots += $lp }
+      }
+    }
+  }
+}
+
+if ($logRoots.Count -eq 0) {
+  Log "   Hittade ingen loggmapp automatiskt."
+  Log "   Kör igen med sökväg till GSSystems mapp, t.ex.:"
+  Log "      .\db-sond.ps1 -GsLog `"C:\GSSystem`""
+  Log "   (hitta mappen: högerklicka GSSystem-ikonen -> Öppna filplats)."
+} else {
+  # Mönster vi letar efter (gemener - Select-String är skiftlägesokänsligt).
+  $patterns = @("insufficient system memory","out of memory","outofmemory",
+                "cannot allocate","not enough storage","watchdog")
+  $hits = New-Object System.Collections.Generic.List[object]
+  $scanned = 0
+  foreach ($root in ($logRoots | Select-Object -Unique)) {
+    Log "   Söker i: $root"
+    try {
+      $files = Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -match '\.(log|txt)$' -or $_.Name -match 'log' } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 40
+      foreach ($f in $files) {
+        $scanned++
+        try {
+          $found = Select-String -Path $f.FullName -Pattern $patterns -SimpleMatch -ErrorAction SilentlyContinue
+          foreach ($m in $found) {
+            $hits.Add([pscustomobject]@{ Fil=$f.Name; Rad=$m.LineNumber;
+              Text=($m.Line.Trim()); Andrad=$f.LastWriteTime })
+          }
+        } catch {}
+      }
+    } catch { Log "      (kunde inte läsa mappen: $($_.Exception.Message))" }
+  }
+  Log "   Loggfiler genomsökta: $scanned (de 40 senast ändrade per mapp)"
+  if ($hits.Count -eq 0) {
+    Log "   Inga minnes-/watchdog-rader hittades. (Bra tecken.)"
+  } else {
+    $senaste = ($hits | Sort-Object Andrad -Descending | Select-Object -First 1).Andrad
+    Log ("   HITTADE " + $hits.Count + " rad(er). Senaste berörda loggfil ändrad: " +
+         $senaste.ToString('yyyy-MM-dd HH:mm'))
+    Log "   Exempel (senaste först) - FIL : RAD : text:"
+    foreach ($h in ($hits | Sort-Object Andrad -Descending | Select-Object -First 8)) {
+      $t = $h.Text; if ($t.Length -gt 80) { $t = $t.Substring(0,77) + "..." }
+      Log ("      " + $h.Andrad.ToString('yyyy-MM-dd') + "  " + $h.Fil + " : " + $h.Rad + " : " + $t)
+    }
+  }
 }
 Log ""
 
