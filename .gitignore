@@ -27,4 +27,6 @@ bridge/brygga-config.json
 bridge/brygga-hemligt-*.txt
 bridge/brygga-live.json
 bridge/brygga.log
+bridge/brygga.log.1
+bridge/brygga-state.json
 bridge/uttag_*.txt

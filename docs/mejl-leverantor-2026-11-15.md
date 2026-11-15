@@ -2,7 +2,9 @@
 
 Inte skickat. Kristian skickar själv. Förra mejlet gick 1 november till
 `fabrice.clerc@…`; adresserna `contact@…` och `f.clerc@…` på samma domän är
-gissningar att prova. Bifoga `probe/skapa-lasonly-konto.sql`.
+gissningar att prova. Bifoga `probe/skapa-lasonly-konto.sql` — den nya
+versionen härifrån. Kopian som ligger i temp-mappen på styrdatorn är från
+före 15 november och ger bara läsrätt i fyra av de 29 databaserna.
 
 ---
 

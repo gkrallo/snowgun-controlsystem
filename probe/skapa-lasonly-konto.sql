@@ -1,5 +1,6 @@
 /* ============================================================================
-   Skapar ett EGET laes-only-konto for bryggan mot GSSystems fyra databaser.
+   Skapar ett EGET laes-only-konto for bryggan mot GSSystems databaser
+   (alla som borjar pa Live_). Version 15 november 2026.
    ----------------------------------------------------------------------------
    Varfor: bryggan ska aldrig anvanda det hardkodade GSS_Login (som kan ha
    skrivrattigheter) och framfor allt aldrig 'sa'. Det har kontot far ENBART
@@ -42,19 +43,20 @@ ELSE
 GO
 
 /* 2-4. Anvandare med ENBART laesratt i var och en av GSSystems databaser.
-   Omgranskningen visade att de ar fyra, inte en: nulaget ligger i
-   Live_Snowstar, larmen i Live_event_SQL, statistiken (med riktiga
-   kolumnnamn) i Live_stat_SQL och texterna i Live_Language. En databas som
-   inte finns hoppas over.
+   Sondrapporten 15 november 2026 visade att de ar 29, inte fyra: nulaget i
+   Live_Snowstar, larmen i Live_event_SQL, texterna i Live_Language,
+   summeringar i Live_stat_SQL, dygnsrapporter i Live_stat_SQL_rapport och
+   sjalva statistiken i 24 halvmanadsdatabaser (Live_stat_novembre1SQL osv).
+   Darfor alla databaser vars namn borjar pa Live_ - versionen fore 15
+   november tog bara fyra och missade statistiken.
 
-   sp_addrolemember anvands i stallet for ALTER ROLE ... ADD MEMBER, som
-   forst kom i SQL Server 2012 - vi vet inte vilken version styrdatorn har
-   forran sondrapporten ar last. db_datareader = SELECT pa alla tabeller,
-   inget mer. */
+   sp_addrolemember anvands i stallet for ALTER ROLE ... ADD MEMBER; det
+   fungerar pa styrdatorns SQL Server 2014. db_datareader = SELECT pa alla
+   tabeller, inget mer. */
 DECLARE @db sysname, @sql nvarchar(max);
 DECLARE dbs CURSOR LOCAL FAST_FORWARD FOR
     SELECT name FROM sys.databases
-    WHERE name IN (N'Live_Snowstar', N'Live_stat_SQL', N'Live_event_SQL', N'Live_Language')
+    WHERE name LIKE N'Live[_]%'
       AND state_desc = N'ONLINE';
 OPEN dbs;
 FETCH NEXT FROM dbs INTO @db;
@@ -79,12 +81,10 @@ DEALLOCATE dbs;
 GO
 
 /* ----------------------------------------------------------------------------
-   OM NI NAGON GANG VILL TA BORT KONTOT IGEN (kor dessa, avkommenterade,
-   en USE/DROP USER per databas och sist inloggningen):
+   OM NI NAGON GANG VILL TA BORT KONTOT IGEN: en USE/DROP USER per databas
+   som borjar pa Live_ (29 stycken), och sist inloggningen:
 
    USE [Live_Snowstar];  DROP USER [snogrupp_ro];
-   USE [Live_stat_SQL];  DROP USER [snogrupp_ro];
-   USE [Live_event_SQL]; DROP USER [snogrupp_ro];
-   USE [Live_Language];  DROP USER [snogrupp_ro];
+   ... (samma for varje Live_-databas) ...
    USE [master];         DROP LOGIN [snogrupp_ro];
    -------------------------------------------------------------------------- */

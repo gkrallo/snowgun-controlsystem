@@ -18,6 +18,11 @@
     Uttag per dygn (dammen):  .\brygga.ps1 -Uttag -Fran 2026-10-25
     Spara lösenord (DPAPI):   .\brygga.ps1 -SparaLosen sql      (eller: moln)
     Skicka till Firebase:     .\brygga.ps1 -Skicka
+    Prova ändringslogiken:    .\brygga.ps1 -Sjalvtest   (ingen databas behövs)
+
+  Till molnet går bara det som ändrats sedan sist (med dödband), ett
+  hjärtslag i minuten och en historikpunkt var femte minut. Datorn står på
+  dygnet runt, och värdena står still det mesta av året.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -34,6 +39,7 @@ param(
   [switch]$Uttag,
   [string]$Fran = "",
   [string]$SparaLosen = "",
+  [switch]$Sjalvtest,
   [int]$Intervall = 20
 )
 
@@ -42,7 +48,8 @@ $here    = Split-Path -Parent $MyInvocation.MyCommand.Path
 $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
-$VERSION = "0"
+$stateFile = Join-Path $here "brygga-state.json"
+$VERSION = "1"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -165,6 +172,129 @@ function RawRow($row) {
     $o["k" + $c.ColumnName] = $v
   }
   return $o
+}
+
+# ------------------------------------------------------ bara ändringar
+# Nuläget plattas ut till "sökväg -> värde" (enheter/SGC400-3/tw -> -4.1) och
+# jämförs med det som senast SKICKADES - inte det som senast lästes. Annars
+# kan ett värde krypa en tiondel i taget hur långt som helst utan att någon
+# enskild ändring når över dödbandet.
+
+# Larm och händelser skickas som en klump när något i dem ändras.
+$BLOBS = @("larm", "handelser")
+# "uppdaterad" ändras var 20:e sekund även när inget händer och skulle göra
+# hela idén meningslös. I stället skickas den senaste tiden en gång i minuten
+# med hjärtslaget (meta/gssTid). "ra" är bara till för torrläget.
+$SKIP = @("uppdaterad", "ra")
+
+function Flatten($node, [string]$prefix, [hashtable]$out) {
+  foreach ($k in @($node.Keys)) {
+    if ($SKIP -contains $k) { continue }
+    $p = "$k"; if ($prefix -ne "") { $p = $prefix + "/" + $k }
+    $v = $node[$k]
+    if (($BLOBS -notcontains $p) -and ($v -is [System.Collections.IDictionary])) { Flatten $v $p $out }
+    else { $out[$p] = $v }
+  }
+}
+
+# Samma träd utan de överhoppade fälten, för den fullständiga sändningen.
+function Strip($node) {
+  $o = [ordered]@{}
+  foreach ($k in @($node.Keys)) {
+    if ($SKIP -contains $k) { continue }
+    $v = $node[$k]
+    if ($v -is [System.Collections.IDictionary]) { $o[$k] = Strip $v } else { $o[$k] = $v }
+  }
+  return $o
+}
+
+# Senaste "uppdaterad" i hela nuläget: visar att GSSystem självt lever.
+function Newest($node) {
+  $best = ""
+  foreach ($k in @($node.Keys)) {
+    $v = $node[$k]
+    if ($k -eq "uppdaterad" -and $v) { if ("$v" -gt $best) { $best = "$v" } }
+    elseif ($v -is [System.Collections.IDictionary]) { $b = Newest $v; if ($b -gt $best) { $best = $b } }
+  }
+  return $best
+}
+
+# Dödband per fält. Givarna flimrar en tiondel fram och tillbaka; utan
+# dödband skulle varje flimmer bli en sändning.
+function Band([string]$path) {
+  $f = $path.Substring($path.LastIndexOf("/") + 1)
+  if ($f -match '^(t|tw|vattenTemp)$')              { return 0.2 }
+  if ($f -eq 'rh')                                  { return 2 }
+  if ($f -match '^(tryck|tryckIn|tryckUt)$')        { return 0.2 }
+  if ($f -match '^(k125|k126|k408|flodeTeori)$')    { return 0.2 }
+  if ($f -eq 'fart')                                { return 0.5 }
+  if ($f -eq 'riktning')                            { return 15 }
+  return 0
+}
+
+function IsNum($v) { return ($v -is [ValueType]) -and ($v -isnot [bool]) -and ($v -isnot [datetime]) }
+
+function Sig($v) {
+  if ($null -eq $v) { return "null" }
+  if ($v -is [string]) { return $v }
+  return (ConvertTo-Json -InputObject $v -Compress -Depth 6)
+}
+
+function IsDifferent([string]$path, $new, $old) {
+  if ($null -eq $new -and $null -eq $old) { return $false }
+  if ($null -eq $new -or $null -eq $old) { return $true }
+  if ((IsNum $new) -and (IsNum $old)) {
+    $band = Band $path
+    $d = [math]::Abs([double]$new - [double]$old)
+    if ($band -gt 0) { return ($d -ge ($band - 1e-9)) }
+    return ($d -gt 1e-9)
+  }
+  return ((Sig $new) -cne (Sig $old))
+}
+
+# Ändringarna som en lista "sökväg -> nytt värde". Ett fält som försvunnit
+# får värdet $null, vilket tar bort det i molnet.
+function Get-Changes([hashtable]$now, [hashtable]$sent) {
+  $ch = [ordered]@{}
+  foreach ($k in ($now.Keys | Sort-Object)) {
+    if (-not $sent.ContainsKey($k)) { $ch[$k] = $now[$k] }
+    elseif (IsDifferent $k $now[$k] $sent[$k]) { $ch[$k] = $now[$k] }
+  }
+  foreach ($k in (@($sent.Keys) | Sort-Object)) {
+    if (-not $now.ContainsKey($k)) { $ch[$k] = $null }
+  }
+  return $ch
+}
+
+# Historiknycklar: UTC på jämna fem minuter, så att natten då klockan ställs
+# om inte ger två punkter med samma namn.
+function SlotKey([datetime]$utc) { return $utc.ToString("yyyyMMddHHmm") }
+function SlotOf([datetime]$utc) {
+  return (New-Object datetime($utc.Year, $utc.Month, $utc.Day, $utc.Hour, ($utc.Minute - ($utc.Minute % 5)), 0, [DateTimeKind]::Utc))
+}
+
+# Punkten för graferna, plus bortstädning av det som blivit äldre än 48 h.
+# Bryggan får bara skriva, inte läsa, i molnet - därför räknar den själv ut
+# vilka gamla nycklar som ska bort i stället för att fråga efter dem. Har
+# bryggan stått still städas hela luckan vid nästa punkt.
+function Build-HistPatch($snap, [datetime]$slot, $prevSlot) {
+  $p = [ordered]@{}
+  $pt = [ordered]@{ ts = @{ ".sv" = "timestamp" } }
+  if ($snap["vader"]) { $pt["t"] = $snap["vader"]["t"]; $pt["tw"] = $snap["vader"]["tw"] }
+  if ($snap["pump"] -and $snap["pump"]["dep12"]) {
+    $d = $snap["pump"]["dep12"]
+    $pt["tryckUt"] = $d["tryckUt"]; $pt["k125"] = $d["k125"]; $pt["k126"] = $d["k126"]
+  }
+  $p[(SlotKey $slot)] = $pt
+  $cut = $slot.AddHours(-48)
+  $from = $cut
+  if ($prevSlot) {
+    $from = ([datetime]$prevSlot).AddHours(-48).AddMinutes(5)
+    if ($from -lt $cut.AddHours(-48)) { $from = $cut.AddHours(-48) }
+    if ($from -gt $cut) { $from = $cut }
+  }
+  for ($s = $from; $s -le $cut; $s = $s.AddMinutes(5)) { $p[(SlotKey $s)] = $null }
+  return $p
 }
 
 # ---------------------------------------------------------------- läsning
@@ -335,10 +465,151 @@ function Get-Token {
   return $script:token
 }
 
-function Send-Live($snap) {
+function Send-Cloud([string]$method, [string]$path, $body) {
   $tok = Get-Token
-  $json = $snap | ConvertTo-Json -Depth 8 -Compress
-  [void](Send-Json "Put" ($cfg.dbUrl.TrimEnd("/") + "/live.json?auth=" + $tok) $json)
+  $json = ConvertTo-Json -InputObject $body -Depth 8 -Compress
+  [void](Send-Json $method ($cfg.dbUrl.TrimEnd("/") + "/" + $path + ".json?auth=" + $tok) $json)
+}
+
+# ------------------------------------------------ vad ska skickas den här gången
+# Tre sorters sändning:
+#   full   - hela nuläget ersätts. Vid start och en gång i timmen, så att
+#            molnet aldrig kan glida isär från verkligheten för gott.
+#   patch  - bara fälten som ändrats, plus hjärtslaget.
+#   none   - ingenting. Det vanliga, större delen av året.
+# Minnet av vad som skickats uppdateras först när sändningen lyckats
+# (Commit-Round). Går nätet ner försöker bryggan alltså igen nästa varv.
+$script:sent      = $null
+$script:lastFull  = [datetime]::MinValue
+$script:lastMeta  = [datetime]::MinValue
+$script:lastSqlOk = $null
+
+function Plan-Round($snap, [bool]$sqlOk, [datetime]$now, [int]$ms) {
+  # Hjärtslaget stämplas med molnets klocka, så att gammal data märks även om
+  # styrdatorns klocka går fel eller hoppar natten till sommartid.
+  $meta = [ordered]@{ ts = @{ ".sv" = "timestamp" }; sqlOk = $sqlOk; version = $VERSION; lasMs = $ms }
+  if ($sqlOk) { $meta["gssTid"] = Newest $snap }
+  $metaDue = (($now - $script:lastMeta).TotalSeconds -ge 60) -or ($script:lastSqlOk -ne $sqlOk)
+
+  if (-not $sqlOk) {
+    # Databasen svarar inte. Värdena i molnet får stå kvar - att ta bort dem
+    # vore att påstå att kanonerna försvunnit. Bara hjärtslaget säger ifrån,
+    # så att appen kan skilja "bryggan död" från "databasen svarar inte".
+    if (-not $metaDue) { return @{ kind = "none" } }
+    $b = [ordered]@{}
+    foreach ($k in $meta.Keys) { $b["meta/" + $k] = $meta[$k] }
+    return @{ kind = "patch"; body = $b; flat = $null; n = 0 }
+  }
+
+  $flat = @{}
+  Flatten $snap "" $flat
+  if ($null -eq $script:sent -or ($now - $script:lastFull).TotalHours -ge 1) {
+    $body = Strip $snap
+    $body["meta"] = $meta
+    return @{ kind = "full"; body = $body; flat = $flat; n = $flat.Count }
+  }
+  $ch = Get-Changes $flat $script:sent
+  $n = $ch.Count
+  if ($n -eq 0 -and -not $metaDue) { return @{ kind = "none" } }
+  foreach ($k in $meta.Keys) { $ch["meta/" + $k] = $meta[$k] }
+  return @{ kind = "patch"; body = $ch; flat = $flat; n = $n }
+}
+
+function Commit-Round($plan, [bool]$sqlOk, [datetime]$now) {
+  if ($plan.kind -eq "none") { return }
+  $script:lastMeta = $now
+  $script:lastSqlOk = $sqlOk
+  if ($plan.kind -eq "full") { $script:sent = $plan.flat; $script:lastFull = $now; return }
+  if ($null -eq $plan.flat) { return }
+  # Bara de fält som faktiskt skickades får nytt jämförelsevärde. De övriga
+  # behåller sitt, annars skulle dödbandet nollställas varje varv.
+  foreach ($k in @($plan.body.Keys)) {
+    if ($k -like "meta/*") { continue }
+    if ($plan.flat.ContainsKey($k)) { $script:sent[$k] = $plan.flat[$k] } else { $script:sent.Remove($k) }
+  }
+}
+
+# ------------------------------------------------------------- självtest
+# Provar ändringslogiken med påhittade värden, utan databas och utan nät.
+if ($Sjalvtest) {
+  $script:bad = 0
+  function Check([string]$what, [bool]$ok) {
+    if ($ok) { Write-Host ("  ok   " + $what) } else { Write-Host ("  FEL  " + $what); $script:bad++ }
+  }
+  function Fake([double]$tw, $larm) {
+    return [ordered]@{
+      pump = [ordered]@{ dep12 = [ordered]@{ tryckUt = 7.2; k125 = 0.1; k126 = 0.1; uppdaterad = "2026-11-15T18:43:27" } }
+      enheter = [ordered]@{
+        "SGC400-3" = [ordered]@{ nr = 3; typ = "S ACCESS 300"; tw = $tw; uppdaterad = "2026-11-15T18:43:24" }
+        "SGC400-4" = [ordered]@{ nr = 4; typ = "TAURUS_2.0"; tw = 8.6; uppdaterad = "2026-11-15T18:42:42" }
+      }
+      vader = [ordered]@{ t = 2.9; rh = 82; tw = 1.8; uppdaterad = "2026-11-15T18:43:29" }
+      larm = $larm
+    }
+  }
+  $t = Get-Date "2026-11-15 19:00:00"
+
+  $p = Plan-Round (Fake 7.1 @()) $true $t 40
+  Check "första varvet skickar allt" ($p.kind -eq "full")
+  Check "uppdaterad följer inte med" (-not ((ConvertTo-Json -InputObject $p.body -Depth 8) -match "uppdaterad"))
+  Check "senaste tid från GSSystem i hjärtslaget" ($p.body["meta"]["gssTid"] -eq "2026-11-15T18:43:29")
+  Commit-Round $p $true $t
+
+  $t = $t.AddSeconds(20); $p = Plan-Round (Fake 7.1 @()) $true $t 40
+  Check "oförändrat efter 20 s: inget skickas" ($p.kind -eq "none")
+
+  $t = $t.AddSeconds(20); $p = Plan-Round (Fake 7.2 @()) $true $t 40
+  Check "en tiondel: inom dödbandet, inget skickas" ($p.kind -eq "none")
+
+  $t = $t.AddSeconds(20); $p = Plan-Round (Fake 7.3 @()) $true $t 40
+  Check "två tiondelar från det SKICKADE värdet: skickas" ($p.kind -eq "patch" -and $p.n -eq 1 -and $p.body["enheter/SGC400-3/tw"] -eq 7.3)
+  Commit-Round $p $true $t
+
+  $t = $t.AddSeconds(20); $p = Plan-Round (Fake 7.3 @()) $true $t 40
+  Check "direkt efter: inget skickas" ($p.kind -eq "none")
+
+  $t = $t.AddSeconds(61); $p = Plan-Round (Fake 7.3 @()) $true $t 40
+  Check "efter en minut: bara hjärtslaget" ($p.kind -eq "patch" -and $p.n -eq 0 -and $p.body.Contains("meta/ts"))
+  Commit-Round $p $true $t
+
+  $larm = @([ordered]@{ sedan = "15/11/2026 19:05:00"; text = "fault : hose frozen"; id = "x1" })
+  $t = $t.AddSeconds(20); $p = Plan-Round (Fake 7.3 $larm) $true $t 40
+  Check "nytt larm skickas som en klump" ($p.kind -eq "patch" -and $p.n -eq 1 -and $p.body.Contains("larm"))
+  Commit-Round $p $true $t
+
+  $s = Fake 7.3 $larm; $s["enheter"].Remove("SGC400-4")
+  $t = $t.AddSeconds(20); $p = Plan-Round $s $true $t 40
+  Check "en enhet som försvinner tas bort i molnet" ($p.kind -eq "patch" -and $p.n -eq 3 -and $p.body.Contains("enheter/SGC400-4/tw") -and $null -eq $p.body["enheter/SGC400-4/tw"])
+  Commit-Round $p $true $t
+
+  $t = $t.AddSeconds(20); $p = Plan-Round ([ordered]@{}) $false $t 40
+  Check "databasen svarar inte: bara hjärtslag, inget tas bort" ($p.kind -eq "patch" -and $p.body.Count -eq 4 -and $p.body["meta/sqlOk"] -eq $false)
+  Commit-Round $p $false $t
+
+  $t = $t.AddSeconds(20); $p = Plan-Round ([ordered]@{}) $false $t 40
+  Check "fortfarande nere 20 s senare: inget skickas" ($p.kind -eq "none")
+
+  $t = $t.AddSeconds(20); $p = Plan-Round $s $true $t 40
+  Check "databasen tillbaka: hjärtslaget säger det direkt" ($p.kind -eq "patch" -and $p.n -eq 0 -and $p.body["meta/sqlOk"] -eq $true)
+  Commit-Round $p $true $t
+
+  $t = $t.AddHours(1); $p = Plan-Round $s $true $t 40
+  Check "efter en timme: allt skickas igen" ($p.kind -eq "full")
+
+  $slot = SlotOf ([datetime]::SpecifyKind((Get-Date "2026-11-15 18:07:31"), [DateTimeKind]::Utc))
+  Check "historiknyckeln ligger på jämna fem minuter" ((SlotKey $slot) -eq "202611151805")
+  $h = Build-HistPatch (Fake 7.3 @()) $slot $null
+  Check "första punkten: en ny, en gammal bort" ($h.Count -eq 2 -and $h.Contains("202611131805") -and $null -eq $h["202611131805"])
+  $h = Build-HistPatch (Fake 7.3 @()) $slot $slot.AddMinutes(-5)
+  Check "löpande: en ny, en gammal bort" ($h.Count -eq 2)
+  $h = Build-HistPatch (Fake 7.3 @()) $slot $slot.AddHours(-2)
+  Check "efter två timmars stopp: hela luckan städas" ($h.Count -eq 25)
+  $h = Build-HistPatch (Fake 7.3 @()) $slot $slot.AddDays(-30)
+  Check "efter en månads stopp: högst 48 timmar städas" ($h.Count -eq 578)
+  Check "punkten har våttemperatur och tryck" ($h["202611151805"]["tw"] -eq 1.8 -and $h["202611151805"]["tryckUt"] -eq 7.2)
+
+  if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
+  Write-Host ("Självtestet hittade " + $script:bad + " fel."); exit 1
 }
 
 if ($Skicka) {
@@ -352,11 +623,29 @@ if ($Skicka) {
 }
 
 # ------------------------------------------------------------------ slinga
+# Bara en brygga åt gången. Den schemalagda uppgiften försöker starta en ny
+# var femte minut för att bryggan ska komma tillbaka om den dött; går den
+# redan ska det nya försöket bara avsluta sig.
+$mutex = $null
+if (-not $EnGang) {
+  $created = $false
+  $mutex = New-Object System.Threading.Mutex($true, "snogrupp-brygga", [ref]$created)
+  if (-not $created) { Write-Host "Bryggan går redan. Avslutar."; exit 0 }
+}
+
+$lastSlot = $null
+if (Test-Path $stateFile) {
+  try {
+    $txt = (Get-Content $stateFile -Raw | ConvertFrom-Json).lastSlot
+    $lastSlot = [datetime]::SpecifyKind([datetime]::ParseExact($txt, "yyyyMMddHHmm", $null), [DateTimeKind]::Utc)
+  } catch { $lastSlot = $null }
+}
+
 Log ("Bryggan startar (version " + $VERSION + ", konto " + $SqlUser + ", " + $(if ($Skicka) { "skickar till molnet" } else { "torrläge" }) + ")")
 $fails = 0
 while ($true) {
   $t0 = Get-Date
-  $snap = $null
+  $snap = [ordered]@{}
   try {
     if (-not $script:conn -or $script:conn.State -ne "Open") { Close-Sql; Open-Sql }
     $snap = Read-Snapshot
@@ -365,26 +654,48 @@ while ($true) {
     $fails++
     Log ("SQL-fel: " + $_.Exception.Message)
     Close-Sql
-    # Databasen svarar inte: skicka ändå ett hjärtslag som säger det, så att
-    # appen kan skilja "bryggan död" från "styrdatorn nås men SQL svarar inte".
     $snap = [ordered]@{}
   }
-  $ms = [int]((Get-Date) - $t0).TotalMilliseconds
-  # Hjärtslaget stämplas med molnets klocka, så att gammal data märks även om
-  # styrdatorns klocka går fel eller hoppar natten till sommartid.
-  $snap["meta"] = [ordered]@{
-    ts      = @{ ".sv" = "timestamp" }
-    lokalTid = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
-    sqlOk   = ($fails -eq 0)
-    lasMs   = $ms
-    version = $VERSION
-  }
+  $sqlOk = ($fails -eq 0)
+  $now = Get-Date
+  $ms = [int]($now - $t0).TotalMilliseconds
+
   try {
-    if ($Skicka) { Send-Live $snap }
-    else { ($snap | ConvertTo-Json -Depth 8) | Set-Content -Path $outFile -Encoding UTF8 }
+    $plan = Plan-Round $snap $sqlOk $now $ms
+    if ($Skicka) {
+      if ($plan.kind -eq "full")  { Send-Cloud "Put"   "live" $plan.body }
+      if ($plan.kind -eq "patch") { Send-Cloud "Patch" "live" $plan.body }
+    } else {
+      # Torrläge: hela nuläget i en fil, och i loggen vad som SKULLE ha
+      # skickats - så att ändringslogiken går att se innan den släpps lös.
+      $file = [ordered]@{}
+      foreach ($k in $snap.Keys) { $file[$k] = $snap[$k] }
+      $file["meta"] = [ordered]@{ lokalTid = $now.ToString("yyyy-MM-ddTHH:mm:ss"); sqlOk = $sqlOk; lasMs = $ms; version = $VERSION }
+      (ConvertTo-Json -InputObject $file -Depth 8) | Set-Content -Path $outFile -Encoding UTF8
+    }
+    Commit-Round $plan $sqlOk $now
+    $dry = ""; if (-not $Skicka) { $dry = " (torrläge, inget skickat)" }
+    if ($plan.kind -eq "full") { Log ("Hela nuläget, " + $plan.n + " fält" + $dry) }
+    if ($plan.kind -eq "patch" -and $plan.n -gt 0) {
+      $names = @($plan.body.Keys | Where-Object { $_ -notlike "meta/*" })
+      $show = ($names | Select-Object -First 6) -join ", "
+      if ($names.Count -gt 6) { $show += " ..." }
+      Log ("" + $plan.n + " ändring(ar)" + $dry + ": " + $show)
+    }
+
+    # Historikpunkten för graferna, på jämna fem minuter.
+    if ($Skicka -and $sqlOk) {
+      $slot = SlotOf ([datetime]::UtcNow)
+      if ($null -eq $lastSlot -or $slot -gt $lastSlot) {
+        Send-Cloud "Patch" "hist" (Build-HistPatch $snap $slot $lastSlot)
+        $lastSlot = $slot
+        (@{ lastSlot = (SlotKey $slot) } | ConvertTo-Json -Compress) | Set-Content -Path $stateFile -Encoding ASCII
+      }
+    }
     if ($EnGang) { Log ("Klart på " + $ms + " ms. Resultatet ligger i " + $outFile) }
   } catch {
     Log ("Kunde inte lämna ifrån mig datan: " + $_.Exception.Message)
+    # Inloggningen kan ha gått ut; logga in på nytt nästa varv.
     $script:token = $null
   }
   if ($EnGang) { break }
@@ -396,4 +707,5 @@ while ($true) {
   Start-Sleep -Seconds $wait
 }
 Close-Sql
+if ($mutex) { try { $mutex.ReleaseMutex() } catch { } }
 if ($fails -gt 0) { exit 1 }
