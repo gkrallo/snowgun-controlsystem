@@ -20,3 +20,11 @@ desktop.ini
 
 # Sondens rapporter kan innehålla driftvärden — hålls utanför git
 probe/db-sond-rapport_*.txt
+probe/Screenshot*.png
+
+# Bryggans inställningar, krypterade lösenord och utdata — bara på styrdatorn
+bridge/brygga-config.json
+bridge/brygga-hemligt-*.txt
+bridge/brygga-live.json
+bridge/brygga.log
+bridge/uttag_*.txt
