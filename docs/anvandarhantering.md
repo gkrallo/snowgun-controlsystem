@@ -153,6 +153,11 @@ servern om sidan ändrats varje gång den kommer fram på skärmen och laddar om
 i så fall, så det finns inget versionsnummer att höja vid en ny utgåva.
 `VERSION` i `sw.js` behöver bara höjas om själva `sw.js` eller ikonerna ändras.
 
+**Byts ikonen måste filerna byta namn.** Servern låter webbläsaren behålla en
+bild i en timme, och hemskärmar håller den längre. När iskristallen byttes mot
+kanonen under samma filnamn kom iskristallen tillbaka även efter att appen
+tagits bort och lagts till igen. Därför heter filerna `kanon-*.png`.
+
 Inte provat: inloggning inifrån den installerade appen på en riktig telefon.
 
 ## Vad appen ska visa

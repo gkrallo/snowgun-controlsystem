@@ -7,8 +7,8 @@
 <meta name="theme-color" content="#0a111e">
 <meta name="apple-mobile-web-app-title" content="Snökoll">
 <link rel="manifest" href="./manifest.json">
-<link rel="icon" href="./icon-192.png">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" href="./kanon-192.png">
+<link rel="apple-touch-icon" href="./kanon-apple.png">
 <!--
   Inloggningen är riktig (Google via Firebase, och medlemslistan i databasen
   avgör vem som kommer in), och vyerna visar det bryggan skickar från
@@ -319,11 +319,8 @@ canvas{max-width:100%}
   <div class="flakes" id="flakes"></div>
   <div class="login-card">
     <div class="logo">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.6" stroke-linecap="round">
-        <path d="M12 2v20M12 2l3 3M12 2L9 5M12 22l3-3M12 22l-3-3"/>
-        <path d="M2 12h20M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/>
-        <path d="M4.5 4.5l15 15M4.5 19.5l15-15" stroke-width="1.1" opacity=".6"/>
-      </svg>
+      <!-- Fläktkanonen, samma motiv som appens ikon. Iskristallen har prognosappen. -->
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="#7dd3fc" stroke="none" aria-hidden="true"><path d="M9.83 14.70 L4.8 20.9M9.83 14.70 L14.4 20.9M4.1 20.9H15.1" stroke="#7dd3fc" stroke-width="1" stroke-linecap="round" fill="none"/><circle cx="4.8" cy="20.9" r="1.35"/><circle cx="14.4" cy="20.9" r="1.35"/><path d="M4.18 13.13L12.19 7.71L15.57 14.34L6.47 17.62z"/><circle cx="5.32" cy="15.38" r="2.52"/><ellipse cx="13.62" cy="11.15" rx="1.2" ry="2.98" transform="rotate(-27 13.62 11.15)" fill="#0d1b2d"/><circle cx="15.81" cy="9.62" r="0.72"/><circle cx="16.37" cy="10.20" r="0.67"/><circle cx="17.73" cy="9.06" r="0.72"/><circle cx="17.26" cy="7.35" r="0.58"/><circle cx="19.30" cy="10.23" r="0.58"/><circle cx="19.59" cy="7.06" r="0.53"/><circle cx="20.75" cy="8.93" r="0.50"/><circle cx="21.63" cy="7.20" r="0.46"/></svg>
     </div>
     <div class="pill"><span class="dot"></span> snow.pettersson.app</div>
     <h1>Snökoll</h1>
@@ -342,7 +339,7 @@ canvas{max-width:100%}
 <div id="app" class="hidden">
   <aside id="sidebar">
     <div class="brand">
-      <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.6" stroke-linecap="round"><path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5"/></svg></div>
+      <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24" fill="#7dd3fc" stroke="none" aria-hidden="true"><path d="M9.83 14.70 L4.8 20.9M9.83 14.70 L14.4 20.9M4.1 20.9H15.1" stroke="#7dd3fc" stroke-width="1" stroke-linecap="round" fill="none"/><circle cx="4.8" cy="20.9" r="1.35"/><circle cx="14.4" cy="20.9" r="1.35"/><path d="M4.18 13.13L12.19 7.71L15.57 14.34L6.47 17.62z"/><circle cx="5.32" cy="15.38" r="2.52"/><ellipse cx="13.62" cy="11.15" rx="1.2" ry="2.98" transform="rotate(-27 13.62 11.15)" fill="#0d1b2d"/><circle cx="15.81" cy="9.62" r="0.72"/><circle cx="16.37" cy="10.20" r="0.67"/><circle cx="17.73" cy="9.06" r="0.72"/><circle cx="17.26" cy="7.35" r="0.58"/><circle cx="19.30" cy="10.23" r="0.58"/><circle cx="19.59" cy="7.06" r="0.53"/><circle cx="20.75" cy="8.93" r="0.50"/><circle cx="21.63" cy="7.20" r="0.46"/></svg></div>
       <div><b>Snökoll</b><small>snow.pettersson.app</small></div>
     </div>
     <nav class="nav" id="nav"></nav>

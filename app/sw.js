@@ -3,14 +3,14 @@
    att visa driftdata utan nät. Mätvärdena kommer alltid direkt från Firebase
    och sparas aldrig här: gammal data får inte kunna se ny ut. */
 
-const VERSION = "snokoll-v2";
+const VERSION = "snokoll-v3";
 const SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icon-192.png",
-  "./icon-512.png",
-  "./apple-touch-icon.png"
+  "./kanon-192.png",
+  "./kanon-512.png",
+  "./kanon-apple.png"
 ];
 
 // Biblioteken (Chart.js, Leaflet, Firebase) ligger på adresser med
