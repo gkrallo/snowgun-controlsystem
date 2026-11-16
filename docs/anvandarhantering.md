@@ -12,7 +12,7 @@ verktyget inte får peka på en mapp utanför sin egen. Använd adressen som
 slutar på `firebaseapp.com`: syskonadressen `snoprognos.web.app` visar samma
 sida men står inte i API-nyckelns lista, så inloggningen fungerar inte där.
 Sidan går att öppna för vem som helst; utan medlemskap visas bara
-inloggningsrutan. Exempelsiffrorna står i sidans källkod och är alltså
+inloggningsrutan. Exempelsiffrorna (som bara visas med `?demo`) står i sidans källkod och är alltså
 läsbara utan inloggning — de är påhittade, men riktiga värden får aldrig
 läggas i själva filen.
 
@@ -22,8 +22,8 @@ Google på riktigt och lyssnar på sin egen rad under `/members`; utan rad visas
 öppen stängs den. Provat: sidan utan inloggning, och att ett stoppat
 inloggningsfönster ger ett begripligt meddelande. Kristian loggade in som
 administratör och kom in. Inte provat: ett konto som inte står i listan, och
-att appen stängs när raden tas bort. Siffrorna i vyerna är fortfarande
-exempel; bara bryggans hjärtslag läses ur `/live`. Sidan måste ligga på en
+att appen stängs när raden tas bort. Vyerna visar sedan samma kväll riktig data ur `/live` och
+`/hist` (se `kolumnmappning.md`). Sidan måste ligga på en
 adress som står i API-nyckelns lista (i dag bl.a. `http://localhost:8000`).
 
 **Läget 16 november 2026:** bryggkontot finns och dess id står i

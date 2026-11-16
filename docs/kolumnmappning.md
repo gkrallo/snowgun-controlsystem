@@ -111,3 +111,29 @@ brunnar, styrsystemet har tjugofyra.
 - Vilken brunn varje kanon står vid.
 - Vad `Set up installation` kolumn 11 (= 900) betyder; statistiken kallar den
   `debit_eau_total`, men den var 900 med allt avstängt.
+
+## Vad appen visar av detta (16 november 2026)
+
+Appen läser `/live` och `/hist` ur Firebase och visar bara det som finns där.
+Med `?demo` i adressen visas i stället de gamla exempelsiffrorna.
+
+| I appen | Källa | Anmärkning |
+|---|---|---|
+| Våttemperatur, luft, fukt (översikten) | `vader` (väderstationen) | riktig |
+| Pumptryck in/ut, vattentemperatur | `pump/dep11`, `pump/dep12` | riktig |
+| Ledningstryck | `ledningar` | riktig |
+| Enheternas luft, fukt, våttemperatur | `enheter/*` | riktig, men gammal när kontakten är bruten |
+| Teoretiskt flöde | `enheter/*/flodeTeori` | styrsystemets siffra för fullt flöde; enheten antas vara m³/h |
+| Kontakt / Ingen kontakt | `senastHord` mot `meta/gssTid`, en kvart | appens egen tolkning |
+| Larm och händelser | `larm`, `handelser` | riktiga; allvarlighetsgrad finns inte |
+| Kurvor | `hist` (våttemperatur, tryck ut pump 2) | en punkt per fem minuter, ett dygn |
+| Dammens nivå | appens egen beräkning | uttaget läses inte, se nedan |
+
+**Visas som saknat, inte som siffror:** uppmätt flöde (per enhet och totalt),
+driftläge (kör / står), dyssteg, strypning, luftflöde och vilken brunn en
+enhet står vid. Kartan ritar därför inga enheter. **Fortfarande exempel:**
+körfönstret (prognosen är inte inkopplad) — märkt som exempel i appen.
+
+Händelsetexterna innehåller ledtrådar till brunnen (`Appeared S ACCESS 300
+( adr = 9) to 1`, `Hydrant disconnected`), men vad siffrorna betyder är inte
+utrett.

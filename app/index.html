@@ -5,10 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snökoll — driftövervakning</title>
 <!--
-  PROTOTYP med simulerad data. Inloggningen är riktig (Google via Firebase,
-  och medlemslistan i databasen avgör vem som kommer in), men siffrorna är
-  fortfarande påhittade exempel (märkta där det är viktigt) tills bryggan
-  skickar riktiga värden.
+  Inloggningen är riktig (Google via Firebase, och medlemslistan i databasen
+  avgör vem som kommer in), och vyerna visar det bryggan skickar från
+  styrsystemet. Det som saknas i datan (flöde per enhet, driftläge, vilken
+  brunn en enhet står vid) visas som saknat, aldrig som påhittade siffror.
+  Dammen är en egen beräkning, och körfönstret är fortfarande ett exempel.
+  Med ?demo i adressen visas i stället de gamla exempelsiffrorna överallt.
   Syfte: visa UX-förslag för övervakningsappen — välkomst, systemvy,
   vattenbalans, kanon-/lansvy, larm och körfönster.
   Chart.js hämtas från CDN. Allt annat ligger i den här filen, i samma anda
@@ -391,54 +393,153 @@ let alarms = [
   {id:3, sev:'crit', title:'Pumphus — uttag nära kapacitetstak', meta:'62 m³/h · mål 69, tak 70 · automatisk strypning aktiv', ack:false},
 ];
 
-/* Sparbanksspåret och de tjugo brunnarna — samma koordinater som prognosappen
-   (BUILTIN_TRACK / BUILTIN_WELLS i snowgun-forecast). Brunn 7 bär väderstationen;
-   brunn 20 är reserv. Används bara för att rita kartan. */
+/* ============================================================
+   RIKTIG DATA
+   Utan ?demo i adressen visas bara det bryggan skickat. Listorna ovan töms,
+   så att ingen exempelsiffra kan se ut som ett mätvärde medan den riktiga
+   datan är på väg in.
+   ============================================================ */
+const DEMO=/[?&]demo\b/.test(location.search);
+let real=!DEMO;
+if(real){cannons=[];alarms=[];}
+let wx=null, pumps=null, lines=null, events=[], histPts=[], metaLive=null;
+// En enhet räknas ha kontakt om styrsystemet hört den inom en kvart, mätt mot
+// styrsystemets egen klocka (gssTid) så att en felgående klocka i telefonen
+// inte spelar in.
+const CONTACT_MS=15*60000;
+const parseT=x=>{const d=x?new Date(x):null;return d&&!isNaN(d)?d:null};
+// Året skrivs ut när det inte är i år: en kanon som tystnade 2022 ska inte
+// se ut att ha hörts i höstas.
+const dm=d=>d?d.getDate()+'/'+(d.getMonth()+1)+(d.getFullYear()!==new Date().getFullYear()?' '+d.getFullYear():'')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'):'okänt';
+// Kvitteringar är personliga och sparas i telefonen (docs/anvandarhantering.md).
+let acked=new Set(); try{acked=new Set(JSON.parse(localStorage.getItem('snokollAck')||'[]'))}catch(e){}
+function saveAck(){try{localStorage.setItem('snokollAck',JSON.stringify([...acked]))}catch(e){}}
+const asList=x=>Array.isArray(x)?x.filter(Boolean):Object.values(x||{});
+
+function applyLive(v){
+  if(!real)return;
+  v=v||{};
+  metaLive=v.meta||null;
+  // Stämpeln är molnets klocka för bryggans senaste hjärtslag.
+  lastData=metaLive&&metaLive.ts?metaLive.ts:0;
+  const ref=parseT(metaLive&&metaLive.gssTid), list=[];
+  for(const [key,e] of Object.entries(v.enheter||{})){
+    if(!e)continue;
+    const m=/^(SGC\d+)-(\d+)$/.exec(key)||[], old=m[1]==='SGC300', nr=m[2]||key;
+    const lans=/TAURUS/i.test(e.typ||''), heard=parseT(e.senastHord);
+    list.push({key, id:(old?'S':lans?'L':'K')+nr, typ:lans?'lans':'kanon', nr:+nr||0, old,
+      namn:(lans?'Lans ':'Kanon ')+(old?'300-':'')+nr, modell:e.typ||'',
+      state:(ref&&heard&&Math.abs(ref-heard)<CONTACT_MS)?'conn':'nocon', heard,
+      t:e.t, rh:e.rh, tw:e.tw, fmax:Number.isFinite(e.flodeTeori)?e.flodeTeori:null,
+      // Finns inte i datan än. null och inte 0: noll vore ett påstående.
+      eau:null, air:null, brunn:null, steg:null, stryp:0});
+  }
+  list.sort((a,b)=>(a.old-b.old)||(a.nr-b.nr));
+  cannons=list;
+  wx=v.vader?Object.assign({},v.vader,{vind:v.vindStation||null}):null;
+  pumps=v.pump||null; lines=v.ledningar||null;
+  events=asList(v.handelser);
+  alarms=asList(v.larm).map(a=>({id:String(a.id), sev:'warn',
+    title:[a.maskin,a.namn].filter(Boolean).join(' ')+' — '+(a.text||''),
+    meta:'Aktivt sedan '+(a.sedan||'okänt'), ack:acked.has(String(a.id))}));
+  if(metaLive&&metaLive.skrivkonto)alarms.push({id:'avsteg',sev:'info',
+    title:'Bryggan går med styrsystemets skrivande konto',
+    meta:'Tillfälligt avsteg tills läs-only-kontot finns. Bryggan läser bara.',ack:acked.has('avsteg')});
+  if(metaLive&&metaLive.sqlOk===false)alarms.unshift({id:'sqlnere',sev:'crit',
+    title:'Bryggan når inte styrsystemets databas',
+    meta:'Värdena i appen är de senast lästa.',ack:false});
+  liveRefresh();
+}
+function applyHist(h){
+  if(!real)return;
+  histPts=Object.keys(h||{}).sort().map(k=>h[k]).filter(x=>x&&x.ts);
+  liveRefresh();
+}
+// Ny data ritar om vyn, men inte medan någon skriver i ett fält (dammen) och
+// inte kartan, som annars hoppar tillbaka till utgångsläget.
+function liveRefresh(){
+  if(document.getElementById('app').classList.contains('hidden'))return;
+  const typing=document.activeElement&&/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if(current!=='map'&&!typing)safeRender(true); else refreshLive();
+}
+
+/* Sparbanksspåret och de tjugo brunnarna. Brunn 7 bär väderstationen; brunn 20
+   är reserv. Används bara för att rita kartan.
+
+   Linjen är medellinjen ur 6,4 varv med klockan 1 februari 2026
+   (matdata/20260201_093644.gpx i prognosrepot), inte ett enda inspelat varv
+   som förut. Varje punkt på den gamla linjen flyttades till medianen av var
+   varven faktiskt gick där, i rutor om fem meter. Varven stämmer inbördes på
+   ungefär en meter, och linjen flyttades 1,6 m i median, som mest 6,6 m.
+   En klocka kan ändå ligga ett par meter fel åt samma håll i alla varv
+   (träden) - det tar medelvärdet inte bort. Vill man veta var gatans mitt
+   ligger på decimetern är det barmarksmätningen med pucken som gäller. */
 const TRACK = {
   centre:[58.50452,13.08813],
   pts:[
-  [58.50683,13.08698],[58.50683,13.08673],[58.50681,13.08653],[58.50676,13.08639],
-  [58.50667,13.08624],[58.50655,13.08612],[58.50641,13.08604],[58.50632,13.08602],
-  [58.50615,13.08605],[58.50598,13.08615],[58.50589,13.08624],[58.50567,13.08651],
-  [58.50536,13.08696],[58.50527,13.08707],[58.50436,13.08757],[58.50365,13.08802],
-  [58.50358,13.08803],[58.50347,13.088],[58.50288,13.08762],[58.5027,13.08752],
-  [58.50255,13.08748],[58.50244,13.08749],[58.50227,13.08764],[58.50184,13.08812],
-  [58.5017,13.08824],[58.50161,13.08825],[58.50121,13.08816],[58.50104,13.08815],
-  [58.50032,13.08867],[58.50006,13.0888],[58.49997,13.08881],[58.49985,13.08885],
-  [58.49981,13.08889],[58.4998,13.08894],[58.4998,13.08904],[58.49986,13.0892],
-  [58.49988,13.08923],[58.49995,13.08924],[58.50008,13.08913],[58.5003,13.08886],
-  [58.50056,13.08859],[58.50088,13.08836],[58.50104,13.08828],[58.50122,13.08824],
-  [58.5014,13.08824],[58.50173,13.08828],[58.50193,13.08825],[58.50202,13.08815],
-  [58.50237,13.08764],[58.5025,13.08753],[58.50261,13.08748],[58.5027,13.08749],
-  [58.50276,13.08754],[58.50322,13.08798],[58.50338,13.08811],[58.50359,13.08815],
-  [58.50372,13.08811],[58.50448,13.0876],[58.50509,13.08723],[58.50534,13.08705],
-  [58.50548,13.0869],[58.5058,13.0865],[58.50604,13.08627],[58.50615,13.0862],
-  [58.50627,13.08617],[58.50646,13.08616],[58.50654,13.08619],[58.50665,13.0863],
-  [58.50676,13.08648],[58.50679,13.08674],[58.5068,13.08717],[58.50682,13.08763],
-  [58.50691,13.08829],[58.50693,13.08847],[58.50692,13.08874],[58.50689,13.08888],
-  [58.50685,13.08904],[58.50663,13.08973],[58.50661,13.08992],[58.50661,13.09008],
-  [58.50667,13.09038],[58.50677,13.09061],[58.50685,13.0907],[58.50691,13.09073],
-  [58.50697,13.09072],[58.50709,13.09066],[58.5072,13.09055],[58.50747,13.0902],
-  [58.5075,13.09013],[58.50753,13.09001],[58.50755,13.08978],[58.50754,13.08963],
-  [58.50752,13.08957],[58.50746,13.08947],[58.50735,13.0894],[58.50717,13.08933],
-  [58.50712,13.08929],[58.50704,13.08887],[58.50693,13.08796],[58.50688,13.08753],
-  [58.50683,13.08698]
+  [58.506845,13.086980],[58.506848,13.086740],[58.506828,13.086504],[58.506787,13.086351],
+  [58.506749,13.086277],[58.506694,13.086191],[58.506580,13.086087],[58.506493,13.086054],
+  [58.506331,13.086041],[58.506153,13.086079],[58.505977,13.086150],[58.505896,13.086221],
+  [58.505770,13.086415],[58.505593,13.086649],[58.505413,13.086933],[58.505274,13.087089],
+  [58.505176,13.087173],[58.505090,13.087226],[58.504774,13.087351],[58.504565,13.087454],
+  [58.504481,13.087511],[58.504299,13.087658],[58.503895,13.087944],[58.503809,13.087995],
+  [58.503649,13.088037],[58.503559,13.088046],[58.503489,13.088022],[58.503412,13.087933],
+  [58.503395,13.087926],[58.503368,13.087923],[58.503324,13.087943],[58.503280,13.087944],
+  [58.503247,13.087918],[58.503180,13.087832],[58.503073,13.087744],[58.502829,13.087489],
+  [58.502702,13.087400],[58.502649,13.087388],[58.502595,13.087393],[58.502543,13.087413],
+  [58.502440,13.087477],[58.502279,13.087627],[58.502096,13.087874],[58.501946,13.088121],
+  [58.501892,13.088182],[58.501842,13.088220],[58.501773,13.088254],[58.501710,13.088268],
+  [58.501577,13.088234],[58.501384,13.088158],[58.501259,13.088123],[58.501197,13.088121],
+  [58.501027,13.088153],[58.500879,13.088224],[58.500669,13.088374],[58.500421,13.088577],
+  [58.500287,13.088715],[58.500229,13.088760],[58.500158,13.088779],[58.499960,13.088776],
+  [58.499873,13.088811],[58.499841,13.088843],[58.499816,13.088892],[58.499806,13.088957],
+  [58.499806,13.089042],[58.499838,13.089164],[58.499876,13.089236],[58.499961,13.089288],
+  [58.500006,13.089288],[58.500050,13.089274],[58.500097,13.089225],[58.500209,13.088981],
+  [58.500251,13.088915],[58.500303,13.088850],[58.500520,13.088644],[58.500669,13.088486],
+  [58.500832,13.088385],[58.500973,13.088277],[58.501034,13.088243],[58.501212,13.088206],
+  [58.501266,13.088204],[58.501472,13.088229],[58.501621,13.088288],[58.501737,13.088317],
+  [58.501817,13.088314],[58.501924,13.088281],[58.501956,13.088250],[58.502013,13.088167],
+  [58.502120,13.087959],[58.502177,13.087876],[58.502426,13.087604],[58.502500,13.087544],
+  [58.502613,13.087485],[58.502702,13.087494],[58.502802,13.087569],[58.503182,13.087957],
+  [58.503382,13.088110],[58.503531,13.088170],[58.503585,13.088182],[58.503742,13.088118],
+  [58.503846,13.088063],[58.504075,13.087910],[58.504433,13.087633],[58.504859,13.087428],
+  [58.505061,13.087349],[58.505207,13.087261],[58.505354,13.087134],[58.505486,13.086987],
+  [58.505646,13.086767],[58.505829,13.086489],[58.505918,13.086374],[58.505997,13.086294],
+  [58.506047,13.086255],[58.506151,13.086204],[58.506374,13.086142],[58.506472,13.086139],
+  [58.506560,13.086171],[58.506649,13.086252],[58.506749,13.086424],[58.506775,13.086492],
+  [58.506811,13.086686],[58.506820,13.086770],[58.506823,13.087010],[58.506802,13.087298],
+  [58.506813,13.087486],[58.506834,13.087670],[58.506940,13.088198],[58.506966,13.088468],
+  [58.506960,13.088776],[58.506908,13.089050],[58.506862,13.089217],[58.506817,13.089345],
+  [58.506770,13.089448],[58.506673,13.089626],[58.506627,13.089731],[58.506596,13.089910],
+  [58.506595,13.090098],[58.506616,13.090229],[58.506650,13.090387],[58.506700,13.090509],
+  [58.506755,13.090621],[58.506834,13.090703],[58.506885,13.090736],[58.506920,13.090749],
+  [58.506992,13.090745],[58.507097,13.090702],[58.507201,13.090601],[58.507478,13.090194],
+  [58.507537,13.090087],[58.507564,13.090019],[58.507581,13.089922],[58.507587,13.089786],
+  [58.507570,13.089635],[58.507560,13.089588],[58.507532,13.089520],[58.507482,13.089447],
+  [58.507449,13.089422],[58.507370,13.089394],[58.507201,13.089355],[58.507152,13.089313],
+  [58.507126,13.089267],[58.507099,13.089103],[58.507033,13.088785],[58.507008,13.088585],
+  [58.506995,13.088312],[58.506982,13.088177],[58.506940,13.087914],[58.506879,13.087591],
+  [58.506853,13.087409],[58.506837,13.087189],[58.506845,13.086980]
   ]
 };
+// Brunn 1-19 är inmätta med pucken 15 november 2026 (samma värden som
+// BUILTIN_WELLS i prognosappen). Förut stod här mobilens lägen, 1-6 m fel.
 const WELLS = [
-  {no:1,lat:58.500038,lon:13.088891},{no:2,lat:58.50081,lon:13.088443},
-  {no:3,lat:58.501464,lon:13.088295},{no:4,lat:58.502066,lon:13.088121},
-  {no:5,lat:58.502645,lon:13.087593},{no:6,lat:58.50315,lon:13.088064},
-  {no:7,lat:58.503781,lon:13.087922,station:true},{no:8,lat:58.504247,lon:13.08773},
-  {no:9,lat:58.504722,lon:13.087461},{no:10,lat:58.505265,lon:13.087402},
-  {no:11,lat:58.505641,lon:13.086717},{no:12,lat:58.506026,lon:13.086323},
-  {no:13,lat:58.506739,lon:13.08604},{no:14,lat:58.506874,lon:13.087089},
-  {no:15,lat:58.507007,lon:13.088262},{no:16,lat:58.506981,lon:13.089118},
-  {no:17,lat:58.506829,lon:13.090311},{no:18,lat:58.507088,lon:13.090475},
-  {no:19,lat:58.507521,lon:13.089579},{no:20,lat:58.50341,lon:13.086911,spare:true},
+  {no:1,lat:58.5000251,lon:13.0888591},{no:2,lat:58.5007883,lon:13.0884306},
+  {no:3,lat:58.501446,lon:13.0883199},{no:4,lat:58.5020553,lon:13.0881364},
+  {no:5,lat:58.5026144,lon:13.0875538},{no:6,lat:58.5031421,lon:13.0880276},
+  {no:7,lat:58.5037755,lon:13.0879116,station:true},{no:8,lat:58.5042417,lon:13.0878237},
+  {no:9,lat:58.504721,lon:13.0875332},{no:10,lat:58.5052341,lon:13.0873162},
+  {no:11,lat:58.5056589,lon:13.086779},{no:12,lat:58.5060168,lon:13.0862999},
+  {no:13,lat:58.5066904,lon:13.086078},{no:14,lat:58.5068476,lon:13.0871011},
+  {no:15,lat:58.5070145,lon:13.0881917},{no:16,lat:58.5069455,lon:13.089078},
+  {no:17,lat:58.506789,lon:13.0903636},{no:18,lat:58.5070813,lon:13.0904723},
+  {no:19,lat:58.5074957,lon:13.0896091},{no:20,lat:58.50341,lon:13.086911,spare:true},
 ];
 /* enheternas lägesfärger på kartan (matchar statuschippen) */
 const UCOL={run:'#34d399',standby:'#60a5fa',limit:'#fbbf24',alarm:'#f87171',off:'#9fb0c7'};
+// Lägen som går att läsa ur den riktiga datan: bara om enheten har kontakt.
+const UCOL_REAL={conn:'#60a5fa',nocon:'#9fb0c7'};
 
 const NAV = [
   {id:'overview', label:'Översikt',    icon:'grid'},
@@ -473,7 +574,8 @@ function icon(name,c='currentColor',s=20){
 }
 function fanSVG(run,fast){return `<svg width="22" height="22" viewBox="0 0 24 24" fill="#7dd3fc" class="fan ${run?('spin'+(fast?' fast':'')):''}"><circle cx="12" cy="12" r="2.1"/><path d="M12 10c0-3 .5-6-1.5-7.5C8 4 9 7 12 10zM12 14c0 3-.5 6 1.5 7.5C16 20 15 17 12 14zM10 12c-3 0-6-.5-7.5 1.5C4 16 7 15 10 12zM14 12c3 0 6 .5 7.5-1.5C20 8 17 9 14 12z"/></svg>`}
 
-const STATE={run:['s-run','Körs'],standby:['s-standby','Redo'],limit:['s-limit','Strypt'],alarm:['s-alarm','Larm'],off:['s-off','Av']};
+const STATE={run:['s-run','Körs'],standby:['s-standby','Redo'],limit:['s-limit','Strypt'],alarm:['s-alarm','Larm'],off:['s-off','Av'],
+  conn:['s-standby','Kontakt'],nocon:['s-off','Ingen kontakt']};
 /* Två skydd inför riktig data. Texter ur styrsystemets databas (namn, larm)
    är fritext och får aldrig tolkas som HTML — esc() gör dem ofarliga. Och ett
    värde som saknas (en kanon utan kontakt) ska visas som ett streck, inte
@@ -485,7 +587,7 @@ function chip(st){const[c,l]=STATE[st]||['s-off',esc(st)];return `<span class="c
 /* ---------- derived ---------- */
 const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
 function totalWater(){return +sum(cannons,c=>c.eau).toFixed(1)}
-function running(){return cannons.filter(c=>c.state!=='off')}
+function running(){return cannons.filter(c=>real?c.state==='conn':c.state!=='off')}
 function activeAlarms(){return alarms.filter(a=>!a.ack)}
 
 /* ============================================================
@@ -509,9 +611,12 @@ function buildNav(){
    för senaste värdet och slår om till varning när det är äldre än 90 s —
    då har bryggan eller nätet tystnat. (I prototypen kommer "värdena" från
    simuleringen var femte sekund.) */
-let lastData=Date.now();
-const STALE_S=90;
+let lastData=real?0:Date.now();
+// Bryggan skickar ett hjärtslag i minuten, så 90 s vore för snålt med riktig
+// data: ett enda försenat slag skulle slå om stämpeln till varning.
+const STALE_S=real?150:90;
 function liveHTML(){
+  if(!lastData)return `<span class="live stale" id="liveChip">Väntar på data</span>`;
   const d=new Date(lastData), t=hhmm(d)+':'+String(d.getSeconds()).padStart(2,'0');
   return (Date.now()-lastData)/1000>STALE_S
     ? `<span class="live stale" id="liveChip">⚠ Gammal data · senast ${t}</span>`
@@ -557,8 +662,104 @@ function vOverview(){
   </div>`;
 }
 
+/* ---------- vyer med riktig data ---------- */
+const alarmBanner=()=>{const aa=activeAlarms();return aa.length
+  ? `<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${aa.length} aktiva larm</b> <span class="muted small">· ${esc((aa.find(a=>a.sev==='crit')||aa[0]).title)}</span></div><button class="linkbtn" onclick="go('alarms')">Visa larm</button></div>`
+  : `<div class="banner ok">${icon('bell','#34d399')}<div style="flex:1"><b>Inga aktiva larm</b></div></div>`};
+const missing=t=>`<div class="note" style="margin-top:14px">${t}</div>`;
+
+function vOverviewR(){
+  const con=running().length, tw=wx?wx.tw:null, cold=Number.isFinite(tw)?tw<=FTHRESH:null;
+  const p1=pumps&&pumps.dep11||{}, p2=pumps&&pumps.dep12||{};
+  return topbar('Driftövervakning','Översikt')+`<div class="view">${alarmBanner()}
+  <div class="grid g-kpi">
+    <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} Med kontakt</h3><div class="val">${con}<small> / ${cannons.length} enheter</small></div><div class="foot">Om de kör går inte att läsa ur datan än</div></div>
+    <div class="card kpi" style="cursor:pointer" onclick="go('water')"><h3>${icon('gauge','#7dd3fc',15)} Pumptryck ut</h3><div class="val">${num(p1.tryckUt)}<small> / ${num(p2.tryckUt)} bar</small></div><div class="foot">P1 / P2 · vattnet ${num(p2.vattenTemp)} °C</div></div>
+    <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null?'':cold?'up':'warn'}">${cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
+    <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">Egen beräkning — nivån mäts inte</div></div>
+  </div>
+
+  <div class="grid g-2" style="margin-top:14px">
+    <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur vid väderstationen</h3>
+      ${histPts.length>1?'<div class="chartbox"><canvas id="cTw"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}</div>
+    <div class="card"><h3>${icon('clock','#7dd3fc',15)} Går det att köra?</h3>
+      <div class="row" style="margin-top:8px">${cold===null?'<span class="chip s-off"><span class="d"></span>Inget värde</span>':cold?'<span class="chip s-run"><span class="d"></span>Kallt nog just nu</span>':'<span class="chip s-limit"><span class="d"></span>För varmt just nu</span>'}</div>
+      <p class="muted small" style="line-height:1.6;margin:11px 0 0">Bedömt på väderstationens våttemperatur i det här ögonblicket, mot startgränsen ${num(FTHRESH)} °C. Hur det blir framåt står i prognosappen — prognosen är inte inkopplad här än.</p>
+    </div>
+  </div>
+
+  <div class="section-title">Enheter</div>
+  ${cannons.length?`<div class="grid g-units">${cannons.map(unitCard).join('')}</div>`:'<p class="muted small">Inga enheter i datan än.</p>'}
+  </div>`;
+}
+
+function vWaterR(){
+  const con=running().filter(c=>Number.isFinite(c.fmax)), tot=+sum(con,c=>c.fmax).toFixed(1);
+  const pct=Math.round(tot/PUMP_MAX*100), ps=pumpState(tot), hot=ps==='over'||ps==='at', near=ps!=='ok';
+  const pump=(namn,d)=>`<div class="card kpi"><h3>${icon('gauge','#7dd3fc',15)} ${namn}</h3>
+    <div class="val">${num(d&&d.tryckUt)}<small> bar ut</small></div>
+    <div class="foot">in ${num(d&&d.tryckIn)} bar · vattnet ${num(d&&d.vattenTemp)} °C</div></div>`;
+  const ln=Object.entries(lines||{});
+  return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
+  <div class="grid g-kpi">
+    ${pump('Pump 1',pumps&&pumps.dep11)}${pump('Pump 2',pumps&&pumps.dep12)}
+    <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Ledningstryck</h3>
+      <div class="foot" style="margin-top:10px;line-height:1.9">${ln.length?ln.map(([k,l])=>`${esc(k)}: <b style="color:var(--text)">${num(l&&l.tryck)}</b> bar`).join('<br>'):'Inga värden'}</div></div>
+  </div>
+  ${missing('<b>Uppmätt flöde saknas.</b> Bland de värden vi hittat i styrsystemet finns tryck och temperatur men inget säkert flöde, så sidan visar tryck i stället för m³/h. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
+
+  <div class="section-title">Teoretiskt flöde — enheter med kontakt</div>
+  <div class="card">
+    ${con.length?con.map(c=>`<div class="flow-row">
+        <div class="fname">${c.typ==='kanon'?icon('fan','#7dd3fc',18):icon('lance','#7dd3fc',18)} ${esc(c.namn)}</div>
+        <div class="flow-track"><div class="flow-fill" style="width:${Math.max(4,Math.min(100,Math.round(c.fmax/PUMP_MAX*100)))}%"></div></div>
+        <div class="flow-val">${num(c.fmax)} <small>m³/h</small></div>
+      </div>`).join('')+`<div class="flow-row" style="margin-top:4px;border-top:2px solid var(--border-hi);padding-top:11px">
+        <div class="fname">${icon('drop','#22d3ee',18)} <b>Summa</b></div>
+        <div class="flow-track"><div class="flow-fill ${near?'amber':''}" style="width:${Math.min(100,pct)}%"></div></div>
+        <div class="flow-val"><b>${num(tot)}</b> <small>m³/h</small></div>
+      </div>
+      <p class="muted small" style="margin:12px 0 0;line-height:1.6">${hot?'<b style="color:var(--alarm)">Mer än pumparna orkar.</b> Kör alla dessa för fullt samtidigt går uttaget över '+PUMP_TARGET+' m³/h.':near?'<b style="color:var(--limit)">Nära målet '+PUMP_TARGET+' m³/h</b> om alla kör för fullt.':'Ryms inom pumparnas '+PUMP_TARGET+' m³/h även om alla kör för fullt.'}</p>`
+      :'<p class="muted small" style="margin:0">Ingen enhet har kontakt just nu.</p>'}
+  </div>
+  ${missing('Teoretiskt flöde är styrsystemets egen siffra för vad enheten <b>skulle</b> dra för fullt vid den temperatur den mäter — inte vad den drar just nu.')}
+
+  <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck ut från pump 2</h3>
+    ${histPts.length>1?'<div class="chartbox"><canvas id="cWater"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
+    <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren</button>
+  </div>
+  </div>`;
+}
+
+function vUnitR(){
+  const c=cannons.find(x=>x.id===unitId); if(!c)return vOverviewR();
+  return topbar('Enhet / '+(c.typ==='kanon'?'Kanon':'Lans'),esc(c.namn),
+    `<button class="linkbtn" onclick="go('${backTo}')">← Tillbaka</button>`)+`<div class="view">
+    <div class="grid g-kpi">
+      <div class="card kpi"><h3>Status</h3><div style="margin-top:10px">${chip(c.state)}</div><div class="foot" style="margin-top:9px">${esc(c.modell)} · senast hörd ${dm(c.heard)}</div></div>
+      <div class="card kpi"><h3>Teoretiskt flöde</h3><div class="val">${num(c.fmax)}<small> m³/h</small></div><div class="foot">för fullt, vid enhetens temperatur</div></div>
+      <div class="card kpi"><h3>Luft vid enheten</h3><div class="val">${num(c.t)}<small> °C</small></div><div class="foot">${num(c.rh,0)} % luftfuktighet</div></div>
+      <div class="card kpi"><h3>Våttemp vid enheten</h3><div class="val">${num(c.tw)}<small> °C</small></div></div>
+    </div>
+    ${c.state==='conn'?'':missing('<b>Ingen kontakt.</b> Värdena ovan är de sista styrsystemet fick innan kontakten bröts, och säger inget om hur det är nu.')}
+    ${missing('Flöde, driftläge, dyssteg och vilken brunn enheten står vid finns inte bland de värden vi hittat i styrsystemet än. Kurvor per enhet kommer när de gör det.')}
+  </div>`;
+}
+
 function unitCard(c){
   const isFan=c.typ==='kanon';
+  if(real)return `<div class="card unit" onclick="openUnit('${esc(c.id)}')">
+    <div class="u-head">
+      <div><div class="u-name">${isFan?fanSVG(false,false):icon('lance','#7dd3fc',20)} ${esc(c.namn)}</div><div class="u-well">${esc(c.modell)} · hörd ${dm(c.heard)}</div></div>
+      ${chip(c.state)}
+    </div>
+    <div class="metric-row">
+      <div class="metric"><div class="m-l">Teor. flöde</div><div class="m-v">${num(c.fmax)} <small>m³/h</small></div></div>
+      <div class="metric"><div class="m-l">Luft</div><div class="m-v">${num(c.t)}<small>°C</small></div></div>
+      <div class="metric"><div class="m-l">Våttemp</div><div class="m-v">${num(c.tw)}<small>°C</small></div></div>
+    </div>
+    <div class="foot" style="font-size:.73rem;margin-top:9px;color:var(--muted2)">${c.state==='conn'?'Värdena är aktuella':'Sista värdena innan kontakten bröts'}</div>
+  </div>`;
   return `<div class="card unit" onclick="openUnit('${esc(c.id)}')">
     <div class="u-head">
       <div><div class="u-name">${isFan?fanSVG(c.state!=='off',c.state==='run'):icon('lance','#7dd3fc',20)} ${esc(c.namn)}</div><div class="u-well">Brunn ${c.brunn} · steg ${esc(c.steg)}</div></div>
@@ -755,7 +956,7 @@ function vDam(){
   else proj='I det närmaste i balans';
   const wh=hFromTape(damTape, dam.calMode==='low'), wv=volAt(Math.max(0,Math.min(DAM.hMax,wh)));
   return topbar('Vattenbalans','Damm-koll — magasinet vid Råda ås')+`<div class="view">
-   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Geometrin är hämtad ur byggritningen. Uttaget kommer från driftdatan; påfyllning och kalibrering matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
+   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Geometrin är hämtad ur byggritningen. ${real?'<b style="color:var(--text)">Uttaget läses inte ur styrsystemet än</b>, så beräkningen tar bara hänsyn till påfyllning och läckage — kalibrera om med måttbandet efter varje körning.':'Uttaget kommer från driftdatan;'} Påfyllning och kalibrering matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
 
    <div class="grid g-kpi">
      <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Aktuell volym</h3><div class="val">${Math.round(V).toLocaleString('sv-SE')}<small> m³</small></div><div class="bar ${pct>101?'amber':pct<30?'red':'green'}"><i style="width:${Math.min(100,pct)}%"></i></div><div class="foot">${pct}% av snorkelnivån (${Math.round(V100).toLocaleString('sv-SE')} m³)</div></div>
@@ -850,7 +1051,10 @@ const FTHRESH=-2.5;  // startgräns (våttemp °C) — prototyp, samma som progn
 const round1=x=>Math.floor(x*10+1e-9)/10;
 
 function advise(){
-  const rows=cannons.map(c=>({id:c.id,namn:c.namn,typ:c.typ,brunn:c.brunn,tw:c.tw,fmax:c.fmax,cur:c.eau,sug:0}));
+  // Med riktig data: bara enheter med kontakt, och styrsystemets teoretiska
+  // flöde som fullt flöde. En enhet utan kontakt har gamla värden.
+  const src=real?running().filter(c=>Number.isFinite(c.fmax)&&Number.isFinite(c.tw)):cannons;
+  const rows=src.map(c=>({id:c.id,namn:c.namn,typ:c.typ,brunn:c.brunn,tw:c.tw,fmax:c.fmax,cur:c.eau,sug:0}));
   const elig=rows.filter(u=>u.tw<=FTHRESH);        // får köra
   const cold=[...elig].sort((a,b)=>a.tw-b.tw);     // kallast först
   const sumF=elig.reduce((s,u)=>s+u.fmax,0);
@@ -887,6 +1091,7 @@ function vAdvisor(){
   return topbar('Vattenbalans','Vattenrådgivare')+`<div class="view">
    <div class="banner ok">${icon('bolt','#34d399')}<div style="flex:1"><b>Förslag — inte styrning.</b> <span class="muted small">Appen räknar fram en fördelning utifrån våttemperatur och pumptak. Du ställer in den i styrsystemet; appen rör aldrig anläggningen.</span></div></div>
 
+   ${real?missing('Räknat på de enheter som har kontakt just nu, med styrsystemets teoretiska flöde som fullt flöde. Vad varje enhet drar i dag går inte att läsa än, så kolumnen "Nu" är tom. Täckningen i kilometer är en grov tumregel.')+'<div style="height:14px"></div>':''}
    <div class="card">
      <h3>${icon('sliders','#7dd3fc',15)} Vad vill du prioritera?</h3>
      <div class="strat">
@@ -907,12 +1112,13 @@ function vAdvisor(){
      <div class="adv-row" style="border-bottom:2px solid var(--border-hi);color:var(--muted2);font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;padding:6px 0 9px">
        <div>Enhet · brunn · våttemp</div><div class="adv-cur">Nu</div><div></div><div class="adv-sug">Förslag</div>
      </div>
+     ${r.rows.length?'':'<p class="muted small" style="margin:10px 0 0">Ingen enhet har kontakt just nu, så det finns inget att fördela.</p>'}
      ${r.rows.map(u=>{
         const off=u.sug<=0;
         const cls=off?'off':(u.sug>u.cur+0.15?'up':(u.sug<u.cur-0.15?'dn':''));
         const thr=!off&&u.fmax?Math.round((1-u.sug/u.fmax)*100):0;
         return `<div class="adv-row">
-          <div class="fname">${u.typ==='kanon'?icon('fan','#7dd3fc',17):icon('lance','#7dd3fc',17)} ${esc(u.namn)}<span class="u-well"> · br ${u.brunn} · ${num(u.tw)}°C</span></div>
+          <div class="fname">${u.typ==='kanon'?icon('fan','#7dd3fc',17):icon('lance','#7dd3fc',17)} ${esc(u.namn)}<span class="u-well">${u.brunn?' · br '+u.brunn:''} · ${num(u.tw)}°C</span></div>
           <div class="adv-cur">${num(u.cur)}<small> m³/h</small></div>
           <div class="adv-arrow">→</div>
           <div class="adv-sug ${cls}">${off?'Av':`${num(u.sug)} <small>m³/h</small>${thr>3?` · −${thr}%`:''}`}</div>
@@ -929,11 +1135,12 @@ function vMap(){
   return topbar('Driftövervakning','Karta — enheter på spåret')+`<div class="view">
    <div class="card" style="padding:0;overflow:hidden"><div id="opsmap"></div></div>
    <div class="map-legend">
-     ${Object.keys(UCOL).map(k=>`<span class="row"><i style="background:${UCOL[k]};border:1px solid #0a111e"></i><span class="muted small">${STATE[k][1]}</span></span>`).join('')}
+     ${Object.keys(real?UCOL_REAL:UCOL).map(k=>`<span class="row"><i style="background:${(real?UCOL_REAL:UCOL)[k]};border:1px solid #0a111e"></i><span class="muted small">${STATE[k][1]}</span></span>`).join('')}
      <span class="row"><i style="background:#0e2a3d;border:2px solid #22d3ee"></i><span class="muted small">Väderstation (br 7)</span></span>
      <span class="row"><i style="background:#1a2a42;border:1px solid #8ba0bd;width:9px;height:9px"></i><span class="muted small">Brunn</span></span>
    </div>
-   <div class="note" style="margin-top:12px">Enheterna sitter vid sin brunn, färgade efter läge — tryck för detaljer. Spårlinjen och brunnarna är desamma som i prognosappen (brunn 1, 10, 13, 16 och 17 ligger där spåret delar sig och hamnar därför lite utanför den inspelade linjen). Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
+   ${real?missing('<b>Enheterna ritas inte ut än.</b> Vilken brunn varje enhet står vid finns inte bland de värden vi hittat i styrsystemet. Kartan visar spåret och brunnarna.'):''}
+   <div class="note" style="margin-top:12px">Enheterna sitter vid sin brunn, färgade efter läge — tryck för detaljer. Spårlinjen är medellinjen ur drygt sex varv med klocka, och brunnarna är inmätta med pucken. Brunn 17 och 18 ligger en bit från linjen: gatan är 15–20 m bred längst ner i stora slingan, och varven gick på andra sidan. Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
   </div>`;
 }
 let mapInst=null;
@@ -960,7 +1167,7 @@ function initMap(){
   // enheter vid sina brunnar, färgade efter läge
   cannons.forEach(c=>{
     const w=WELLS.find(x=>x.no===c.brunn); if(!w) return;
-    const ic=L.divIcon({className:'',html:`<div class="umark" style="background:${UCOL[c.state]}">${esc(c.id)}</div>`,
+    const ic=L.divIcon({className:'',html:`<div class="umark" style="background:${UCOL[c.state]||UCOL_REAL[c.state]}">${esc(c.id)}</div>`,
       iconSize:[28,26],iconAnchor:[14,13]});
     L.marker([w.lat,w.lon],{icon:ic}).addTo(mapInst)
      .bindPopup(`<b>${esc(c.namn)}</b> · ${STATE[c.state][1]}<br>Brunn ${c.brunn} · steg ${esc(c.steg)}<br>`+
@@ -974,7 +1181,7 @@ function vUnits(typ){
   // växeln gör lansarna nåbara på telefonen, där de saknar egen knapp i raden
   const sw=`<div class="seg"><button class="${typ==='kanon'?'on':''}" onclick="go('cannons')">Kanoner</button><button class="${typ==='lans'?'on':''}" onclick="go('lances')">Lansar</button></div>`;
   return topbar('Enheter',t,sw)+`<div class="view"><div class="grid g-units">${list.map(unitCard).join('')}</div>
-   <div class="note" style="margin-top:16px">Tryck på en enhet för detaljer och trendkurvor. Lägen och steg speglar styrsystemets egen inkoppling — appen bara visar, styr aldrig.</div></div>`;
+   <div class="note" style="margin-top:16px">${real?'Tryck på en enhet för detaljer. Appen bara visar, styr aldrig.':'Tryck på en enhet för detaljer och trendkurvor. Lägen och steg speglar styrsystemets egen inkoppling — appen bara visar, styr aldrig.'}</div></div>`;
 }
 
 function vAlarms(){
@@ -987,17 +1194,23 @@ function vAlarms(){
      <div class="card kpi"><h3>Varningar</h3><div class="val warn">${alarms.filter(a=>a.sev==='warn'&&!a.ack).length}</div></div>
      <div class="card kpi"><h3>Info</h3><div class="val">${alarms.filter(a=>a.sev==='info'&&!a.ack).length}</div></div>
    </div>
-   <div class="card">${sorted.map(a=>{const[c,i]=sevIco[a.sev]||sevIco.info;return `<div class="alarm-item ${a.ack?'ack':''}">
+   <div class="card">${sorted.length?'':'<p class="muted small" style="margin:0">Inga aktiva larm.</p>'}${sorted.map(a=>{const[c,i]=sevIco[a.sev]||sevIco.info;return `<div class="alarm-item ${a.ack?'ack':''}">
       <div class="alarm-ico ${c}">${icon(i,'currentColor',18)}</div>
       <div class="a-body"><div class="a-title">${esc(a.title)}</div><div class="a-meta">${esc(a.meta)}</div></div>
-      ${a.ack?'<span class="chip s-off"><span class="d"></span>Kvitterad</span>':`<button class="linkbtn" onclick="ackOne(${a.id})">Kvittera</button>`}
+      ${a.ack?'<span class="chip s-off"><span class="d"></span>Kvitterad</span>':`<button class="linkbtn" onclick="ackOne('${esc(a.id)}')">Kvittera</button>`}
     </div>`}).join('')}</div>
+   ${real?`<div class="section-title">Senaste händelser i styrsystemet</div>
+   <div class="card">${events.length?events.map(e=>`<div class="alarm-item">
+      <div class="a-body"><div class="a-title">${esc(e.text)}</div><div class="a-meta">${dm(parseT(e.tid))} · ${esc(e.maskin)} ${esc(e.namn)}</div></div>
+    </div>`).join(''):'<p class="muted small" style="margin:0">Inga händelser.</p>'}</div>
+   ${missing('Texterna kommer direkt ur styrsystemet, därför på engelska. Hur allvarligt ett larm är står inte i datan, så alla visas som varningar.')}`:''}
    <div class="note" style="margin-top:14px">Kvittering sker <b>lokalt i appen</b> (döljer larmet för den som tittar) — styrsystemet påverkas inte, eftersom appen bara läser. Faktisk återställning görs i anläggningen.</div>
   </div>`;
 }
 
 function vForecast(){
   return topbar('Prognos','Körfönster')+`<div class="view">
+   ${real?'<div class="banner">'+icon('bell','#f87171')+'<div style="flex:1"><b>Exempel — inte riktig data.</b> <span class="muted small">Prognosen är inte inkopplad i den här appen än. Allt på sidan är påhittat; se prognosappen.</span></div></div>':''}
    <div class="card">
      <div class="row"><span class="chip s-run"><span class="d"></span>Går att köra nu</span><span class="muted small">Våttemp −6,3 °C · startgräns −2,5 °C</span></div>
      <p class="muted" style="line-height:1.6;margin-top:12px">Förhållandena är gynnsamma och håller i sig <b style="color:var(--text)">till ca 09:00 imorgon</b>. Under eftermiddagen stiger våttemperaturen över startgränsen. Nästa fönster öppnar natten mot torsdag.</p>
@@ -1086,7 +1299,21 @@ function chart(id,ts,datasets,opts){
 }
 const series=(data,label,col)=>({data,label,borderColor:col,borderWidth:2,tension:.4,pointRadius:0,pointHoverRadius:4,fill:true});
 
+// Etikett vid första punkten i varje ny timme (varannan om kurvan är lång).
+// Riktiga punkter ligger inte på jämna klockslag, så tickHours passar inte.
+function histTick(ts){
+  const step=ts.length>72?2:1, b=d=>d.getDate()*100+Math.floor(d.getHours()/step);
+  return (v,i)=>{const d=ts[i],q=ts[i-1];return d&&q&&b(d)!==b(q)?String(d.getHours()).padStart(2,'0')+':00':null};
+}
 function drawCharts(){
+  if(real&&current!=='forecast'){
+    if(histPts.length<2)return;
+    const ts=histPts.map(x=>new Date(x.ts)), col=k=>histPts.map(x=>Number.isFinite(x[k])?x[k]:null);
+    if(current==='overview')chart('cTw',ts,[series(col('tw'),'Våttemp','#38bdf8'),
+      flat(ts.length,FTHRESH,'Startgräns','#fbbf2499')],chOpts(ts,'°C',histTick(ts)));
+    if(current==='water')chart('cWater',ts,[series(col('tryckUt'),'Tryck ut','#22d3ee')],chOpts(ts,'bar',histTick(ts)));
+    return;
+  }
   if(current==='overview'){
     const ts=timeAxis(12,30);
     chart('cTw',ts,[series(interp([-3.1,-3.8,-4.6,-5.2,-5.9,-6.1,-6.4],ts.length),'Våttemp','#38bdf8'),
@@ -1138,9 +1365,9 @@ function render(soft){
   buildNav();
   const m=document.getElementById('main');
   m.classList.toggle('soft',softRender);
-  if(current==='unit')m.innerHTML=vUnit();
-  else if(current==='overview')m.innerHTML=vOverview();
-  else if(current==='water')m.innerHTML=vWater();
+  if(current==='unit')m.innerHTML=real?vUnitR():vUnit();
+  else if(current==='overview')m.innerHTML=real?vOverviewR():vOverview();
+  else if(current==='water')m.innerHTML=real?vWaterR():vWater();
   else if(current==='dam')m.innerHTML=vDam();
   else if(current==='advisor')m.innerHTML=vAdvisor();
   else if(current==='map')m.innerHTML=vMap();
@@ -1170,12 +1397,14 @@ function safeRender(soft){
       `<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>Något i datan gick inte att visa.</b> <span class="muted small">Siffrorna kan vara gamla. Prova att ladda om sidan.</span></div></div>`;
   }
 }
-function ackOne(id){const a=alarms.find(x=>x.id===id);if(a)a.ack=true;render()}
-function ackAll(){alarms.forEach(a=>a.ack=true);render()}
+function ackOne(id){const a=alarms.find(x=>String(x.id)===String(id));if(a){a.ack=true;if(real){acked.add(String(a.id));saveAck();}}render()}
+function ackAll(){alarms.forEach(a=>{a.ack=true;if(real)acked.add(String(a.id));});if(real)saveAck();render()}
 
 /* gentle live simulation */
 let lastTick=Date.now();
 setInterval(()=>{
+  // Simuleringen hör bara till ?demo. Riktig data ritar om när den kommer.
+  if(real)return;
   const now=Date.now();
   // det som tagits ur dammen sedan förra värdet (m³/h × timmar)
   dam.drawn+=totalWater()*(now-lastTick)/3600e3; lastTick=now;
@@ -1206,6 +1435,8 @@ function clearApp(){
   for(const k in charts){charts[k].destroy();delete charts[k];}
   if(mapInst){try{mapInst.remove();}catch(e){} mapInst=null;}
   document.getElementById('main').innerHTML='';
+  // Riktig data ska inte ligga kvar i minnet åt nästa som loggar in.
+  if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;}
 }
 
 /* snowflakes */
@@ -1249,10 +1480,14 @@ try {
   gate('wait', 'Kunde inte nå inloggningen. Kontrollera nätet och ladda om sidan.', true);
 }
 
-let stopMember = null, stopMeta = null;
+let stopMember = null, stopMeta = null, stopHist = null;
+function stopData() {
+  if (stopMeta) { stopMeta(); stopMeta = null; }
+  if (stopHist) { stopHist(); stopHist = null; }
+}
 function stopListening() {
   if (stopMember) { stopMember(); stopMember = null; }
-  if (stopMeta) { stopMeta(); stopMeta = null; }
+  stopData();
 }
 
 window.fbLogin = async function () {
@@ -1303,7 +1538,7 @@ if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
   // öppen ska den stängas direkt, inte vid nästa omladdning.
   stopMember = fb.dbm.onValue(fb.dbm.ref(fb.db, 'members/' + key), snap => {
     const m = snap.val();
-    if (!m) { inne = false; if (stopMeta) { stopMeta(); stopMeta = null; } noAccess(); return; }
+    if (!m) { inne = false; stopData(); noAccess(); return; }
     const name = user.displayName || m.name || email;
     $('userName').textContent = name;
     $('userInit').textContent = initials(name);
@@ -1311,17 +1546,19 @@ if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
     if (inne) return;
     inne = true;
     window.showApp();
-    // Läser bryggans hjärtslag. Det visar att medlemmen verkligen får läsa
-    // /live, och när bryggan senast hördes - siffrorna i vyerna är däremot
-    // fortfarande exempel.
-    stopMeta = fb.dbm.onValue(fb.dbm.ref(fb.db, 'live/meta'), s2 => {
+    // Hela nuläget. Efter första hämtningen skickar databasen bara det som
+    // ändrats, så det kostar lite att lyssna.
+    stopMeta = fb.dbm.onValue(fb.dbm.ref(fb.db, 'live'), s2 => {
       const v = s2.val();
-      window.cloudMeta = v;
       const roll = m.role === 'admin' ? 'Administratör' : 'Snögruppen';
-      $('userSub').textContent = roll + (v && v.ts
-        ? ' · bryggan hördes ' + new Date(v.ts).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+      $('userSub').textContent = roll + (v && v.meta && v.meta.ts
+        ? ' · bryggan hördes ' + new Date(v.meta.ts).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
         : ' · ingen driftdata än');
+      window.applyLive(v);
     }, () => { $('userSub').textContent = 'Får inte läsa driftdatan'; });
+    // Ett dygn kurvor: 288 punkter om fem minuter.
+    stopHist = fb.dbm.onValue(fb.dbm.query(fb.dbm.ref(fb.db, 'hist'), fb.dbm.limitToLast(288)),
+      s3 => window.applyHist(s3.val()), () => { });
   }, () => noAccess());   // nekad läsning = inte medlem (eller obekräftad adress)
 });
 </script>
