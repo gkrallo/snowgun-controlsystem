@@ -20,6 +20,7 @@
     Skicka till Firebase:     .\brygga.ps1 -Skicka
     Prova ändringslogiken:    .\brygga.ps1 -Sjalvtest   (ingen databas behövs)
     Prova molnet:             .\brygga.ps1 -ProvaMoln   (ingen databas behövs)
+    Avsteg, se README:        .\brygga.ps1 -Skicka -SqlUser GSS_Login -AvstegSkrivkonto
 
   Till molnet går bara det som ändrats sedan sist (med dödband), ett
   hjärtslag i minuten och en historikpunkt var femte minut. Datorn står på
@@ -42,6 +43,7 @@ param(
   [string]$SparaLosen = "",
   [switch]$Sjalvtest,
   [switch]$ProvaMoln,
+  [switch]$AvstegSkrivkonto,
   [int]$Intervall = 20
 )
 
@@ -51,7 +53,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "2"
+$VERSION = "3"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -93,15 +95,30 @@ if ($SparaLosen -ne "") {
 # ------------------------------------------------- spärr mot skrivande konto
 # Överenskommet 15 november: GSS_Login får användas för att prova, men inte i
 # något som går dygnet runt. Därför bara -EnGang eller -Uttag med det kontot.
+#
+# AVSTEG 16 november (Kristians beslut): leverantören har inte svarat om sa,
+# och utan sa går läs-only-kontot inte att skapa. Tills det finns får bryggan
+# gå med GSS_Login - men bara om det sägs uttryckligen med -AvstegSkrivkonto.
+# Avsteget loggas vid varje start och följer med i hjärtslaget
+# (meta/skrivkonto), så att det syns och inte blir kvar av glömska.
+# Skyddet är då bara koden: Read-Sql släpper inte igenom annat än SELECT.
+# sa är aldrig tillåtet i drift - det kontot kan göra allt på servern.
 $writerAccount = ($SqlUser -match '^(GSS_Login|sa)$')
-if ($writerAccount -and -not ($EnGang -or $Uttag)) {
-  Write-Host ("Kontot " + $SqlUser + " kan skriva i styrsystemets databaser.")
-  Write-Host "Det får bara användas för en enstaka läsning: lägg till -EnGang."
-  Write-Host "För drift behövs läs-only-kontot (probe\skapa-lasonly-konto.sql)."
+$avsteg = ($AvstegSkrivkonto -and $SqlUser -eq 'GSS_Login')
+if ($AvstegSkrivkonto -and -not $avsteg) {
+  Write-Host "-AvstegSkrivkonto gäller bara tillsammans med -SqlUser GSS_Login."
   exit 1
 }
-if ($writerAccount -and $Skicka) {
-  Write-Host "Med ett skrivande konto skickas inget till molnet. Ta bort -Skicka."
+if ($writerAccount -and -not ($EnGang -or $Uttag -or $avsteg)) {
+  Write-Host ("Kontot " + $SqlUser + " kan skriva i styrsystemets databaser.")
+  Write-Host "Det får bara användas för en enstaka läsning: lägg till -EnGang."
+  Write-Host "För drift behövs läs-only-kontot (probe\skapa-lasonly-konto.sql),"
+  Write-Host "eller det uttalade avsteget -AvstegSkrivkonto (se README)."
+  exit 1
+}
+if ($writerAccount -and $Skicka -and -not $avsteg) {
+  Write-Host "Med ett skrivande konto skickas inget till molnet. Ta bort -Skicka,"
+  Write-Host "eller lägg till det uttalade avsteget -AvstegSkrivkonto (se README)."
   exit 1
 }
 
@@ -503,6 +520,8 @@ function Plan-Round($snap, [bool]$sqlOk, [datetime]$now, [int]$ms) {
   # styrdatorns klocka går fel eller hoppar natten till sommartid.
   $meta = [ordered]@{ ts = @{ ".sv" = "timestamp" }; sqlOk = $sqlOk; version = $VERSION; lasMs = $ms }
   if ($sqlOk) { $meta["gssTid"] = Newest $snap }
+  # Syns i appen så länge bryggan går med det skrivande kontot.
+  if ($avsteg) { $meta["skrivkonto"] = $true }
   $metaDue = (($now - $script:lastMeta).TotalSeconds -ge 60) -or ($script:lastSqlOk -ne $sqlOk)
 
   if (-not $sqlOk) {
@@ -778,6 +797,7 @@ if (Test-Path $stateFile) {
 }
 
 Log ("Bryggan startar (version " + $VERSION + ", konto " + $SqlUser + ", " + $(if ($Skicka) { "skickar till molnet" } else { "torrläge" }) + ")")
+if ($avsteg) { Log "AVSTEG: går med GSS_Login, som kan skriva i styrsystemets databaser. Bryggan läser bara. Byt till snogrupp_ro så snart kontot finns." }
 $fails = 0
 while ($true) {
   $t0 = Get-Date

@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snökoll — driftövervakning</title>
 <!--
-  PROTOTYP med simulerad data. Ingen riktig uppkoppling mot styrsystem eller
-  Firebase. Alla siffror är påhittade exempel (märkta där det är viktigt).
+  PROTOTYP med simulerad data. Inloggningen är riktig (Google via Firebase,
+  och medlemslistan i databasen avgör vem som kommer in), men siffrorna är
+  fortfarande påhittade exempel (märkta där det är viktigt) tills bryggan
+  skickar riktiga värden.
   Syfte: visa UX-förslag för övervakningsappen — välkomst, systemvy,
   vattenbalans, kanon-/lansvy, larm och körfönster.
   Chart.js hämtas från CDN. Allt annat ligger i den här filen, i samma anda
@@ -64,6 +66,10 @@ a{color:inherit}
 .btn:active{transform:translateY(1px)}
 .btn-g{background:#fff;color:#1f2733}
 .btn-g:hover{filter:brightness(.96)}
+.login-msg{color:var(--muted);font-size:.9rem;line-height:1.5;margin:14px 0 0;overflow-wrap:anywhere}
+.login-msg b{color:var(--text)}
+.login-msg.err{color:var(--limit)}
+.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border-hi);margin-top:14px}
 .login-card .tiny{color:var(--muted2);font-size:.76rem;margin-top:18px;line-height:1.5}
 .pill{display:inline-flex;align-items:center;gap:6px;background:#0c1a2b;border:1px solid var(--border);
   color:var(--accent);border-radius:999px;padding:4px 11px;font-size:.74rem;margin-bottom:18px}
@@ -315,10 +321,12 @@ canvas{max-width:100%}
     <div class="pill"><span class="dot"></span> snow.pettersson.app</div>
     <h1>Snökoll</h1>
     <div class="sub">Driftövervakning för snögruppen<br>Lidköpings Vintersportklubb</div>
-    <button class="btn btn-g" onclick="login()">
+    <button class="btn btn-g hidden" id="btnLogin" onclick="fbLogin()">
       <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M45 24c0-1.6-.1-3.1-.4-4.6H24v9.3h11.8c-.5 2.7-2 5-4.3 6.6v5.5h7C42.6 37 45 31 45 24z"/><path fill="#34A853" d="M24 46c5.8 0 10.7-1.9 14.3-5.2l-7-5.5c-1.9 1.3-4.4 2.1-7.3 2.1-5.6 0-10.4-3.8-12.1-8.9H4.7v5.6C8.3 41.6 15.6 46 24 46z"/><path fill="#FBBC05" d="M11.9 28.5c-.4-1.3-.7-2.7-.7-4.5s.3-3.2.7-4.5v-5.6H4.7C3.6 16.6 3 20.2 3 24s.6 7.4 1.7 10.6l7.2-6.1z"/><path fill="#EA4335" d="M24 10.8c3.1 0 5.9 1.1 8.1 3.2l6.1-6.1C34.7 4.3 29.8 2 24 2 15.6 2 8.3 6.4 4.7 13.4l7.2 5.6C13.6 14.6 18.4 10.8 24 10.8z"/></svg>
       Logga in med Google
     </button>
+    <div id="loginMsg" class="login-msg" role="status">Kontrollerar inloggningen …</div>
+    <button class="btn btn-ghost hidden" id="btnSwitch" onclick="logout()">Logga ut</button>
     <div class="tiny">Endast inbjudna konton i snögruppen.<br>All data kräver inloggning — inget visas publikt.</div>
   </div>
 </section>
@@ -332,8 +340,8 @@ canvas{max-width:100%}
     </div>
     <nav class="nav" id="nav"></nav>
     <div class="side-foot">
-      <div class="avatar">KP</div>
-      <div style="flex:1"><div style="font-size:.84rem;font-weight:600">Kristian</div><small>Snögruppen</small></div>
+      <div class="avatar" id="userInit">–</div>
+      <div style="flex:1;min-width:0"><div id="userName" style="font-size:.84rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">–</div><small id="userSub">Snögruppen</small></div>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64789b" stroke-width="2" stroke-linecap="round" style="cursor:pointer;padding:9px;margin:-9px;box-sizing:content-box" onclick="logout()" role="button" aria-label="Logga ut"><title>Logga ut</title><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
     </div>
   </aside>
@@ -1188,10 +1196,12 @@ setInterval(()=>{
 setInterval(refreshLive,15000);
 
 /* ---------- login ---------- */
-function login(){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');safeRender()}
+// showApp och clearApp anropas bara av inloggningskoden längst ner, när
+// databasen har bekräftat att kontot står i medlemslistan.
+function showApp(){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');safeRender()}
 // Vid utloggning töms vyn — annars ligger siffrorna kvar i sidan bakom
 // inloggningsrutan.
-function logout(){
+function clearApp(){
   document.getElementById('app').classList.add('hidden');document.getElementById('login').classList.remove('hidden');
   for(const k in charts){charts[k].destroy();delete charts[k];}
   if(mapInst){try{mapInst.remove();}catch(e){} mapInst=null;}
@@ -1200,6 +1210,120 @@ function logout(){
 
 /* snowflakes */
 (function(){const f=document.getElementById('flakes');let h='';for(let i=0;i<22;i++){const x=Math.random()*100,d=6+Math.random()*8,s=8+Math.random()*12,o=Math.random();h+=`<div class="flake" style="left:${x}%;animation-duration:${d}s;animation-delay:${-Math.random()*d}s;font-size:${s}px;opacity:${o}">❄</div>`}f.innerHTML=h})();
+</script>
+<script type="module">
+/* ============================================================
+   INLOGGNING
+   Att logga in är inte att få åtkomst: vem som helst med ett Google-konto kan
+   logga in i projektet. Det som släpper in är att adressen står under
+   /members i databasen, och den kontrollen gör databasens regler - koden här
+   visar bara rätt sida. Se docs/anvandarhantering.md.
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const msg = (html, err) => { const m = $('loginMsg'); m.innerHTML = html; m.classList.toggle('err', !!err); };
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Sidans tre lägen utan app: väntar, utloggad, inloggad utan åtkomst.
+function gate(state, html, err) {
+  if (window.clearApp) window.clearApp();
+  $('btnLogin').classList.toggle('hidden', state !== 'out');
+  $('btnSwitch').classList.toggle('hidden', state !== 'noaccess');
+  msg(html || '', err);
+}
+
+let fb = null;
+try {
+  const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
+  const [app, auth, dbm] = await Promise.all([
+    import(V + 'firebase-app.js'), import(V + 'firebase-auth.js'), import(V + 'firebase-database.js')]);
+  // Nyckeln är offentlig av design och får stå här. Skyddet är reglerna.
+  const a = app.initializeApp({
+    apiKey: 'AIzaSyC0TZQEb2f3ihslleOBK9KfJFMCsI4DoQQ',
+    authDomain: 'snoprognos.firebaseapp.com',
+    databaseURL: 'https://snoprognos-default-rtdb.europe-west1.firebasedatabase.app',
+    projectId: 'snoprognos',
+    appId: '1:726097160825:web:ce47e8aeb011d958b082a8'
+  });
+  fb = { auth: auth.getAuth(a), db: dbm.getDatabase(a), authm: auth, dbm };
+} catch (e) {
+  gate('wait', 'Kunde inte nå inloggningen. Kontrollera nätet och ladda om sidan.', true);
+}
+
+let stopMember = null, stopMeta = null;
+function stopListening() {
+  if (stopMember) { stopMember(); stopMember = null; }
+  if (stopMeta) { stopMeta(); stopMeta = null; }
+}
+
+window.fbLogin = async function () {
+  if (!fb) return;
+  msg('Öppnar Googles inloggning …');
+  try {
+    const prov = new fb.authm.GoogleAuthProvider();
+    // Utan detta väljer Google tyst det konto som redan är inloggat, och den
+    // som har flera konton hamnar på fel utan att få välja.
+    prov.setCustomParameters({ prompt: 'select_account' });
+    await fb.authm.signInWithPopup(fb.auth, prov);
+  } catch (e) {
+    const c = e && e.code || '';
+    if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') msg('');
+    else if (c === 'auth/popup-blocked') msg('Webbläsaren stoppade inloggningsfönstret. Tillåt popup-fönster för sidan och försök igen.', true);
+    else if (c === 'auth/unauthorized-domain') msg('Den här adressen är inte godkänd för inloggning i Firebase (Authentication → Settings → Authorized domains).', true);
+    // Kommer när "Enable create (sign-up)" är avstängt i Firebase: då får inget
+    // nytt konto skapas, och första inloggningen med Google ÄR att skapa ett.
+    else if (c === 'auth/admin-restricted-operation') msg('Det här kontot har aldrig loggat in förut, och projektet tillåter just nu inga nya konton. Be en administratör slå på "Enable create (sign-up)" i Firebase.', true);
+    else if (c === 'auth/network-request-failed') msg('Inget nät. Försök igen.', true);
+    else msg('Inloggningen gick inte: ' + esc(c || e.message || e), true);
+  }
+};
+
+window.logout = async function () {
+  stopListening();
+  if (window.clearApp) window.clearApp();
+  if (fb) { try { await fb.authm.signOut(fb.auth); } catch (e) { } }
+};
+
+function initials(name) {
+  const p = String(name).trim().split(/\s+/).filter(Boolean);
+  return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+}
+
+if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
+  stopListening();
+  if (!user) { gate('out', ''); return; }
+  gate('wait', 'Kontrollerar åtkomst …');
+  const email = user.email || '';
+  const noAccess = () => gate('noaccess',
+    'Du är inloggad som <b>' + esc(email) + '</b> men har inte åtkomst.<br>Be en administratör i snögruppen lägga till dig.');
+  // Samma omskrivning som i reglerna: gemener, och alla punkter till komma
+  // (databasnycklar får inte innehålla punkt).
+  const key = email.toLowerCase().split('.').join(',');
+  let inne = false;
+  // Lyssnar i stället för att läsa en gång: tas raden bort medan appen är
+  // öppen ska den stängas direkt, inte vid nästa omladdning.
+  stopMember = fb.dbm.onValue(fb.dbm.ref(fb.db, 'members/' + key), snap => {
+    const m = snap.val();
+    if (!m) { inne = false; if (stopMeta) { stopMeta(); stopMeta = null; } noAccess(); return; }
+    const name = user.displayName || m.name || email;
+    $('userName').textContent = name;
+    $('userInit').textContent = initials(name);
+    $('userSub').textContent = m.role === 'admin' ? 'Administratör' : 'Snögruppen';
+    if (inne) return;
+    inne = true;
+    window.showApp();
+    // Läser bryggans hjärtslag. Det visar att medlemmen verkligen får läsa
+    // /live, och när bryggan senast hördes - siffrorna i vyerna är däremot
+    // fortfarande exempel.
+    stopMeta = fb.dbm.onValue(fb.dbm.ref(fb.db, 'live/meta'), s2 => {
+      const v = s2.val();
+      window.cloudMeta = v;
+      const roll = m.role === 'admin' ? 'Administratör' : 'Snögruppen';
+      $('userSub').textContent = roll + (v && v.ts
+        ? ' · bryggan hördes ' + new Date(v.ts).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+        : ' · ingen driftdata än');
+    }, () => { $('userSub').textContent = 'Får inte läsa driftdatan'; });
+  }, () => noAccess());   // nekad läsning = inte medlem (eller obekräftad adress)
+});
 </script>
 </body>
 </html>

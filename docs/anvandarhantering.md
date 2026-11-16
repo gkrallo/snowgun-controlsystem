@@ -4,6 +4,16 @@ Vem som får se driftdatan, hur man släpper in och tar bort någon, och vilka
 regler som skyddar den. Hör ihop med
 [`plan-brygga-firebase.md`](plan-brygga-firebase.md).
 
+**Inloggningen i appen, 16 november 2026:** `app/index.html` loggar in med
+Google på riktigt och lyssnar på sin egen rad under `/members`; utan rad visas
+"har inte åtkomst" och en utloggningsknapp, och tas raden bort medan appen är
+öppen stängs den. Provat: sidan utan inloggning, och att ett stoppat
+inloggningsfönster ger ett begripligt meddelande. Kristian loggade in som
+administratör och kom in. Inte provat: ett konto som inte står i listan, och
+att appen stängs när raden tas bort. Siffrorna i vyerna är fortfarande
+exempel; bara bryggans hjärtslag läses ur `/live`. Sidan måste ligga på en
+adress som står i API-nyckelns lista (i dag bl.a. `http://localhost:8000`).
+
 **Läget 16 november 2026:** bryggkontot finns och dess id står i
 `firebase/database.rules.json`, utlagt. Första administratören är inlagd under
 `/members`. Bryggkontot är provat med `brygga.ps1 -ProvaMoln`: det får
@@ -149,9 +159,14 @@ reglerna). Ta aldrig bort den sista.
 3. Kopiera kontots User UID in i reglerna.
 4. Lösenordet läggs in på styrdatorn när bryggan installeras (krypterat, se
    planen) och i `SECRETS.md` hemma. Aldrig i git.
-5. **Stäng av självregistrering:** Authentication → Settings → User actions →
-   bocka ur "Enable create (sign-up)". Annars kan vem som helst skapa
-   e-postkonton i projektet. De kommer inte åt något, men de skräpar ner.
+5. **Låt "Enable create (sign-up)" vara på** (Authentication → Settings →
+   User actions). Här stod förut att den skulle stängas av, och det var fel:
+   inställningen stoppar *alla* nya konton, också första inloggningen med
+   Google, som då nekas med `auth/admin-restricted-operation`. Det upptäcktes
+   16 november när den första riktiga inloggningen provades. Priset för att ha
+   den på är att vem som helst kan skapa ett konto i projektet. Ett sådant
+   konto kommer inte åt något — reglerna kräver medlemskap — men det syns i
+   listan under Authentication och kan tas bort där.
 
 Misstänker du att lösenordet läckt: byt det i konsolen. Bryggan tystnar tills
 det nya lagts in på styrdatorn, och appen visar "Gammal data".

@@ -4,7 +4,7 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 16 november 2026:** version 2. Skriptet tolkas utan fel, spärrarna är
+**Läget 16 november 2026:** version 3. Skriptet tolkas utan fel, spärrarna är
 provade och självtestet av ändringslogiken går igenom. Men det har **aldrig
 körts mot den riktiga SQL-servern**, och den riktiga sändningen (`-Skicka`) är
 oprovad. Inloggning och rättigheter i Firebase är provade med `-ProvaMoln`.
@@ -35,6 +35,55 @@ ska inte ligga i något som går dygnet runt. Därför kräver skriptet `-EnGang
 eller `-Uttag` med det kontot och skickar aldrig till molnet. För drift
 behövs läs-only-kontot (`probe\skapa-lasonly-konto.sql`), som kräver `sa` —
 se `docs\mejl-leverantor-2026-11-15.md`.
+
+## Avsteget 16 november 2026: GSS_Login i drift tills vidare
+
+Leverantören har inte svarat om `sa`, och utan `sa` går läs-only-kontot inte
+att skapa. Kristian bestämde 16 november att bryggan tills vidare får gå med
+`GSS_Login`, med extra försiktighet. Version 3 gör det möjligt, men bara
+uttalat:
+
+    .\brygga.ps1 -Skicka -SqlUser GSS_Login -AvstegSkrivkonto
+    .\installera-autostart.ps1 -AvstegSkrivkonto
+
+Vad som gäller under avsteget:
+
+- **Skyddet är bara koden.** Kontot *kan* skriva; det som hindrar är att all
+  SQL går genom en funktion som bara släpper igenom en ensam `SELECT`. Ändra
+  inte i `Read-Snapshot` eller `Read-Sql` utan att köra `-Sjalvtest` och läsa
+  ändringen två gånger.
+- **Det syns.** Varje start skriver en rad som börjar med `AVSTEG` i
+  `brygga.log`, och hjärtslaget i molnet har `meta/skrivkonto: true`.
+- **`sa` är aldrig tillåtet i drift**, inte heller med växeln.
+- **Avsteget ska bort.** När `snogrupp_ro` finns: spara det kontots lösenord
+  med `-SparaLosen sql` och kör `.\installera-autostart.ps1` utan växeln.
+
+Kör i den här ordningen på styrdatorn, och gå inte vidare om ett steg ser
+konstigt ut:
+
+1. Packa upp i en egen mapp, till exempel `C:\Snogrupp\bridge` — inte i
+   GSSystems mapp.
+2. En enda läsning i torrläge (steg 2–4 under Första körningen ovan). Titta
+   på raden `Klart på … ms` i utskriften. Tar läsningen mer än ett par
+   sekunder: stanna där.
+3. Torrläge i några minuter, med GSSystems skärm framme:
+
+       powershell -ExecutionPolicy Bypass -File .\brygga.ps1 -SqlUser GSS_Login -AvstegSkrivkonto
+
+   Skärmen ska bete sig som vanligt. Avsluta med Ctrl+C.
+4. Spara lösenorden: `-SparaLosen sql` (GSS_Logins) och `-SparaLosen moln`.
+5. `-ProvaMoln` — ska sluta med "Allt stämmer".
+6. Skicka på riktigt, i ett öppet fönster, i några minuter:
+
+       powershell -ExecutionPolicy Bypass -File .\brygga.ps1 -Skicka -SqlUser GSS_Login -AvstegSkrivkonto
+
+   I appen ska det stå "bryggan hördes" med klockslag under namnet.
+7. Avsluta med Ctrl+C och lägg upp autostarten:
+
+       powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -AvstegSkrivkonto
+
+Stoppa allt: `.\installera-autostart.ps1 -TaBort`, och stäng en brygga som
+går i ett fönster med Ctrl+C.
 
 ## Skydd i koden
 

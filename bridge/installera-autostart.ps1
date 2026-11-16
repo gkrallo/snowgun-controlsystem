@@ -4,6 +4,9 @@
     Lägg upp:   .\installera-autostart.ps1
     Ta bort:    .\installera-autostart.ps1 -TaBort
     Visa läget: .\installera-autostart.ps1 -Visa
+    Avsteg:     .\installera-autostart.ps1 -AvstegSkrivkonto
+                (bryggan går med GSS_Login tills läs-only-kontot finns;
+                 se README. Kör om utan växeln när kontot finns.)
 
   Uppgiften startar bryggan när användaren loggar in, och försöker igen var
   femte minut. Går bryggan redan händer ingenting; har den dött kommer den
@@ -21,7 +24,7 @@
 
   Filen ska vara sparad som UTF-8 MED BOM, utan typografiska tecken.
 #>
-param([switch]$TaBort, [switch]$Visa)
+param([switch]$TaBort, [switch]$Visa, [switch]$AvstegSkrivkonto)
 
 $ErrorActionPreference = "Stop"
 $name = "Snogrupp-brygga"
@@ -62,6 +65,9 @@ if ($missing.Count -gt 0) {
 
 $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $arg = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $script + '" -Skicka'
+# Avsteget skrivs in i uppgiften, så att det syns i schemaläggaren vilket
+# konto bryggan går med. Det sparade SQL-lösenordet måste höra till kontot.
+if ($AvstegSkrivkonto) { $arg += ' -SqlUser GSS_Login -AvstegSkrivkonto' }
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arg -WorkingDirectory $here
 
 $atLogon = New-ScheduledTaskTrigger -AtLogOn -User $user
@@ -95,5 +101,6 @@ Start-ScheduledTask -TaskName $name
 Start-Sleep -Seconds 5
 $t = Get-ScheduledTask -TaskName $name
 Write-Host ("Uppgiften '" + $name + "' är upplagd för " + $user + ". Läge just nu: " + $t.State)
+if ($AvstegSkrivkonto) { Write-Host "AVSTEG: bryggan går med GSS_Login. Kör om utan -AvstegSkrivkonto när läs-only-kontot finns." }
 Write-Host "Titta i brygga.log om en halv minut - där ska stå 'Hela nuläget, ... fält'."
 Write-Host "Läget visas när som helst med:  .\installera-autostart.ps1 -Visa"
