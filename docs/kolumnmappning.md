@@ -137,3 +137,38 @@ körfönstret (prognosen är inte inkopplad) — märkt som exempel i appen.
 Händelsetexterna innehåller ledtrådar till brunnen (`Appeared S ACCESS 300
 ( adr = 9) to 1`, `Hydrant disconnected`), men vad siffrorna betyder är inte
 utrett.
+
+## Pumphuset enligt styrsystemets skärm (bild 16 november 2026)
+
+Vattnets väg, från vänster till höger på skärmen "MR1 - Lidköping lvl.96m":
+
+    dammen (Lake lvl. 95,5 m, fast text)
+      -> avstängningsventil -> intagsbrunn med LPP01  = "Wdep11 / P1", matarpump
+      -> Line111 / L1 -> PT01 (bar) -> XV02 / XV03 (förbigång) -> filter FI01
+         (lampa "Filter clogged")
+      -> PTS01 (bar, sugsidan) -> HPP01 = "Wdep12 / P2", högtryckspump
+      -> TT01 (°C, vattnet) -> PT02 (bar) -> FT01 (m³/h, flödesmätare)
+      -> delar sig:  Line 122 -> PT04 (bar) -> ventil -> Line 002
+                     Line 121 -> PT03 (bar) -> ventil -> Line 001
+
+**AC02 är kompressorn till luftningen av dammen** (bekräftat av Kristian 17
+november): bubblingen kyler ner vattnet snabbare. Temperaturen bredvid (3 °C
+på bilden) är en givare på containern, alltså pumphuset — torr
+utetemperatur, och det den styr på. Kompressorn ska starta vid +3 °C eller
+kallare. Automatiken var avstängd 16 november och skulle slås på dagen
+efter. Varken givaren eller kompressorns läge är hittade bland kolumnerna.
+
+Vad det betyder för datan:
+
+- **P1 och P2 sitter i serie.** `dep11` är matarpumpen, `dep12`
+  högtryckspumpen. Deras volymer är samma vatten och får inte läggas ihop.
+- **Värdena stämmer mot bilden:** `dep11/tryckUt` 0,1 = PT01, `dep12/tryckIn`
+  0,1 = PTS01, `dep12/tryckUt` 7,2 = PT02, `dep12/vattenTemp` 11,9 = TT01,
+  `ledningar/L121` 7,7 = PT03, `ledningar/L122` 7,2 = PT04. `L001` och `L002`
+  är ledningarna ut mot spåret, `L111` matarledningen.
+- **FT01 är det uppmätta flödet, i m³/h.** Bilden visar 0,1, och `dep12` har
+  `k125` = `k126` = 0,1. En av de två är alltså nästan säkert FT01 — vilken
+  går att se först när pumpen går. Båda sparas redan i historiken.
+- **Dammens nivå mäts inte.** "Lake lvl.95,5m" är en fast text.
+- Varje pump och ledning har ett läge (`stop` på bilden), och filtret en
+  varningslampa. Inget av det är hittat bland kolumnerna än.

@@ -674,7 +674,7 @@ function vOverviewR(){
   return topbar('Driftövervakning','Översikt')+`<div class="view">${alarmBanner()}
   <div class="grid g-kpi">
     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} Med kontakt</h3><div class="val">${con}<small> / ${cannons.length} enheter</small></div><div class="foot">Om de kör går inte att läsa ur datan än</div></div>
-    <div class="card kpi" style="cursor:pointer" onclick="go('water')"><h3>${icon('gauge','#7dd3fc',15)} Pumptryck ut</h3><div class="val">${num(p1.tryckUt)}<small> / ${num(p2.tryckUt)} bar</small></div><div class="foot">P1 / P2 · vattnet ${num(p2.vattenTemp)} °C</div></div>
+    <div class="card kpi" style="cursor:pointer" onclick="go('water')"><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">efter högtryckspumpen · vattnet ${num(p2.vattenTemp)} °C</div></div>
     <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null?'':cold?'up':'warn'}">${cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
     <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">Egen beräkning — nivån mäts inte</div></div>
   </div>
@@ -693,20 +693,66 @@ function vOverviewR(){
   </div>`;
 }
 
+/* Pumphuset ritat som på styrsystemets egen skärm (MR1), med varje värde
+   vid sin givare. Pumparna sitter i SERIE: P1 matar ur intagsbrunnen, P2
+   trycker ut. Förut stod de som två rutor bredvid varandra, och det gick
+   inte att förstå varför den ena visade 0,1 bar och den andra 7. Givarnas
+   namn (PT01 …) är styrsystemets, så att skissen går att jämföra med
+   skärmen i pumphuset. */
+function pumpSVG(){
+  const p1=pumps&&pumps.dep11||{}, p2=pumps&&pumps.dep12||{}, L=k=>lines&&lines[k]?lines[k].tryck:null;
+  const LO='#34d399', HI='#38bdf8';
+  const tag=(x,y,namn,v,enh,d=1)=>`<g><rect x="${x-29}" y="${y}" width="58" height="36" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
+    <text x="${x}" y="${y+13}" text-anchor="middle" font-size="9.5" fill="#8296b5">${namn}</text>
+    <text x="${x}" y="${y+28}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#e9f0fa">${v===undefined?'?':num(v,d)}<tspan font-size="9.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
+  const pump=(x,y,c,t)=>`<circle cx="${x}" cy="${y}" r="17" fill="#0c1a2b" stroke="${c}" stroke-width="2.5"/><path d="M${x-6} ${y-8}L${x+9} ${y}L${x-6} ${y+8}z" fill="${c}"/><text x="${x}" y="${y+33}" text-anchor="middle" font-size="10.5" font-weight="600" fill="#e9f0fa">${t}</text>`;
+  return `<div style="overflow-x:auto;margin-top:12px"><svg viewBox="0 0 880 300" style="min-width:700px;width:100%;display:block" role="img" aria-label="Skiss av pumphuset: dammen, matarpumpen P1, filtret, högtryckspumpen P2, flödesmätaren och de två ledningarna ut mot spåret">
+    <!-- dammen -->
+    <path d="M8 196h104l-18 50H26z" fill="#12314a" stroke="#ffffff26"/><path d="M14 206h92l-13 36H27z" fill="${HI}" opacity=".45"/>
+    <text x="60" y="186" text-anchor="middle" font-size="11" font-weight="600" fill="#e9f0fa">Dammen</text>
+    <text x="60" y="262" text-anchor="middle" font-size="10" fill="#8296b5">${damPct()} % · beräknat</text>
+    <text x="60" y="276" text-anchor="middle" font-size="9.5" fill="#8296b5">nivån mäts inte</text>
+    <!-- till intagsbrunnen -->
+    <path d="M104 226H150" stroke="#8ba0bd" stroke-width="4" fill="none"/>
+    <rect x="150" y="186" width="74" height="60" fill="#12314a" stroke="#ffffff26"/><rect x="152" y="204" width="70" height="40" fill="${HI}" opacity=".35"/>
+    <!-- lågtryckssidan -->
+    <path d="M187 200V110H400" stroke="${LO}" stroke-width="5" fill="none" stroke-linejoin="round"/>
+    ${pump(187,218,LO,'')}<text x="187" y="264" text-anchor="middle" font-size="10.5" font-weight="600" fill="#e9f0fa">P1 · matarpump</text>
+    <path d="M318 96l14 14-14 14-14-14z" fill="#0c1a2b" stroke="${LO}" stroke-width="2.5"/>
+    <text x="318" y="142" text-anchor="middle" font-size="10" fill="#8296b5">filter</text>
+    <!-- högtryckssidan -->
+    <path d="M400 110H640M640 70V170M640 70H872M640 170H872" stroke="${HI}" stroke-width="5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+    ${pump(400,110,HI,'P2 · högtryckspump')}
+    ${tag(250,56,'PT01',p1.tryckUt,'bar')}
+    ${tag(352,56,'PTS01',p2.tryckIn,'bar')}
+    ${tag(462,56,'TT01',p2.vattenTemp,'°C')}
+    ${tag(526,56,'PT02',p2.tryckUt,'bar')}
+    ${tag(590,56,'FT01',undefined,'m³/h')}
+    ${tag(700,52,'PT04',L('L122'),'bar')}
+    ${tag(700,152,'PT03',L('L121'),'bar')}
+    <text x="872" y="56" text-anchor="end" font-size="10.5" font-weight="600" fill="#e9f0fa">Ledning 002 →</text>
+    <text x="872" y="92" text-anchor="end" font-size="10" fill="#8296b5">${num(L('L002'))} bar</text>
+    <text x="872" y="156" text-anchor="end" font-size="10.5" font-weight="600" fill="#e9f0fa">Ledning 001 →</text>
+    <text x="872" y="192" text-anchor="end" font-size="10" fill="#8296b5">${num(L('L001'))} bar</text>
+    <!-- luftningen -->
+    <rect x="262" y="222" width="52" height="26" rx="5" fill="#0c1a2b" stroke="#ffffff26"/>
+    <path d="M262 240H240V286H124V238H98" stroke="#8ba0bd" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+    <text x="288" y="239" text-anchor="middle" font-size="9.5" fill="#8296b5">AC02</text>
+    <text x="322" y="232" font-size="10.5" font-weight="600" fill="#e9f0fa">Luftning av dammen</text>
+    <text x="322" y="246" font-size="9.5" fill="#8296b5">kompressorn ska gå vid +3 °C ute eller kallare · läget läses inte</text>
+  </svg></div>`;
+}
+
 function vWaterR(){
   const con=running().filter(c=>Number.isFinite(c.fmax)), tot=+sum(con,c=>c.fmax).toFixed(1);
   const pct=Math.round(tot/PUMP_MAX*100), ps=pumpState(tot), hot=ps==='over'||ps==='at', near=ps!=='ok';
-  const pump=(namn,d)=>`<div class="card kpi"><h3>${icon('gauge','#7dd3fc',15)} ${namn}</h3>
-    <div class="val">${num(d&&d.tryckUt)}<small> bar ut</small></div>
-    <div class="foot">in ${num(d&&d.tryckIn)} bar · vattnet ${num(d&&d.vattenTemp)} °C</div></div>`;
-  const ln=Object.entries(lines||{});
+  const p2=pumps&&pumps.dep12||{};
   return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
-  <div class="grid g-kpi">
-    ${pump('Pump 1',pumps&&pumps.dep11)}${pump('Pump 2',pumps&&pumps.dep12)}
-    <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Ledningstryck</h3>
-      <div class="foot" style="margin-top:10px;line-height:1.9">${ln.length?ln.map(([k,l])=>`${esc(k)}: <b style="color:var(--text)">${num(l&&l.tryck)}</b> bar`).join('<br>'):'Inga värden'}</div></div>
+  <div class="card"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset</h3>
+    ${pumps?pumpSVG():'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
+    <p class="muted small" style="line-height:1.6;margin:12px 0 0">Vattnet går från vänster till höger: <b style="color:var(--text)">P1</b> lyfter det ur intagsbrunnen, genom filtret, och <b style="color:var(--text)">P2</b> trycker ut det i de två ledningarna mot spåret. Grönt är lågt tryck, blått högt. Namnen vid värdena är givarnas namn på skärmen i pumphuset.</p>
   </div>
-  ${missing('<b>Uppmätt flöde saknas.</b> Bland de värden vi hittat i styrsystemet finns tryck och temperatur men inget säkert flöde, så sidan visar tryck i stället för m³/h. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
+  ${missing('<b>Flödesmätaren FT01</b> sitter efter högtryckspumpen och mäter i m³/h — men vi vet inte än vilket av styrsystemets värden som är den. Två passar in, och just nu visar de <b>'+num(p2.k125)+'</b> och <b>'+num(p2.k126)+'</b>. När pumpen går syns vilket som är flödet. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
 
   <div class="section-title">Teoretiskt flöde — enheter med kontakt</div>
   <div class="card">
@@ -724,7 +770,7 @@ function vWaterR(){
   </div>
   ${missing('Teoretiskt flöde är styrsystemets egen siffra för vad enheten <b>skulle</b> dra för fullt vid den temperatur den mäter — inte vad den drar just nu.')}
 
-  <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck ut från pump 2</h3>
+  <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck efter högtryckspumpen (PT02)</h3>
     ${histPts.length>1?'<div class="chartbox"><canvas id="cWater"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
     <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren</button>
   </div>

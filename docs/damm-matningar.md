@@ -92,3 +92,20 @@ Säsongssummorna (`bilan_param_depart_eau`, räknat från 2025-11-04):
 P1 7 262 m³ på 421 h, P2 7 223 m³ på 413 h — **14 485 m³ tillsammans**, alltså
 nästan fyra fulla dammar förra vintern, och i snitt 17 m³/h per pump när den
 går. Summan är inte nollställd inför den här säsongen.
+
+### Rättelse 17 november: pumparna sitter i serie
+
+Skärmbilden av pumphuset (Kristian, 16 november) visar att P1 och P2 inte är
+två pumpar bredvid varandra. **P1 (LPP01) är matarpumpen** som lyfter vattnet
+ur intagsbrunnen, **P2 (HPP01) är högtryckspumpen** efter filtret. Samma
+vatten går genom båda. Volymerna ovan får alltså inte läggas ihop:
+
+- Uttaget 30 oktober var **mellan 4 och 10 m³**, inte 13,7. (Varför P1
+  räknat 9,6 och P2 4,0 är inte utrett — P1 gick 0,6 h längre.)
+- Det som saknas i kalkylen blir då **cirka 200 m³**, inte 195. Slutsatsen
+  är densamma.
+- Förra vintern gick **drygt 7 200 m³** genom pumphuset, inte 14 485 —
+  knappt två fulla dammar.
+
+Skärmen visar också en flödesmätare, **FT01, i m³/h**, efter högtryckspumpen.
+Det är det uppmätta flöde appen saknar; se `kolumnmappning.md`.
