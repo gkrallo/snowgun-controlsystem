@@ -30,3 +30,7 @@ bridge/brygga.log
 bridge/brygga.log.1
 bridge/brygga-state.json
 bridge/uttag_*.txt
+
+# Firebase-verktygets egna filer
+.firebase/
+firebase-debug.log

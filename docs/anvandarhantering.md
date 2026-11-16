@@ -4,6 +4,18 @@ Vem som får se driftdatan, hur man släpper in och tar bort någon, och vilka
 regler som skyddar den. Hör ihop med
 [`plan-brygga-firebase.md`](plan-brygga-firebase.md).
 
+**Appen ligger på https://snoprognos.firebaseapp.com** sedan 16 november 2026
+(Firebase Hosting, mappen `app`). Lägg ut en ny version från repots rot med
+`firebase deploy --only hosting`, och reglerna med
+`firebase deploy --only database` — `firebase.json` ligger i roten, eftersom
+verktyget inte får peka på en mapp utanför sin egen. Använd adressen som
+slutar på `firebaseapp.com`: syskonadressen `snoprognos.web.app` visar samma
+sida men står inte i API-nyckelns lista, så inloggningen fungerar inte där.
+Sidan går att öppna för vem som helst; utan medlemskap visas bara
+inloggningsrutan. Exempelsiffrorna står i sidans källkod och är alltså
+läsbara utan inloggning — de är påhittade, men riktiga värden får aldrig
+läggas i själva filen.
+
 **Inloggningen i appen, 16 november 2026:** `app/index.html` loggar in med
 Google på riktigt och lyssnar på sin egen rad under `/members`; utan rad visas
 "har inte åtkomst" och en utloggningsknapp, och tas raden bort medan appen är

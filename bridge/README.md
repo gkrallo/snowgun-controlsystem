@@ -4,10 +4,16 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 16 november 2026:** version 3. Skriptet tolkas utan fel, spärrarna är
-provade och självtestet av ändringslogiken går igenom. Men det har **aldrig
-körts mot den riktiga SQL-servern**, och den riktiga sändningen (`-Skicka`) är
-oprovad. Inloggning och rättigheter i Firebase är provade med `-ProvaMoln`.
+**Läget 16 november 2026:** version 3, och **körd på styrdatorn** samma kväll
+med `GSS_Login` enligt avsteget nedan. Självtestet gick igenom där, en läsning
+tar 29 ms, `-ProvaMoln` stämde, och `-Skicka` lade hela nuläget (97 fält) och
+två historikpunkter i Firebase. Autostarten lades upp, gick, och togs sedan
+bort igen — bryggan står alltså stilla tills den läggs upp på nytt. Inte
+provat: en omstart av datorn, och hur bryggan beter sig när kanonerna går.
+
+Raden `Klart på … ms` efter `-EnGang` räknar med tiden det tar att skriva
+lösenordet (10 656 ms första gången). Den riktiga lästiden står som `lasMs`
+i hjärtslaget.
 
 ## Första körningen på styrdatorn
 
@@ -64,8 +70,8 @@ konstigt ut:
 1. Packa upp i en egen mapp, till exempel `C:\Snogrupp\bridge` — inte i
    GSSystems mapp.
 2. En enda läsning i torrläge (steg 2–4 under Första körningen ovan). Titta
-   på raden `Klart på … ms` i utskriften. Tar läsningen mer än ett par
-   sekunder: stanna där.
+   på `brygga-live.json` och jämför med skärmen. (Raden `Klart på … ms`
+   räknar med tiden för att skriva lösenordet och säger inget om läsningen.)
 3. Torrläge i några minuter, med GSSystems skärm framme:
 
        powershell -ExecutionPolicy Bypass -File .\brygga.ps1 -SqlUser GSS_Login -AvstegSkrivkonto

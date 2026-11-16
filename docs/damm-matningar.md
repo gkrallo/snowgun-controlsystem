@@ -61,3 +61,34 @@ igen efter en vecka. Läcker den 11 m³/dygn sjunker ytan 0,7 cm per dygn —
 drygt 5 % mer än ritningen, och då är det volymformeln som ska justeras.
 
 Tills det är utrett är `leak` (2 m³/dygn) och startnivån i appen exempel.
+
+## Uttaget enligt styrsystemet (16 november)
+
+Läst ur `Rapport_Depart_eau_24h` med `brygga.ps1 -Uttag -Fran 2026-10-25`.
+Utskriften ligger i `bridge/uttag_20261116-193940.txt` (följer inte med till
+git).
+
+| Dygn som slutar  | Pump | Drifttid (h) | Volym (m³) |
+|------------------|------|--------------|------------|
+| 2026-10-31 07:30 | P1   | 2,63         | 9,63       |
+| 2026-10-31 07:30 | P2   | 2,00         | 4,03       |
+| alla dygn därefter t.o.m. 16/11 | båda | 0 | 0     |
+
+**Sammanlagt 13,7 m³** — provkörningen 30 oktober, och ingenting annat. Första
+raden i tabellen är dygnet som slutar 31 oktober; för 25–30 oktober finns
+inga rader alls, vilket troligen betyder att rapporten började föras när
+systemet startades för säsongen. Enheten antas vara m³ (rimligt mot 2–3
+timmars provkörning, inte bekräftat).
+
+Det gör kalkylen skarpare, inte lösare:
+
+    påfyllt 4 059  −  dammen full 3 850  −  uttaget 14  =  195 m³ som saknas
+
+Uttaget förklarar alltså 14 av de 209. Kvar är **195 m³ på 19 dygn, drygt
+10 m³/dygn** — läckage, eller en damm som rymmer ungefär 5 % mer än
+ritningen. Måttbandsprovet ovan är fortfarande det som skiljer dem åt.
+
+Säsongssummorna (`bilan_param_depart_eau`, räknat från 2025-11-04):
+P1 7 262 m³ på 421 h, P2 7 223 m³ på 413 h — **14 485 m³ tillsammans**, alltså
+nästan fyra fulla dammar förra vintern, och i snitt 17 m³/h per pump när den
+går. Summan är inte nollställd inför den här säsongen.
