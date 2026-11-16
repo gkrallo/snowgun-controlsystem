@@ -4,6 +4,16 @@ Vem som får se driftdatan, hur man släpper in och tar bort någon, och vilka
 regler som skyddar den. Hör ihop med
 [`plan-brygga-firebase.md`](plan-brygga-firebase.md).
 
+**Läget 15 november 2026:** databasen finns
+(`snoprognos-default-rtdb`, europe-west1) och reglerna nedan är inlagda från
+`firebase/database.rules.json` med `firebase deploy --only database`. Provat:
+utan inloggning nekas läsning av `/live`, `/hist`, `/members` och roten, och
+skrivning nekas. Inte provat: allt som kräver ett inloggat konto, alltså hela
+checklistan längre ner. Bryggkontot finns inte än, så i reglerna står
+`BRYGGANS_UID_SAKNAS` och ingen kan skriva; medlemslistan är tom, så ingen
+kan läsa. Ändra reglerna i filen och lägg ut dem därifrån, inte i konsolen —
+annars skriver nästa utläggning över det som gjorts för hand.
+
 **Läget 12 november 2026:** inget av detta är byggt. Inloggningsknappen i
 prototypen (`app/index.html`) är en attrapp som släpper in vem som helst, och
 namnet "Kristian" står hårdkodat. Det är i sin ordning så länge datan är

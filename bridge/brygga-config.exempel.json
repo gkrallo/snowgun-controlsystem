@@ -1,5 +1,5 @@
 {
-  "dbUrl": "https://<PROJEKT>-default-rtdb.europe-west1.firebasedatabase.app",
+  "dbUrl": "https://snoprognos-default-rtdb.europe-west1.firebasedatabase.app",
   "apiKey": "<WEBB-API-NYCKELN_UR_FIREBASE-KONSOLEN>",
   "email": "<BRYGGANS_KONTO>@<DOMAN>"
 }
