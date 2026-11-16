@@ -6,9 +6,10 @@ regler som skyddar den. Hör ihop med
 
 **Läget 16 november 2026:** bryggkontot finns och dess id står i
 `firebase/database.rules.json`, utlagt. Första administratören är inlagd under
-`/members`. Fortfarande inte provat med riktiga inloggningar: bryggans
-skrivning väntar på att lösenordet läggs in på styrdatorn, och medlemmarnas
-läsning på att appen får riktig Google-inloggning.
+`/members`. Bryggkontot är provat med `brygga.ps1 -ProvaMoln`: det får
+skriva `/live` och `/hist`, och får varken läsa eller skriva `/members` eller
+skriva någon annanstans. Inte provat: medlemmarnas läsning, som väntar på att
+appen får riktig Google-inloggning.
 
 **Läget 15 november 2026:** databasen finns
 (`snoprognos-default-rtdb`, europe-west1) och reglerna nedan är inlagda från

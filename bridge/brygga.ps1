@@ -19,6 +19,7 @@
     Spara lösenord (DPAPI):   .\brygga.ps1 -SparaLosen sql      (eller: moln)
     Skicka till Firebase:     .\brygga.ps1 -Skicka
     Prova ändringslogiken:    .\brygga.ps1 -Sjalvtest   (ingen databas behövs)
+    Prova molnet:             .\brygga.ps1 -ProvaMoln   (ingen databas behövs)
 
   Till molnet går bara det som ändrats sedan sist (med dödband), ett
   hjärtslag i minuten och en historikpunkt var femte minut. Datorn står på
@@ -40,6 +41,7 @@ param(
   [string]$Fran = "",
   [string]$SparaLosen = "",
   [switch]$Sjalvtest,
+  [switch]$ProvaMoln,
   [int]$Intervall = 20
 )
 
@@ -49,7 +51,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "1"
+$VERSION = "2"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -440,18 +442,30 @@ if ($Uttag) {
 }
 
 # -------------------------------------------------------------- Firebase
-# OPROVAT: databasen i Firebase finns inte än och reglerna är inte körda.
+# Databasen och reglerna finns sedan 15-16 november. Prova inloggning och
+# rättigheter med -ProvaMoln innan bryggan får skicka på riktigt.
 # Bryggan loggar in som ett eget konto (e-post + lösenord), inte med en
 # servicekonto-nyckel - en sådan ger full makt över hela projektet.
 $script:token = $null
 $script:tokenAt = [datetime]::MinValue
 $cfg = $null
 
-function Send-Json([string]$method, [string]$url, [string]$json) {
+function Send-Json([string]$method, [string]$url, [string]$json, [hashtable]$headers = @{}) {
   # Kroppen skickas som UTF-8-byte. Windows PowerShell 5.1 kodar annars en
   # textsträng som Latin-1, och å, ä, ö i larmtexter blir fel i molnet.
   $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-  return Invoke-RestMethod -Method $method -Uri $url -Body $bytes -ContentType "application/json; charset=utf-8" -TimeoutSec 15
+  return Invoke-RestMethod -Method $method -Uri $url -Body $bytes -Headers $headers -ContentType "application/json; charset=utf-8" -TimeoutSec 15
+}
+
+function Login-Headers {
+  # Webbnyckeln är låst till vissa webbadresser i Google Cloud. Ett skript har
+  # ingen adress, och inloggningen nekas då med "Requests from referer <empty>
+  # are blocked" - upptäckt 16 november, innan bryggan hunnit ut till
+  # styrdatorn. Därför skickas en av de tillåtna adresserna med, tagen ur
+  # konfigurationen. Det är ingen säkerhetslucka: nyckeln är offentlig, och
+  # skyddet är databasens regler och kontots lösenord.
+  if ($cfg.referer) { return @{ Referer = [string]$cfg.referer } }
+  return @{}
 }
 
 function Get-Token {
@@ -459,7 +473,7 @@ function Get-Token {
   if ($script:token -and ((Get-Date) - $script:tokenAt).TotalMinutes -lt 50) { return $script:token }
   $pw = Get-Secret "moln" "Lösenord för bryggans Firebase-konto"
   $body = @{ email = $cfg.email; password = (Plain $pw); returnSecureToken = $true } | ConvertTo-Json -Compress
-  $r = Send-Json "Post" ("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + $cfg.apiKey) $body
+  $r = Send-Json "Post" ("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + $cfg.apiKey) $body (Login-Headers)
   $script:token = $r.idToken
   $script:tokenAt = Get-Date
   return $script:token
@@ -527,6 +541,128 @@ function Commit-Round($plan, [bool]$sqlOk, [datetime]$now) {
     if ($k -like "meta/*") { continue }
     if ($plan.flat.ContainsKey($k)) { $script:sent[$k] = $plan.flat[$k] } else { $script:sent.Remove($k) }
   }
+}
+
+# ------------------------------------------------------------ prova molnet
+# Loggar in som bryggkontot och provar att reglerna ger precis det kontot ska
+# ha: skriva under /live och /hist, ingenting annat. Behöver ingen databas och
+# kan köras var som helst, så att fel i nyckel, lösenord eller regler syns
+# hemma och inte först vid styrdatorn. Provvärdena tas bort igen.
+function Try-Web([string]$method, [string]$url, [string]$json = "", [hashtable]$headers = @{}) {
+  try {
+    $p = @{ Method = $method; Uri = $url; TimeoutSec = 15; Headers = $headers; UseBasicParsing = $true }
+    if ($json -ne "") {
+      $p.Body = [System.Text.Encoding]::UTF8.GetBytes($json)
+      $p.ContentType = "application/json; charset=utf-8"
+    }
+    $r = Invoke-WebRequest @p
+    return @{ code = [int]$r.StatusCode; text = [string]$r.Content }
+  } catch {
+    $code = 0
+    $text = $_.Exception.Message
+    if ($_.Exception.Response) {
+      $code = [int]$_.Exception.Response.StatusCode
+      if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $text = $_.ErrorDetails.Message }
+      else {
+        # Windows PowerShell 5.1 lämnar ofta bara "(400) Felaktig begäran".
+        # Orsaken står i svarets kropp, som måste läsas för hand.
+        try {
+          $st = $_.Exception.Response.GetResponseStream()
+          if ($st.CanSeek) { $st.Position = 0 }
+          $t2 = (New-Object System.IO.StreamReader($st)).ReadToEnd()
+          if ($t2) { $text = $t2 }
+        } catch { }
+      }
+    }
+    # Adressen innehåller inloggningsbeviset; det ska aldrig hamna på skärmen.
+    $text = ($text -replace 'auth=[^\s"&]+', 'auth=<dolt>')
+    return @{ code = $code; text = $text }
+  }
+}
+
+if ($ProvaMoln) {
+  if (-not (Test-Path $cfgFile)) {
+    Write-Host ("Saknar " + $cfgFile + ". Kopiera brygga-config.exempel.json och fyll i.")
+    exit 1
+  }
+  $cfg = Get-Content $cfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
+  [Net.ServicePointManager]::SecurityProtocol = 3072
+  # På ett företagsnät kan utgående trafik gå via en proxy som vill ha
+  # Windows-inloggningen. Styrdatorn har ingen proxy, så där gör raden inget.
+  try { [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials } catch { }
+
+  $script:bad = 0
+  function Report([string]$what, [bool]$ok, [string]$detail = "") {
+    if ($ok) { Write-Host ("  OK    " + $what) }
+    else {
+      $script:bad++
+      Write-Host ("  FEL   " + $what)
+      if ($detail -ne "") { Write-Host ("        " + $detail) }
+    }
+  }
+
+  Write-Host ("Provar molnet som " + $cfg.email)
+  Write-Host ("Databas: " + $cfg.dbUrl)
+  Write-Host ""
+
+  $pw = Get-Secret "moln" "Lösenord för bryggans Firebase-konto"
+  $body = @{ email = $cfg.email; password = (Plain $pw); returnSecureToken = $true } | ConvertTo-Json -Compress
+  $r = Try-Web "Post" ("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + $cfg.apiKey) $body (Login-Headers)
+  $body = $null
+
+  if ($r.code -ne 200) {
+    Write-Host "  FEL   Inloggningen"
+    if ($r.code -eq 0) {
+      Write-Host ("        Kom inte fram till Google: " + $r.text)
+      Write-Host "        Troligen nätet (brandvägg eller proxy). Prova ett annat nät."
+    } elseif ($r.text -match 'referer') {
+      Write-Host "        Nyckeln är låst till vissa webbadresser. Lägg till raden"
+      Write-Host '        "referer": "https://snoprognos.firebaseapp.com/" i brygga-config.json.'
+    } elseif ($r.text -match 'INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND') {
+      Write-Host "        Fel lösenord eller fel adress för bryggkontot."
+      if (Test-Path (SecretPath "moln")) { Write-Host "        Ett sparat lösenord användes - spara om med -SparaLosen moln." }
+    } elseif ($r.text -match 'USER_DISABLED') {
+      Write-Host "        Kontot är avstängt i Firebase-konsolen."
+    } else {
+      Write-Host ("        Svar " + $r.code + ": " + $r.text)
+    }
+    exit 1
+  }
+  $login = $r.text | ConvertFrom-Json
+  $tok = $login.idToken
+  Write-Host "  OK    Inloggningen"
+  Write-Host ("        Kontots id: " + $login.localId + "  (ska vara det som står i reglerna)")
+
+  $base = $cfg.dbUrl.TrimEnd("/")
+  function U([string]$path) { return ($base + "/" + $path + ".json?auth=" + $tok) }
+  $prov = '{"prov":true,"tid":{".sv":"timestamp"}}'
+
+  foreach ($gren in @("live", "hist")) {
+    $w = Try-Web "Put" (U ($gren + "/_prov")) $prov
+    Report ("Får skriva under /" + $gren) ($w.code -eq 200) ("Svar " + $w.code + ": " + $w.text)
+    if ($w.code -eq 200) {
+      $d = Try-Web "Delete" (U ($gren + "/_prov"))
+      Report ("Provvärdet under /" + $gren + " borttaget") ($d.code -eq 200) ("Svar " + $d.code + ": " + $d.text + " - ta bort _prov för hand i konsolen.")
+    }
+  }
+
+  # Det här ska INTE gå. Ett bryggkonto som kan läsa medlemslistan eller
+  # skriva utanför sina två grenar betyder att reglerna är fel.
+  $g = Try-Web "Get" (U "members")
+  Report "Får inte läsa medlemslistan" ($g.code -eq 401 -or $g.code -eq 403) ("Svar " + $g.code + " - bryggan kom åt /members.")
+
+  $w = Try-Web "Put" (U "members/_prov") $prov
+  Report "Får inte skriva i medlemslistan" ($w.code -eq 401 -or $w.code -eq 403) ("Svar " + $w.code + " - bryggan kunde skriva i /members.")
+  if ($w.code -eq 200) { [void](Try-Web "Delete" (U "members/_prov")) }
+
+  $w = Try-Web "Put" (U "annat/_prov") $prov
+  Report "Får inte skriva utanför /live och /hist" ($w.code -eq 401 -or $w.code -eq 403) ("Svar " + $w.code + " - bryggan kunde skriva på annat ställe.")
+  if ($w.code -eq 200) { [void](Try-Web "Delete" (U "annat/_prov")) }
+
+  Write-Host ""
+  if ($script:bad -eq 0) { Write-Host "Allt stämmer. Bryggan kan skicka, och bara dit den ska."; exit 0 }
+  Write-Host ([string]$script:bad + " saker stämmer inte. Skicka inte riktiga värden förrän det är rättat.")
+  exit 1
 }
 
 # ------------------------------------------------------------- självtest

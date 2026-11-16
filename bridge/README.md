@@ -4,10 +4,10 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 15 november 2026:** version 1. Skriptet tolkas utan fel, spärrarna är
+**Läget 16 november 2026:** version 2. Skriptet tolkas utan fel, spärrarna är
 provade och självtestet av ändringslogiken går igenom. Men det har **aldrig
-körts mot den riktiga SQL-servern**, och sändningen till Firebase är oprovad
-(databasen där finns inte än).
+körts mot den riktiga SQL-servern**, och den riktiga sändningen (`-Skicka`) är
+oprovad. Inloggning och rättigheter i Firebase är provade med `-ProvaMoln`.
 
 ## Första körningen på styrdatorn
 
@@ -68,6 +68,26 @@ säger ifrån. Går nätet ner försöker bryggan igen nästa varv.
 `.\brygga.ps1 -Sjalvtest` provar den här logiken med påhittade värden, utan
 databas och utan nät. I torrläge står i `brygga.log` vad som *skulle* ha
 skickats.
+
+## Prova molnet
+
+    powershell -ExecutionPolicy Bypass -File .\brygga.ps1 -ProvaMoln
+
+Loggar in som bryggkontot, skriver ett provvärde under `/live` och `/hist`,
+tar bort det igen, och kontrollerar att kontot *inte* kan läsa eller skriva i
+medlemslistan eller skriva någon annanstans. Behöver ingen databas och går att
+köra på vilken dator som helst — gör det hemma, så att ett fel i nyckel,
+lösenord eller regler inte upptäcks först vid styrdatorn. Lösenordet frågas
+efter om det inte är sparat med `-SparaLosen moln`.
+
+`brygga-config.json` (kopia av exemplet, följer inte med till git) behöver
+raden `referer`. Webbnyckeln är låst till vissa webbadresser i Google Cloud,
+och utan raden nekas inloggningen med "Requests from referer <empty> are
+blocked". Adressen måste vara en av dem som står i nyckelns lista.
+
+**Läget 16 november 2026:** provet är byggt och felvägarna provade (fel
+lösenord, saknad `referer`), från företagsnätet. Kristian körde sedan hela provet med det
+riktiga lösenordet: allt stämde.
 
 ## Autostart
 
