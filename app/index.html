@@ -1610,6 +1610,12 @@ try {
   gate('wait', 'Kunde inte nå inloggningen. Kontrollera nätet och ladda om sidan.', true);
 }
 
+const AUTH_HOST = 'snoprognos.firebaseapp.com';
+const MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+// Appar som Messenger, Instagram och Facebook öppnar länkar i en egen
+// inbyggd webbläsare. Google vägrar logga in där, och felet som visas säger
+// inget om varför.
+const INAPP = /FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\/|; wv\)/i.test(navigator.userAgent);
 let stopMember = null, stopMeta = null, stopHist = null, stopMembers = null, curRoll = 'Snögruppen';
 function stopData() {
   if (stopMeta) { stopMeta(); stopMeta = null; }
@@ -1635,6 +1641,13 @@ window.fbLogin = async function () {
     // Utan detta väljer Google tyst det konto som redan är inloggat, och den
     // som har flera konton hamnar på fel utan att få välja.
     prov.setCustomParameters({ prompt: 'select_account' });
+    // På telefon går inloggningen i samma flik i stället för i ett eget
+    // fönster. Ett fönster på en iPhone tappar ofta kopplingen till sidan
+    // som öppnade det, och Firebase svarar då "Unable to process request due
+    // to missing initial state" - det hände första gången någon loggade in
+    // från en telefon, 16 november. Samma flik fungerar bara där appen ligger
+    // på inloggningens egen adress, därför inte på localhost.
+    if (MOBILE && location.hostname === AUTH_HOST) { await fb.authm.signInWithRedirect(fb.auth, prov); return; }
     await fb.authm.signInWithPopup(fb.auth, prov);
   } catch (e) {
     const c = e && e.code || '';
@@ -1660,9 +1673,23 @@ function initials(name) {
   return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
 }
 
+// Svaret från en inloggning i samma flik. Gick den snett ska det synas på
+// inloggningssidan, inte försvinna.
+let redirectErr = '';
+if (fb) fb.authm.getRedirectResult(fb.auth).catch(e => {
+  const c = e && e.code || '';
+  redirectErr = c === 'auth/admin-restricted-operation'
+    ? 'Det här kontot har aldrig loggat in förut, och projektet tillåter just nu inga nya konton.'
+    : 'Inloggningen gick inte: ' + esc(c || e.message || e);
+  if (!fb.auth.currentUser) msg(redirectErr, true);
+});
+const outHint = () => redirectErr || (INAPP
+  ? 'Du har öppnat sidan inifrån en annan app. Google loggar inte in där — öppna <b>snoprognos.firebaseapp.com</b> i Safari eller Chrome i stället.'
+  : '');
+
 if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
   stopListening();
-  if (!user) { gate('out', ''); return; }
+  if (!user) { gate('out', outHint(), !!(redirectErr || INAPP)); return; }
   gate('wait', 'Kontrollerar åtkomst …');
   const email = user.email || '';
   const noAccess = () => gate('noaccess',

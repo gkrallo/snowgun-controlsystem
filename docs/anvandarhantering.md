@@ -128,6 +128,17 @@ Varje höst före säsongen: läs igenom `members` och ta bort dem som inte län
 är med. Listan innehåller namn och e-postadresser — bara administratörer kan
 läsa hela, en medlem ser bara sin egen rad.
 
+## Inloggning från telefon
+
+På telefon går inloggningen i samma flik; på dator i ett eget fönster. Första
+inloggningen från en iPhone (16 november 2026) slutade på en vit sida med
+"Unable to process request due to missing initial state" — fönstret hade
+tappat kopplingen till sidan. Efter bytet kom personen in.
+
+Öppnas länken inifrån Messenger, Facebook eller Instagram hamnar man i den
+appens inbyggda webbläsare, och där loggar Google inte in. Appen varnar då.
+Rådet till den som fastnar: öppna Safari eller Chrome och skriv in adressen.
+
 ## Vad appen ska visa
 
 - **Inte inloggad:** inloggningssidan.
