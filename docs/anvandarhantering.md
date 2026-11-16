@@ -4,6 +4,12 @@ Vem som får se driftdatan, hur man släpper in och tar bort någon, och vilka
 regler som skyddar den. Hör ihop med
 [`plan-brygga-firebase.md`](plan-brygga-firebase.md).
 
+**Läget 16 november 2026:** bryggkontot finns och dess id står i
+`firebase/database.rules.json`, utlagt. Första administratören är inlagd under
+`/members`. Fortfarande inte provat med riktiga inloggningar: bryggans
+skrivning väntar på att lösenordet läggs in på styrdatorn, och medlemmarnas
+läsning på att appen får riktig Google-inloggning.
+
 **Läget 15 november 2026:** databasen finns
 (`snoprognos-default-rtdb`, europe-west1) och reglerna nedan är inlagda från
 `firebase/database.rules.json` med `firebase deploy --only database`. Provat:

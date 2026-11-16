@@ -5,11 +5,11 @@
 
     "live": {
       ".read":  "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
-      ".write": "auth != null && auth.uid === 'BRYGGANS_UID_SAKNAS'"
+      ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'"
     },
     "hist": {
       ".read":  "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
-      ".write": "auth != null && auth.uid === 'BRYGGANS_UID_SAKNAS'"
+      ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'"
     },
 
     "members": {
