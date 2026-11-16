@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snökoll — driftövervakning</title>
+<meta name="theme-color" content="#0a111e">
+<meta name="apple-mobile-web-app-title" content="Snökoll">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <!--
   Inloggningen är riktig (Google via Firebase, och medlemslistan i databasen
   avgör vem som kommer in), och vyerna visar det bryggan skickar från
@@ -1568,6 +1573,37 @@ function clearApp(){
   isAdmin=false;myKey='';members=null;memMsg='';memForm={email:'',name:'',role:'viewer'};
   if(current==='members')current='overview';
 }
+
+/* ---------- installerad app ---------- */
+/* Service workern gör appen installerbar (sw.js). En installerad app laddas
+   nästan aldrig om — telefonen håller den vid liv i dagar — så en ny version
+   skulle annars inte komma fram. När appen kommer fram på skärmen frågar den
+   därför servern om sidan har ändrats (bara huvudet, inte hela sidan) och
+   laddar om i så fall. Inget versionsnummer att komma ihåg att höja. */
+(function(){
+  const secure=location.protocol==='https:'||location.hostname==='localhost';
+  if(!('serviceWorker' in navigator)||!secure)return;
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  let etag=null, last=0;
+  async function check(){
+    if(document.hidden||Date.now()-last<10*60000)return;
+    last=Date.now();
+    try{
+      const r=await fetch('./index.html',{method:'HEAD',cache:'no-store'});
+      const t=r.ok?(r.headers.get('etag')||r.headers.get('last-modified')):null;
+      if(!t)return;
+      if(etag===null){etag=t;return;}
+      if(t===etag)return;
+      // Inte mitt i något man skriver (dammens fält, medlemsformuläret), och
+      // inte under inloggningen.
+      const typing=document.activeElement&&/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+      if(typing||document.getElementById('app').classList.contains('hidden')){last=0;return;}
+      location.reload();
+    }catch(e){}
+  }
+  document.addEventListener('visibilitychange',check);
+  check();
+})();
 
 /* snowflakes */
 (function(){const f=document.getElementById('flakes');let h='';for(let i=0;i<22;i++){const x=Math.random()*100,d=6+Math.random()*8,s=8+Math.random()*12,o=Math.random();h+=`<div class="flake" style="left:${x}%;animation-duration:${d}s;animation-delay:${-Math.random()*d}s;font-size:${s}px;opacity:${o}">❄</div>`}f.innerHTML=h})();

@@ -139,6 +139,22 @@ tappat kopplingen till sidan. Efter bytet kom personen in.
 appens inbyggda webbläsare, och där loggar Google inte in. Appen varnar då.
 Rådet till den som fastnar: öppna Safari eller Chrome och skriv in adressen.
 
+## Installera appen på telefonen
+
+Appen går att lägga på hemskärmen (sedan 16 november 2026), som prognosappen:
+
+- **iPhone:** öppna adressen i Safari → Dela → Lägg till på hemskärmen.
+- **Android:** öppna adressen i Chrome → menyn → Installera app.
+
+`app/sw.js` gör den installerbar. Den sparar sidan och ikonerna så att appen
+startar fort, men aldrig mätvärden — de kommer alltid från Firebase. Sidorna
+under `/__/` (Firebases inloggning) rör den inte. En installerad app frågar
+servern om sidan ändrats varje gång den kommer fram på skärmen och laddar om
+i så fall, så det finns inget versionsnummer att höja vid en ny utgåva.
+`VERSION` i `sw.js` behöver bara höjas om själva `sw.js` eller ikonerna ändras.
+
+Inte provat: inloggning inifrån den installerade appen på en riktig telefon.
+
 ## Vad appen ska visa
 
 - **Inte inloggad:** inloggningssidan.
