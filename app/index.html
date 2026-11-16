@@ -551,6 +551,7 @@ const NAV = [
   {id:'lances',   label:'Lansar',      icon:'lance'},
   {id:'alarms',   label:'Larm',        icon:'bell'},
   {id:'forecast', label:'Körfönster',  icon:'clock'},
+  {id:'members',  label:'Medlemmar',   icon:'users'},   // bara för administratörer, se buildNav
 ];
 
 /* ---------- ikoner ---------- */
@@ -568,6 +569,7 @@ function icon(name,c='currentColor',s=20){
     track:'<path d="M4 20c4-1 4-7 8-8s4-7 8-8"/>',
     map:'<path d="M9 4L3 7v13l6-3 6 3 6-3V4l-6 3-6-3z"/><path d="M9 4v13M15 7v13"/>',
     sliders:'<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2.3"/><circle cx="16" cy="12" r="2.3"/><circle cx="7" cy="17" r="2.3"/>',
+    users:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6M21 20c0-2.6-1.6-4.8-4-5.6"/>',
     dam:'<path d="M4 7h16l-1.6 12.2a1 1 0 0 1-1 .8H6.6a1 1 0 0 1-1-.8L4 7z"/><path d="M5.6 13c2-1.2 4.4.9 6.4 0s4.4-1.2 6.4 0"/>',
   }[name]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
@@ -598,11 +600,11 @@ function go(id){current=id;safeRender();if(window.innerWidth<=860)window.scrollT
 function buildNav(){
   const a=activeAlarms().length;
   const cur=current==='unit'?backTo:current;      // i enhetsvyn lyser vyn man kom ifrån
-  document.getElementById('nav').innerHTML=NAV.map(n=>`<a class="${n.id===cur?'active':''}" onclick="go('${n.id}')">${icon(n.icon)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
+  document.getElementById('nav').innerHTML=NAV.filter(n=>n.id!=='members'||isAdmin).map(n=>`<a class="${n.id===cur?'active':''}" onclick="go('${n.id}')">${icon(n.icon)}<span>${n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
   // Telefonens rad rymmer sex knappar. Kanoner och lansar delar därför på en
   // ("Enheter", med växel i vyn); rådgivaren nås från Vatten och körfönstret
   // från Översikt.
-  const mob=NAV.filter(n=>!['forecast','advisor','lances'].includes(n.id));
+  const mob=NAV.filter(n=>!['forecast','advisor','lances','members'].includes(n.id));
   const on=n=>n.id===cur||(n.id==='cannons'&&cur==='lances')||(n.id==='water'&&cur==='advisor')||(n.id==='overview'&&cur==='forecast');
   document.getElementById('botnav').innerHTML=mob.map(n=>`<a class="${on(n)?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.id==='cannons'?'Enheter':n.id==='water'?'Vatten':n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
 }
@@ -662,6 +664,84 @@ function vOverview(){
   </div>`;
 }
 
+/* ============================================================
+   MEDLEMMAR — bara för administratörer
+   Vyn göms för andra, men det är inte skyddet: databasens regler släpper bara
+   igenom en administratörs ändringar under /members. Formuläret finns för att
+   konsolen är lätt att göra fel i — ett stort F eller en punkt som blev kvar
+   ger en rad som ser rätt ut men inte släpper in någon.
+   ============================================================ */
+let isAdmin=false, myKey='', members=null, memMsg='', memErr=false, memArm='', memArmT=0;
+let memForm={email:'',name:'',role:'viewer'};
+// Samma omskrivning som i reglerna: gemener, och varje punkt blir ett komma.
+const emailKey=e=>String(e).trim().toLowerCase().split('.').join(',');
+const keyEmail=k=>String(k).split(',').join('.');
+function setAdmin(b,key){
+  const was=isAdmin; isAdmin=!!b; myKey=key||'';
+  if(!isAdmin){members=null; if(current==='members')current='overview';}
+  if(was!==isAdmin&&!document.getElementById('app').classList.contains('hidden'))safeRender(true);
+}
+function applyMembers(o){members=o||{}; if(current==='members')liveRefresh();}
+function memSay(t,err){memMsg=t;memErr=!!err;render();}
+async function memWrite(key,data,done){
+  try{await window.memberWrite(key,data);memSay(done,false);}
+  catch(e){memSay('Databasen sa nej. Är du fortfarande administratör? ('+(e&&e.code||e)+')',true);}
+}
+function memAdd(){
+  const email=memForm.email.trim(), name=memForm.name.trim(), role=memForm.role==='admin'?'admin':'viewer';
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return memSay('Skriv hela e-postadressen, till exempel anna.andersson@gmail.com.',true);
+  // Tecken som inte får stå i en nyckel i databasen (punkten byts ut, de här går inte).
+  if(/[#$\[\]\/,]/.test(email))return memSay('Adressen innehåller ett tecken som inte går att spara (# $ [ ] / eller komma).',true);
+  if(!name)return memSay('Skriv ett namn, så att listan går att läsa om ett år.',true);
+  const key=emailKey(email);
+  if(members&&members[key])return memSay(keyEmail(key)+' står redan i listan.',true);
+  const d=new Date(), added=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  memForm={email:'',name:'',role:'viewer'};
+  memWrite(key,{role,name,added},keyEmail(key)+' är tillagd. Åtkomsten gäller direkt — be personen logga in med Google.');
+}
+// Två tryck för det som tar bort eller ändrar åtkomst (inbyggda frågerutor
+// visas inte i alla webbläsare, och då ser knappen bara död ut).
+function memAsk(what,key){
+  const tag=what+':'+key;
+  if(memArm!==tag){memArm=tag;clearTimeout(memArmT);memArmT=setTimeout(()=>{memArm='';if(current==='members')render();},5000);render();return;}
+  memArm='';clearTimeout(memArmT);
+  // Spärren står här också, inte bara i att knapparna saknas på den egna raden.
+  if(key===myKey)return memSay('Du kan inte ändra din egen rad — då kan gruppen bli utan administratör.',true);
+  const m=members&&members[key]; if(!m)return render();
+  if(what==='del')memWrite(key,null,keyEmail(key)+' är borttagen. Det gäller direkt.');
+  else memWrite(key,Object.assign({},m,{role:what==='admin'?'admin':'viewer'}),keyEmail(key)+(what==='admin'?' är nu administratör.':' är nu vanlig medlem.'));
+}
+function vMembers(){
+  if(!isAdmin)return real?vOverviewR():vOverview();
+  const rows=Object.entries(members||{}).sort((a,b)=>String(a[1]&&a[1].name||a[0]).localeCompare(String(b[1]&&b[1].name||b[0]),'sv'));
+  const admins=rows.filter(([,m])=>m&&m.role==='admin').length;
+  const inp='width:100%;background:#0c1626;border:1px solid var(--border-hi);border-radius:10px;color:var(--text);padding:10px 12px;font:inherit;font-size:.92rem';
+  const btn=(what,key,txt,arm)=>`<button class="linkbtn" style="flex:0 0 auto${memArm===what+':'+key?';border-color:var(--alarm);color:var(--alarm)':''}" onclick="memAsk('${what}','${esc(key)}')">${memArm===what+':'+key?arm:txt}</button>`;
+  return topbar('Åtkomst','Medlemmar')+`<div class="view">
+   ${admins<2?'<div class="banner">'+icon('bell','#f87171')+'<div style="flex:1"><b>Bara en administratör.</b> <span class="muted small">Tappar du ditt konto kan ingen släppa in eller ta bort någon. Gör en person till som du litar på till administratör.</span></div></div>':''}
+   <div class="card">
+     <h3>${icon('users','#7dd3fc',15)} Släpp in någon</h3>
+     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:12px">
+       <label class="small muted">E-post till personens Google-konto<input id="mEmail" type="email" autocomplete="off" autocapitalize="off" spellcheck="false" style="${inp};margin-top:5px" value="${esc(memForm.email)}" oninput="memForm.email=this.value"></label>
+       <label class="small muted">Namn<input id="mName" type="text" autocomplete="off" style="${inp};margin-top:5px" value="${esc(memForm.name)}" oninput="memForm.name=this.value"></label>
+       <label class="small muted">Roll<select id="mRole" style="${inp};margin-top:5px" onchange="memForm.role=this.value"><option value="viewer"${memForm.role==='viewer'?' selected':''}>Medlem — får se driftdatan</option><option value="admin"${memForm.role==='admin'?' selected':''}>Administratör — får också ändra den här listan</option></select></label>
+     </div>
+     <p class="muted small" style="line-height:1.55;margin:10px 0 0">Appen loggar in med Google, så adressen måste höra till ett <b style="color:var(--text)">Google-konto</b>. Den behöver inte sluta på gmail.com — en jobbadress eller annan adress går bra om personen kan logga in hos Google med den. Den som saknar Google-konto kan skapa ett på sin vanliga adress (accounts.google.com, "Använd min nuvarande e-postadress"). Fråga vilken adress personen använder; en gissning ger en rad som aldrig släpper in någon.</p>
+     <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="linkbtn" style="flex:0 0 auto" onclick="memAdd()">Lägg till</button>
+       ${memMsg?`<span class="small" role="status" style="color:${memErr?'var(--limit)':'var(--run)'};line-height:1.5">${esc(memMsg)}</span>`:''}</div>
+   </div>
+
+   <div class="section-title">${rows.length} i listan</div>
+   <div class="card">${members===null?'<p class="muted small" style="margin:0">Hämtar listan …</p>':rows.map(([key,m])=>{m=m||{};const me=key===myKey,adm=m.role==='admin';return `<div class="alarm-item" style="flex-wrap:wrap">
+      <div class="a-body" style="min-width:180px"><div class="a-title">${esc(m.name||'(inget namn)')}${me?' <span class="muted small">· du</span>':''}</div>
+        <div class="a-meta" style="overflow-wrap:anywhere">${esc(keyEmail(key))} · tillagd ${esc(m.added||'okänt')}</div></div>
+      <span class="chip ${adm?'s-run':'s-standby'}"><span class="d"></span>${adm?'Administratör':m.role==='viewer'?'Medlem':'Okänd roll: '+esc(m.role)}</span>
+      ${me?'':btn(adm?'viewer':'admin',key,adm?'Gör till medlem':'Gör till administratör','Tryck igen')+btn('del',key,'Ta bort','Tryck igen för att ta bort')}
+    </div>`}).join('')}</div>
+   <div class="note" style="margin-top:14px">Adressen sparas med små bokstäver, så <b>Anna.Andersson@gmail.com</b> och <b>anna.andersson@gmail.com</b> är samma rad. Den som tas bort tappar åtkomsten direkt, även med appen öppen. Din egen rad går inte att ändra härifrån — det är spärren mot att gruppen blir utan administratör. Gå igenom listan varje höst.</div>
+  </div>`;
+}
+
 /* ---------- vyer med riktig data ---------- */
 const alarmBanner=()=>{const aa=activeAlarms();return aa.length
   ? `<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${aa.length} aktiva larm</b> <span class="muted small">· ${esc((aa.find(a=>a.sev==='crit')||aa[0]).title)}</span></div><button class="linkbtn" onclick="go('alarms')">Visa larm</button></div>`
@@ -690,6 +770,7 @@ function vOverviewR(){
 
   <div class="section-title">Enheter</div>
   ${cannons.length?`<div class="grid g-units">${cannons.map(unitCard).join('')}</div>`:'<p class="muted small">Inga enheter i datan än.</p>'}
+  ${isAdmin?`<button class="linkbtn" style="margin-top:18px;display:inline-flex;align-items:center;gap:8px" onclick="go('members')">${icon('users','#7dd3fc',15)} Medlemmar och åtkomst</button>`:''}
   </div>`;
 }
 
@@ -1421,6 +1502,7 @@ function render(soft){
   else if(current==='lances')m.innerHTML=vUnits('lans');
   else if(current==='alarms')m.innerHTML=vAlarms();
   else if(current==='forecast')m.innerHTML=vForecast();
+  else if(current==='members')m.innerHTML=vMembers();
   // Grafer och karta som hör till en vy man lämnat ska bort, annars ligger de
   // kvar i minnet mot en canvas som inte längre finns.
   for(const k in charts){if(!document.getElementById(k)){charts[k].destroy();delete charts[k];}}
@@ -1483,6 +1565,8 @@ function clearApp(){
   document.getElementById('main').innerHTML='';
   // Riktig data ska inte ligga kvar i minnet åt nästa som loggar in.
   if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;}
+  isAdmin=false;myKey='';members=null;memMsg='';memForm={email:'',name:'',role:'viewer'};
+  if(current==='members')current='overview';
 }
 
 /* snowflakes */
@@ -1526,11 +1610,18 @@ try {
   gate('wait', 'Kunde inte nå inloggningen. Kontrollera nätet och ladda om sidan.', true);
 }
 
-let stopMember = null, stopMeta = null, stopHist = null;
+let stopMember = null, stopMeta = null, stopHist = null, stopMembers = null, curRoll = 'Snögruppen';
 function stopData() {
   if (stopMeta) { stopMeta(); stopMeta = null; }
   if (stopHist) { stopHist(); stopHist = null; }
+  if (stopMembers) { stopMembers(); stopMembers = null; }
+  if (window.setAdmin) window.setAdmin(false, '');
 }
+// Skrivningen prövas av databasens regler: bara en administratör kommer igenom.
+window.memberWrite = (key, data) => {
+  const r = fb.dbm.ref(fb.db, 'members/' + key);
+  return data === null ? fb.dbm.remove(r) : fb.dbm.set(r, data);
+};
 function stopListening() {
   if (stopMember) { stopMember(); stopMember = null; }
   stopData();
@@ -1588,7 +1679,14 @@ if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
     const name = user.displayName || m.name || email;
     $('userName').textContent = name;
     $('userInit').textContent = initials(name);
-    $('userSub').textContent = m.role === 'admin' ? 'Administratör' : 'Snögruppen';
+    // Rollen kan ändras medan appen är öppen (någon gör en till administratör).
+    const adm = m.role === 'admin';
+    curRoll = adm ? 'Administratör' : 'Snögruppen';
+    $('userSub').textContent = curRoll;
+    window.setAdmin(adm, key);
+    if (adm && !stopMembers) stopMembers = fb.dbm.onValue(fb.dbm.ref(fb.db, 'members'),
+      s4 => window.applyMembers(s4.val()), () => window.applyMembers(null));
+    if (!adm && stopMembers) { stopMembers(); stopMembers = null; }
     if (inne) return;
     inne = true;
     window.showApp();
@@ -1596,8 +1694,7 @@ if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
     // ändrats, så det kostar lite att lyssna.
     stopMeta = fb.dbm.onValue(fb.dbm.ref(fb.db, 'live'), s2 => {
       const v = s2.val();
-      const roll = m.role === 'admin' ? 'Administratör' : 'Snögruppen';
-      $('userSub').textContent = roll + (v && v.meta && v.meta.ts
+      $('userSub').textContent = curRoll + (v && v.meta && v.meta.ts
         ? ' · bryggan hördes ' + new Date(v.meta.ts).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
         : ' · ingen driftdata än');
       window.applyLive(v);

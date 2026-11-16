@@ -87,6 +87,27 @@ punkt:
 Adressen ska vara den personen loggar in på Google med. Googles inloggning
 lämnar alltid en bekräftad adress, och reglerna kräver det.
 
+### I appen (sedan 16 november 2026)
+
+En administratör har vyn **Medlemmar** i menyn (på telefonen: knappen längst
+ner på Översikt). Där går det att lägga till, byta roll och ta bort. Appen gör
+själv om adressen till rätt nyckel, så `Anna.Andersson@gmail.com` blir rätt.
+Den egna raden går inte att ändra därifrån — spärren mot att gruppen blir utan
+administratör. Vyn är gömd för andra, men skyddet är reglerna: bara en
+administratörs skrivning under `/members` går igenom.
+
+Adressen måste höra till ett **Google-konto**. Den behöver inte sluta på
+gmail.com: en jobbadress eller annan adress går bra om personen kan logga in
+hos Google med den, och den som saknar Google-konto kan skapa ett på sin
+vanliga adress.
+
+Provat med en påhittad databas bakom: ogiltig adress, dubblett, tomt namn,
+adress med flera punkter och stora bokstäver, byte av roll, borttagning, den
+egna raden, och att vyn försvinner när man slutar vara administratör. Kristian
+gjorde sedan en riktig ändring från appen, och den gick igenom.
+
+Stegen nedan är samma sak gjord för hand i konsolen, om appen inte går att nå.
+
 ### Släppa in någon
 
 1. Fråga vilken Google-adress personen använder.
