@@ -4,6 +4,26 @@ Vem som får se driftdatan, hur man släpper in och tar bort någon, och vilka
 regler som skyddar den. Hör ihop med
 [`plan-brygga-firebase.md`](plan-brygga-firebase.md).
 
+**Egen adress sedan 17 november 2026: https://snow.pettersson.app.** Domänen
+ligger hos Cloudflare, med en CNAME `snow` -> `snoprognos.web.app` och grått
+moln (DNS only; med Cloudflares proxy kan Firebase inte utfärda certifikatet).
+Fyra ställen måste känna till en ny adress, annars fungerar inte
+inloggningen:
+
+1. Firebase -> Hosting -> Add custom domain (utan redirect).
+2. Firebase -> Authentication -> Settings -> Authorized domains.
+3. Google Cloud -> Credentials -> API-nyckeln: `https://snow.pettersson.app/*`
+   under Website restrictions. Raden `https://snoprognos.firebaseapp.com/*`
+   ska stå kvar — bryggan använder den som `referer`.
+4. Google Cloud -> Credentials -> OAuth-klienten:
+   `https://snow.pettersson.app/__/auth/handler` under Authorized redirect
+   URIs, och adressen utan sökväg under Authorized JavaScript origins.
+
+Appen väljer inloggningsadress efter var den öppnas (`AUTH_HOST`), eftersom
+inloggning i samma flik på telefon kräver att den är samma som appens egen.
+Den gamla adressen fungerar fortfarande. En installerad app hör till sin
+adress, så den som vill ha den nya lägger till appen på hemskärmen därifrån.
+
 **Appen ligger på https://snoprognos.firebaseapp.com** sedan 16 november 2026
 (Firebase Hosting, mappen `app`). Lägg ut en ny version från repots rot med
 `firebase deploy --only hosting`, och reglerna med

@@ -1625,6 +1625,10 @@ function gate(state, html, err) {
   msg(html || '', err);
 }
 
+// Inloggningens adress ska vara samma som appens egen, annars går det inte
+// att logga in i samma flik på en telefon (se fbLogin). På den egna domänen
+// används därför den; överallt annars Firebases egen adress.
+const AUTH_HOST = location.hostname === 'snow.pettersson.app' ? 'snow.pettersson.app' : 'snoprognos.firebaseapp.com';
 let fb = null;
 try {
   const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
@@ -1633,7 +1637,7 @@ try {
   // Nyckeln är offentlig av design och får stå här. Skyddet är reglerna.
   const a = app.initializeApp({
     apiKey: 'AIzaSyC0TZQEb2f3ihslleOBK9KfJFMCsI4DoQQ',
-    authDomain: 'snoprognos.firebaseapp.com',
+    authDomain: AUTH_HOST,
     databaseURL: 'https://snoprognos-default-rtdb.europe-west1.firebasedatabase.app',
     projectId: 'snoprognos',
     appId: '1:726097160825:web:ce47e8aeb011d958b082a8'
@@ -1643,7 +1647,6 @@ try {
   gate('wait', 'Kunde inte nå inloggningen. Kontrollera nätet och ladda om sidan.', true);
 }
 
-const AUTH_HOST = 'snoprognos.firebaseapp.com';
 const MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 // Appar som Messenger, Instagram och Facebook öppnar länkar i en egen
 // inbyggd webbläsare. Google vägrar logga in där, och felet som visas säger
