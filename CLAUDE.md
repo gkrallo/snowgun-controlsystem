@@ -25,8 +25,48 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
   faktisk styrning finns Google Remote Desktop mot kontrollrums-PC:n.
 - **Inloggning krävs** (Firebase Auth). Datan är inte för allmänheten.
 - **Egen app, skild från den publika prognosappen.** Koden bor här, isär från
-  öppna `snowgun-forecast`. Hosting ej bestämd (Firebase Hosting eller internt;
-  inte GitHub Pages).
+  öppna `snowgun-forecast`. Appen heter Snökoll och ligger på Firebase Hosting,
+  **https://snow.pettersson.app** (sedan 17 november 2026). Inte GitHub Pages.
+
+## Läget (17 november 2026)
+
+Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
+
+- **Bryggan** (`bridge/brygga.ps1`, version 3) går på styrdatorn som en
+  schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
+  **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
+  inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
+  `bridge/README.md`. Avsteget ska bort så snart `snogrupp_ro` finns.
+- **Firebase** (projekt `snoprognos`): Realtime Database
+  `snoprognos-default-rtdb` i europe-west1, regler i
+  `firebase/database.rules.json`. Bryggan skriver `/live` och `/hist`,
+  medlemmar läser, administratörer sköter `/members`.
+- **Appen** loggar in med Google, visar riktig data och går att installera på
+  hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
+  siffror: uppmätt flöde, driftläge, dyssteg, strypning och vilken brunn en
+  enhet står vid. Körfönstret är fortfarande ett exempel (märkt så), och
+  dammen är appens egen beräkning.
+- **Inte gjort:** svar från leverantören och läs-only-kontot; hitta
+  flödesmätaren FT01 bland kolumnerna (kräver att pumpen går); prova en
+  omstart av styrdatorn; backup av styrdatorn.
+
+## Adresser, och var en ny måste läggas in
+
+- `https://snow.pettersson.app` — den adress folk ska använda. Domänen ligger
+  hos Cloudflare: CNAME `snow` → `snoprognos.web.app`, **grått moln**.
+- `https://snoprognos.firebaseapp.com` — fungerar fortfarande, och **bryggan
+  använder den som `referer`** för att få logga in. Ta aldrig bort den ur
+  API-nyckelns lista.
+- `https://snoprognos.web.app` — visar sidan men inloggningen fungerar inte
+  där (står inte i API-nyckelns lista). Använd den inte.
+- `http://localhost:8000` — lokalt prov. Måste vara just port 8000.
+
+En ny adress måste in på fyra ställen, annars fungerar inte inloggningen:
+Firebase Hosting, Authentication → Authorized domains, API-nyckelns
+webbplatslista och OAuth-klientens adresser i Google Cloud. Stegen står i
+`docs/anvandarhantering.md`. Appen väljer inloggningsadress efter var den
+öppnas (`AUTH_HOST` i `app/index.html`); en ny domän måste läggas till där
+också.
 
 ## Hårda regler — får aldrig glömmas
 
@@ -34,6 +74,9 @@ Fullständig motivering i [`docs/arkitektur-och-risker.md`](docs/arkitektur-och-
 I korthet:
 
 1. **Skriv ALDRIG till SQL.** Läs-only-konto (`db_datareader`), aldrig `sa`.
+   (Avsteg sedan 16 november: bryggan går med `GSS_Login`, som kan skriva,
+   tills läs-only-kontot finns. Skyddet är då att all SQL går genom
+   `Read-Sql`, som bara släpper igenom en ensam `SELECT`.)
 2. **Läs med `WITH (NOLOCK)`** — våra läsningar får aldrig blockera
    styrprogrammet.
 3. **Bara små nulägestabeller.** Tung analys sker mot en återställd kopia av
@@ -72,9 +115,14 @@ I korthet:
 - GSSystem är ett VB6-program (v7.2.14, site `LIDKOPING2`) som pratar **Modbus**
   över seriell COM-port mot kanoner/lansar och lagrar allt i en lokal
   **Microsoft SQL Server (SQLEXPRESS)** på kontrollrums-PC:n.
-- Databaserna är **fyra**: `Live_Snowstar` (nuläge, numrerade kolumner),
-  `Live_stat_SQL` (statistik med riktiga kolumnnamn — facit för numren),
-  `Live_event_SQL` (larm och händelser) och `Live_Language` (texter).
+- Databaserna är **29** (sonden 15 november): `Live_Snowstar` (nuläge,
+  numrerade kolumner), `Live_event_SQL` (larm och händelser),
+  `Live_Language` (texter), `Live_stat_SQL` och `Live_stat_SQL_rapport`
+  (summor och dygnsrapporter) och 24 halvmånadsdatabaser med statistik.
+  Vilken kolumn som är vad står i `docs/kolumnmappning.md`.
+- **Pumparna sitter i serie:** P1 (`dep11`) är matarpumpen, P2 (`dep12`)
+  högtryckspumpen. Deras volymer är samma vatten och får inte läggas ihop.
+  Dammens nivå mäts inte.
 - Anslutningssträngar och SQL-frågor ligger i **klartext** i programfilerna —
   ingen dekompilering behövdes.
 - `*_Main`-tabellerna har `DateUpd` och skrivs var 20:e sekund. Aktiva larm
@@ -82,22 +130,54 @@ I korthet:
 - Loggarna ligger i `C:\GSSystem\BdD\` (`erreurs.log`, `GSS_Stat_report.log`)
   och `C:\GSSystem\concept\` (`*.rap`), på franska.
 
-## Plan framåt
+## Planen, och hur långt den kommit
 
 Se [`docs/plan-brygga-firebase.md`](docs/plan-brygga-firebase.md) och
-[`docs/anvandarhantering.md`](docs/anvandarhantering.md). I korthet:
+[`docs/anvandarhantering.md`](docs/anvandarhantering.md). Stegen 1–3 och 5 är
+gjorda; av steg 4 finns bryggan men inte läs-only-kontot:
 
-1. Sonden (`probe/db-sond.ps1`) körs en gång på styrdatorn.
-2. Kolumnerna mappas hemma mot rapporten och foton av skärmen.
-3. Realtime Database, regler, medlemslista och bryggkonto i Firebase.
+1. Sonden (`probe/db-sond.ps1`) körs en gång på styrdatorn. *Gjort 15 nov.*
+2. Kolumnerna mappas hemma mot rapporten och foton av skärmen. *Det som går
+   att se när anläggningen står still är gjort.*
+3. Realtime Database, regler, medlemslista och bryggkonto i Firebase. *Gjort.*
 4. Läs-only SQL-konto och bryggan (PowerShell, schemalagd uppgift) på
-   styrdatorn.
+   styrdatorn. *Bryggan går, med `GSS_Login` som avsteg.*
 5. Appen byter simuleringen mot riktiga värden och läggs på Firebase Hosting.
+   *Gjort.*
+
+## Publicering
+
+Från repots rot, med Firebase-verktyget inloggat:
+
+    firebase deploy --only hosting      (appen, mappen app/)
+    firebase deploy --only database     (reglerna)
+
+`firebase.json` ligger i roten, eftersom verktyget inte får peka på en mapp
+utanför sin egen. Ändra reglerna i filen och lägg ut dem därifrån, aldrig i
+konsolen — nästa utläggning skriver annars över det.
+
+Inget versionsnummer behöver höjas för en ny utgåva av appen: den frågar
+servern om sidan ändrats när den kommer fram på skärmen. `VERSION` i
+`app/sw.js` höjs bara när `sw.js` eller ikonerna ändras. **Byts en ikon måste
+filen byta namn** — under samma namn kommer den gamla bilden tillbaka.
+
+Prova lokalt på `http://localhost:8000` (porten står i API-nyckelns lista).
+Ingen kan logga in åt användaren i förhandsvisningen; vyerna provas genom
+att mata in data med `applyLive(...)` i konsolen. `?demo` i adressen visar
+de gamla exempelsiffrorna.
 
 ## Filer
 
-- `app/index.html` — appen, en fil, ingen bygg. Simulerad data tills bryggan
-  finns. Skriv aldrig över den i sin helhet när en riktad ändring räcker.
+- `app/index.html` — appen, en fil, ingen bygg. Skriv aldrig över den i sin
+  helhet när en riktad ändring räcker. Riktiga mätvärden får aldrig stå i
+  filen: den går att läsa utan inloggning.
+- `app/sw.js`, `app/manifest.json`, `app/kanon-*.png` — det som gör appen
+  installerbar. `sw.js` sparar aldrig mätvärden och rör inte sidorna under
+  `/__/` (Firebases inloggning).
+- `bridge/` — bryggan och autostarten. Samma krav på UTF-8 med BOM som
+  sonden. `brygga-config.json` och de krypterade lösenorden följer inte med
+  till git. `-Sjalvtest` och `-ProvaMoln` ska gå igenom efter varje ändring.
+- `firebase/database.rules.json` — reglerna.
 - `probe/` — sonden och skriptet för läs-only-kontot. `db-sond.ps1` **måste
   sparas som UTF-8 med BOM** och får inte innehålla typografiska tankstreck
   eller citattecken — Windows PowerShell 5.1 läser annars filen fel och

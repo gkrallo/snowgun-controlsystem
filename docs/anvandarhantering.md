@@ -4,7 +4,9 @@ Vem som får se driftdatan, hur man släpper in och tar bort någon, och vilka
 regler som skyddar den. Hör ihop med
 [`plan-brygga-firebase.md`](plan-brygga-firebase.md).
 
-**Egen adress sedan 17 november 2026: https://snow.pettersson.app.** Domänen
+**Egen adress sedan 17 november 2026: https://snow.pettersson.app.** Det är
+den adress folk ska få. Inloggning är provad därifrån, både på dator och från
+telefon, och appen går att lägga på hemskärmen från den. Domänen
 ligger hos Cloudflare, med en CNAME `snow` -> `snoprognos.web.app` och grått
 moln (DNS only; med Cloudflares proxy kan Firebase inte utfärda certifikatet).
 Fyra ställen måste känna till en ny adress, annars fungerar inte
@@ -24,13 +26,13 @@ inloggning i samma flik på telefon kräver att den är samma som appens egen.
 Den gamla adressen fungerar fortfarande. En installerad app hör till sin
 adress, så den som vill ha den nya lägger till appen på hemskärmen därifrån.
 
-**Appen ligger på https://snoprognos.firebaseapp.com** sedan 16 november 2026
-(Firebase Hosting, mappen `app`). Lägg ut en ny version från repots rot med
+**Appen låg först på https://snoprognos.firebaseapp.com**, från 16 november 2026
+(Firebase Hosting, mappen `app`). Den adressen fungerar fortfarande. Lägg ut en ny version från repots rot med
 `firebase deploy --only hosting`, och reglerna med
 `firebase deploy --only database` — `firebase.json` ligger i roten, eftersom
-verktyget inte får peka på en mapp utanför sin egen. Använd adressen som
-slutar på `firebaseapp.com`: syskonadressen `snoprognos.web.app` visar samma
-sida men står inte i API-nyckelns lista, så inloggningen fungerar inte där.
+verktyget inte får peka på en mapp utanför sin egen. Syskonadressen
+`snoprognos.web.app` visar samma sida men står inte i API-nyckelns lista, så
+inloggningen fungerar inte där — använd den inte.
 Sidan går att öppna för vem som helst; utan medlemskap visas bara
 inloggningsrutan. Exempelsiffrorna (som bara visas med `?demo`) står i sidans källkod och är alltså
 läsbara utan inloggning — de är påhittade, men riktiga värden får aldrig
@@ -265,7 +267,8 @@ Det betyder:
   driftappen sin i Realtime Database. De är oberoende med flit: den som får
   mäta snödjup ska inte automatiskt se driftdata.
 - **API-nyckeln är densamma** och är begränsad till vissa webbadresser i Google
-  Cloud. Den nya adressen (`https://snow.pettersson.app/*`) måste läggas till
-  där, annars fungerar varken inloggning eller databas. Lägg också till den
-  under Authentication → Settings → Authorized domains.
+  Cloud. I listan står nu `https://gkrallo.github.io/*` (prognosappen),
+  `http://localhost:8000/*`, `https://snoprognos.firebaseapp.com/*` (som
+  bryggan använder) och `https://snow.pettersson.app/*`. Slutar inloggningen
+  fungera någonstans är det den listan man tittar i först.
 - Nyckeln är offentlig av design och får stå i koden. Skyddet är reglerna.

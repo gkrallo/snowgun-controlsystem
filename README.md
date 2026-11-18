@@ -1,32 +1,59 @@
 # snowgun-controlsystem
 
-Vad vi lär oss om **styrsystemet** (Sufag/MND GSSystem) i Lidköpings
-Vintersportklubbs snöanläggning, och arbetet med att få ut **livedata** därifrån
-till Firebase så att den kan visas i [snöprognos-appen](../snowgun-forecast).
+Driftövervakning av snöanläggningen vid Lidköpings Vintersportklubb: en brygga
+som läser nuläget ur **styrsystemet** (Sufag/MND GSSystem), och appen
+**Snökoll** som visar det för snögruppen.
+
+**Appen: https://snow.pettersson.app** — kräver inloggning med Google och att
+adressen står i medlemslistan.
 
 Det här repot är **privat** och hålls privat — det innehåller uppgifter om
 anläggningens interna styrsystem. Riktiga lösenord ligger **inte** i git (se
-`SECRETS.md`, som är `.gitignore`-ad).
+`SECRETS.md`, som är `.gitignore`-ad). Det hålls skilt från
+[`snowgun-forecast`](../snowgun-forecast), prognosappen, som är publik.
 
-Hålls skilt från `snowgun-forecast` eftersom det repot är publikt via GitHub
-Pages — känsliga systemuppgifter får aldrig hamna där.
+Allt här **läser bara**. Varken bryggan eller appen kan starta, stoppa eller
+ändra något i anläggningen.
+
+## Hur det hänger ihop
+
+    styrsystemets databas  ->  bryggan  ->  Firebase  ->  appen Snökoll
+    (SQL Server på             (PowerShell     (Realtime     (snow.pettersson.app,
+     styrdatorn)                på styrdatorn)  Database)     går att installera)
+
+Bryggan läser var 20:e sekund och skickar bara det som ändrats. Den öppnar
+ingen port in till styrdatorn.
 
 ## Innehåll
 
-- [`docs/granskning-gssystem.md`](docs/granskning-gssystem.md) — granskning av
-  GSSystems programfiler: arkitektur, var livedata finns (en lokal Microsoft
-  SQL Server-databas), vilka tabeller som är läsbara, och förslag på väg framåt.
-- `SECRETS.md` — anslutningsuppgifter (ej i git, fyll i lokalt).
+- `app/` — appen Snökoll: en fil (`index.html`), plus det som gör den
+  installerbar.
+- `bridge/` — bryggan och autostarten. Börja i [`bridge/README.md`](bridge/README.md).
+- `firebase/` och `firebase.json` — databasens regler och utläggningen.
+- `probe/` — sonden som kartlade databasen, och skriptet för läs-only-kontot.
+- `docs/` —
+  [`anvandarhantering.md`](docs/anvandarhantering.md) (vem som får se vad,
+  adresser, installation),
+  [`kolumnmappning.md`](docs/kolumnmappning.md) (vilket värde som är vad, och
+  pumphuset),
+  [`damm-matningar.md`](docs/damm-matningar.md) (dammen),
+  [`plan-brygga-firebase.md`](docs/plan-brygga-firebase.md),
+  [`arkitektur-och-risker.md`](docs/arkitektur-och-risker.md),
+  [`granskning-gssystem.md`](docs/granskning-gssystem.md),
+  [`ideer-och-roadmap.md`](docs/ideer-och-roadmap.md).
+- `CLAUDE.md` — projektanteckningarna: regler, läget och fallgropar.
+- `SECRETS.md` — lösenord (inte i git, fylls i lokalt).
 
-## Kort sammanfattning
+## Status (17 november 2026)
 
-Styrsystemet lagrar allt — kanoner, lans, pumptryck, temperatur/vind, larm — i
-en vanlig lokal SQL Server-databas (`Live_Snowstar`) på kontrollrums-PC:n i
-pistmaskingaraget. Ingen reverse engineering av protokoll behövs; planen är en
-liten bryggtjänst på den PC:n som läser databasen och skriver till Firestore,
-som appen sedan läser av i realtid.
+Hela kedjan går sedan 16 november, och appen ligger på egen adress sedan 17
+november.
 
-## Status
+Kvar att göra:
 
-Granskning klar. Inget byggt eller uppkopplat mot skarpa systemet ännu.
-Nästa steg: se slutet av `docs/granskning-gssystem.md`.
+- **Läs-only-konto i SQL.** Bryggan går tills vidare med styrsystemets eget
+  konto, som ett uttalat avsteg. Väntar på leverantören.
+- **Uppmätt flöde, driftläge och brunn per enhet** saknas i datan. Går att
+  hitta först när anläggningen kör.
+- **Backup av styrdatorn** finns inte.
+- En omstart av styrdatorn är inte provad.

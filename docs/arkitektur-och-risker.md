@@ -126,11 +126,11 @@ privat. Själva skyddet av *datan* sköts av Firebase Auth oavsett var appen kö
 — att en app-sida går att ladda är inte säkerhetsgränsen; den inloggningsgrän‑
 sade datan är det.
 
-**Not om hosting:** Firebase-projektet har ingen Hosting påslagen i dag. Vill vi
-lägga appen på Firebase Hosting (naturligt, eftersom Auth och databas redan
-finns där) är det ett nytt steg att aktivera. Alternativt kör vi den internt
-till att börja med. GitHub Pages passar inte — det kräver betald plan för
-privata repon, och vi vill inte servera den här appen publikt ändå.
+**Not om hosting:** appen ligger på Firebase Hosting sedan 16 november 2026,
+och på egen adress, `https://snow.pettersson.app`, sedan 17 november. Sidan
+går att ladda för vem som helst, men visar bara inloggningsrutan utan
+medlemskap. GitHub Pages passade inte — det kräver betald plan för privata
+repon.
 
 ---
 

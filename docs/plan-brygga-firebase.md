@@ -142,6 +142,12 @@ webbplatslista i Google Cloud måste få den nya adressen — annars fungerar
 varken inloggning eller databas. *Klart när:* appen visar samma siffror som
 kontrollrummet, på telefonen, hemifrån.
 
+*Gjort 16–17 november 2026.* Appen ligger på `https://snow.pettersson.app`,
+loggar in med Google och visar riktig data, även från telefonen. Det som inte
+finns i datan (flöde, driftläge, brunn) visas som saknat. Utöver API-nyckeln
+behövde adressen också in under Authorized domains och i OAuth-klientens
+adresser — se `anvandarhantering.md`.
+
 **5. Senare.** Egna larm med pushnotis, historik per säsong, rådgivaren på
 riktiga värden.
 
