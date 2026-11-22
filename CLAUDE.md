@@ -32,7 +32,7 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
-- **Bryggan** (`bridge/brygga.ps1`, version 3) går på styrdatorn som en
+- **Bryggan** (`bridge/brygga.ps1`, version 4) går på styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
   inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
@@ -40,7 +40,11 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
 - **Firebase** (projekt `snoprognos`): Realtime Database
   `snoprognos-default-rtdb` i europe-west1, regler i
   `firebase/database.rules.json`. Bryggan skriver `/live` och `/hist`,
-  medlemmar läser, administratörer sköter `/members`.
+  medlemmar läser, administratörer sköter `/members`. `/hist` får en punkt
+  var femte minut och sparas hela säsongen (bryggans version 4, 22 november;
+  runt 4 MB per säsong). **Appen får aldrig hämta hela `/hist` när den
+  öppnas** — det är läsningen som kostar. I dag hämtar den det senaste
+  dygnet; längre perioder ska hämtas bara när man väljer dem.
 - **Appen** loggar in med Google, visar riktig data och går att installera på
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
   siffror: uppmätt flöde, driftläge, dyssteg, strypning och vilken brunn en

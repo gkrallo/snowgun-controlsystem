@@ -4,12 +4,39 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 16 november 2026:** version 3, och **körd på styrdatorn** samma kväll
-med `GSS_Login` enligt avsteget nedan. Självtestet gick igenom där, en läsning
-tar 29 ms, `-ProvaMoln` stämde, och `-Skicka` lade hela nuläget (97 fält) och
-två historikpunkter i Firebase. Autostarten lades upp, gick, och togs sedan
-bort igen — bryggan står alltså stilla tills den läggs upp på nytt. Inte
-provat: en omstart av datorn, och hur bryggan beter sig när kanonerna går.
+**Läget 22 november 2026:** version 4 är byggd och provad med självtestet,
+men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 3 går
+där sedan 16 november med `GSS_Login` enligt avsteget nedan, som schemalagd
+uppgift. En läsning tar 29–46 ms. Inte provat: en omstart av datorn, och hur
+bryggan beter sig när kanonerna går.
+
+Version 4 sparar historiken hela säsongen; version 3 tog bort punkter äldre
+än 48 timmar.
+
+## Uppdatera bryggan på styrdatorn
+
+Bara `brygga.ps1` byts. `brygga-config.json` och de två
+`brygga-hemligt-*.txt` ska ligga kvar — lösenorden är krypterade för just den
+datorn och det kontot, och följer inte med i zipfilen.
+
+1. Öppna PowerShell i bryggans mapp och stoppa den gamla:
+
+       powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -TaBort
+
+2. Kopiera den nya `brygga.ps1` över den gamla.
+3. Prova den (ingen databas eller lösenord behövs):
+
+       powershell -ExecutionPolicy Bypass -File .\brygga.ps1 -Sjalvtest
+
+4. Lägg upp autostarten igen, med avsteget:
+
+       powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -AvstegSkrivkonto
+
+5. Kontrollera efter en minut:
+
+       powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -Visa
+
+   Loggen ska ha en rad `Bryggan startar (version 4, ...)`.
 
 Raden `Klart på … ms` efter `-EnGang` räknar med tiden det tar att skriva
 lösenordet (10 656 ms första gången). Den riktiga lästiden står som `lasMs`
@@ -111,7 +138,7 @@ läser därför var 20:e sekund men skickar bara det som ändrats:
 | Hela nuläget | vid start och en gång i timmen |
 | Ändrade fält | när ett värde gått utanför sitt dödband |
 | Hjärtslag (molnets klocka, om databasen svarar, GSSystems senaste tid) | en gång i minuten |
-| Historikpunkt för graferna | var femte minut; punkter äldre än 48 h tas bort |
+| Historikpunkt för graferna | var femte minut; sparas hela säsongen (sedan version 4, förut 48 h) |
 
 Dödband: temperatur och tryck 0,2, luftfuktighet 2 %, vindfart 0,5 m/s,
 riktning 15°. Jämförelsen görs mot det värde som senast *skickades*, så ett

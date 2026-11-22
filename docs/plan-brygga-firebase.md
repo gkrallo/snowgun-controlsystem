@@ -20,7 +20,7 @@ rapporten finns.
   │   Live_Snowstar   (nuläge)     │
   │   Live_event_SQL  (larm)       │           Realtime Database
   │   Live_stat_SQL   (statistik)  │            /live   nuläge (skrivs över)
-  │            ▲ SELECT, NOLOCK    │            /hist   5-minuterspunkter, 48 h
+  │            ▲ SELECT, NOLOCK    │            /hist   5-minuterspunkter, säsong
   │       ┌────┴────┐  var 20 s    │            /members  vilka som får läsa
   │       │ Bryggan │──────────────┼─ HTTPS ──►
   │       └─────────┘  bara utåt   │           Auth (Google för människor,
@@ -62,7 +62,10 @@ utan datumindex, öppnar en port, tar emot något utifrån.
 
 **Vad den skriver.** Bara ändringar, med dödband (flöde ±0,2 m³/h, temperatur
 ±0,1 °C), plus ett hjärtslag en gång i minuten. Var femte minut en punkt till
-`/hist` för graferna; punkter äldre än 48 h tas bort.
+`/hist` för graferna. Sparas hela säsongen sedan bryggans version 4 (22
+november 2026); förut togs punkter äldre än 48 h bort. En säsong är runt
+4 MB. Appen hämtar bara det senaste dygnet när den öppnas — det är läsningen
+som kostar, inte lagringen.
 
 ```
 /live/meta      { ts: <molnets klocka>, sqlOk: true, version: "1" }

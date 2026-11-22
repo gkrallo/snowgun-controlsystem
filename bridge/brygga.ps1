@@ -24,7 +24,8 @@
 
   Till molnet går bara det som ändrats sedan sist (med dödband), ett
   hjärtslag i minuten och en historikpunkt var femte minut. Datorn står på
-  dygnet runt, och värdena står still det mesta av året.
+  dygnet runt, och värdena står still det mesta av året. Historiken sparas
+  hela säsongen (sedan version 4); förut rensades den efter 48 timmar.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -53,7 +54,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "3"
+$VERSION = "4"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -292,11 +293,12 @@ function SlotOf([datetime]$utc) {
   return (New-Object datetime($utc.Year, $utc.Month, $utc.Day, $utc.Hour, ($utc.Minute - ($utc.Minute % 5)), 0, [DateTimeKind]::Utc))
 }
 
-# Punkten för graferna, plus bortstädning av det som blivit äldre än 48 h.
-# Bryggan får bara skriva, inte läsa, i molnet - därför räknar den själv ut
-# vilka gamla nycklar som ska bort i stället för att fråga efter dem. Har
-# bryggan stått still städas hela luckan vid nästa punkt.
-function Build-HistPatch($snap, [datetime]$slot, $prevSlot) {
+# Punkten för graferna. Historiken sparas hela säsongen och städas inte bort
+# (version 4, 22 november 2026). Förut rensades allt äldre än 48 h, men en
+# punkt är ungefär 90 byte och en säsong blir runt 4 MB - långt under
+# Firebases gratisnivå. Det som kostar är att LÄSA, så appen hämtar bara det
+# senaste dygnet (288 punkter) när den öppnas.
+function Build-HistPatch($snap, [datetime]$slot) {
   $p = [ordered]@{}
   $pt = [ordered]@{ ts = @{ ".sv" = "timestamp" } }
   if ($snap["vader"]) { $pt["t"] = $snap["vader"]["t"]; $pt["tw"] = $snap["vader"]["tw"] }
@@ -305,14 +307,6 @@ function Build-HistPatch($snap, [datetime]$slot, $prevSlot) {
     $pt["tryckUt"] = $d["tryckUt"]; $pt["k125"] = $d["k125"]; $pt["k126"] = $d["k126"]
   }
   $p[(SlotKey $slot)] = $pt
-  $cut = $slot.AddHours(-48)
-  $from = $cut
-  if ($prevSlot) {
-    $from = ([datetime]$prevSlot).AddHours(-48).AddMinutes(5)
-    if ($from -lt $cut.AddHours(-48)) { $from = $cut.AddHours(-48) }
-    if ($from -gt $cut) { $from = $cut }
-  }
-  for ($s = $from; $s -le $cut; $s = $s.AddMinutes(5)) { $p[(SlotKey $s)] = $null }
   return $p
 }
 
@@ -753,14 +747,10 @@ if ($Sjalvtest) {
 
   $slot = SlotOf ([datetime]::SpecifyKind((Get-Date "2026-11-15 18:07:31"), [DateTimeKind]::Utc))
   Check "historiknyckeln ligger på jämna fem minuter" ((SlotKey $slot) -eq "202611151805")
-  $h = Build-HistPatch (Fake 7.3 @()) $slot $null
-  Check "första punkten: en ny, en gammal bort" ($h.Count -eq 2 -and $h.Contains("202611131805") -and $null -eq $h["202611131805"])
-  $h = Build-HistPatch (Fake 7.3 @()) $slot $slot.AddMinutes(-5)
-  Check "löpande: en ny, en gammal bort" ($h.Count -eq 2)
-  $h = Build-HistPatch (Fake 7.3 @()) $slot $slot.AddHours(-2)
-  Check "efter två timmars stopp: hela luckan städas" ($h.Count -eq 25)
-  $h = Build-HistPatch (Fake 7.3 @()) $slot $slot.AddDays(-30)
-  Check "efter en månads stopp: högst 48 timmar städas" ($h.Count -eq 578)
+  $h = Build-HistPatch (Fake 7.3 @()) $slot
+  Check "en punkt, och inget gammalt tas bort" ($h.Count -eq 1 -and $h.Contains("202611151805"))
+  $bort = @($h.Keys | Where-Object { $null -eq $h[$_] })
+  Check "ingen nyckel sätts till tom (ingen städning)" ($bort.Count -eq 0)
   Check "punkten har våttemperatur och tryck" ($h["202611151805"]["tw"] -eq 1.8 -and $h["202611151805"]["tryckUt"] -eq 7.2)
 
   if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
@@ -843,7 +833,7 @@ while ($true) {
     if ($Skicka -and $sqlOk) {
       $slot = SlotOf ([datetime]::UtcNow)
       if ($null -eq $lastSlot -or $slot -gt $lastSlot) {
-        Send-Cloud "Patch" "hist" (Build-HistPatch $snap $slot $lastSlot)
+        Send-Cloud "Patch" "hist" (Build-HistPatch $snap $slot)
         $lastSlot = $slot
         (@{ lastSlot = (SlotKey $slot) } | ConvertTo-Json -Compress) | Set-Content -Path $stateFile -Encoding ASCII
       }
