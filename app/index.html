@@ -294,6 +294,10 @@ canvas{max-width:100%}
 /* ---------- damm-koll (digital tvilling av magasinet) ---------- */
 .dam-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:14px}
 @media(max-width:820px){.dam-grid{grid-template-columns:1fr}}
+/* Pumphuset: liggande skiss på bred skärm, stående på telefon. Den liggande
+   behöver 700 px och fick annars rullas i sidled. */
+.pump-tall{display:none}
+@media(max-width:760px){.pump-wide{display:none}.pump-tall{display:block}}
 .dam-svg{width:100%;height:auto;display:block;margin-top:4px}
 .dam-ctrl label{display:block;color:var(--muted);font-size:.76rem;margin:12px 0 5px}
 .dam-ctrl input[type=number],.dam-ctrl input[type=datetime-local]{width:100%;background:#0c1626;
@@ -789,7 +793,7 @@ function pumpSVG(){
     <text x="${x}" y="${y+13}" text-anchor="middle" font-size="9.5" fill="#8296b5">${namn}</text>
     <text x="${x}" y="${y+28}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#e9f0fa">${v===undefined?'?':num(v,d)}<tspan font-size="9.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
   const pump=(x,y,c,t)=>`<circle cx="${x}" cy="${y}" r="17" fill="#0c1a2b" stroke="${c}" stroke-width="2.5"/><path d="M${x-6} ${y-8}L${x+9} ${y}L${x-6} ${y+8}z" fill="${c}"/><text x="${x}" y="${y+33}" text-anchor="middle" font-size="10.5" font-weight="600" fill="#e9f0fa">${t}</text>`;
-  return `<div style="overflow-x:auto;margin-top:12px"><svg viewBox="0 0 880 300" style="min-width:700px;width:100%;display:block" role="img" aria-label="Skiss av pumphuset: dammen, matarpumpen P1, filtret, högtryckspumpen P2, flödesmätaren och de två ledningarna ut mot spåret">
+  return `<div class="pump-wide" style="overflow-x:auto;margin-top:12px"><svg viewBox="0 0 880 300" style="min-width:700px;width:100%;display:block" role="img" aria-label="Skiss av pumphuset: dammen, matarpumpen P1, filtret, högtryckspumpen P2, flödesmätaren och de två ledningarna ut mot spåret">
     <!-- dammen -->
     <path d="M8 196h104l-18 50H26z" fill="#12314a" stroke="#ffffff26"/><path d="M14 206h92l-13 36H27z" fill="${HI}" opacity=".45"/>
     <text x="60" y="186" text-anchor="middle" font-size="11" font-weight="600" fill="#e9f0fa">Dammen</text>
@@ -823,6 +827,47 @@ function pumpSVG(){
     <text x="288" y="239" text-anchor="middle" font-size="9.5" fill="#8296b5">AC02</text>
     <text x="322" y="232" font-size="10.5" font-weight="600" fill="#e9f0fa">Luftning av dammen</text>
     <text x="322" y="246" font-size="9.5" fill="#8296b5">kompressorn ska gå vid +3 °C ute eller kallare · läget läses inte</text>
+  </svg></div>${pumpSVGtall(p1,p2,L,LO,HI,pump)}`;
+}
+
+/* Samma skiss stående, för telefonen: vattnet går uppifrån och ned, med
+   givarna till höger om röret och ledningarna som två grenar längst ner.
+   Rutorna är lite större än i den liggande, eftersom hela skissen ritas
+   mindre på en smal skärm. */
+function pumpSVGtall(p1,p2,L,LO,HI,pump){
+  const tag=(x,y,namn,v,enh,d=1)=>`<g><rect x="${x-33}" y="${y}" width="66" height="40" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
+    <text x="${x}" y="${y+14}" text-anchor="middle" font-size="10.5" fill="#8296b5">${namn}</text>
+    <text x="${x}" y="${y+31}" text-anchor="middle" font-size="14" font-weight="700" fill="#e9f0fa">${v===undefined?'?':num(v,d)}<tspan font-size="10.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
+  const lbl=(x,y,t,a='start')=>`<text x="${x}" y="${y}" text-anchor="${a}" font-size="12" font-weight="600" fill="#e9f0fa">${t}</text>`;
+  const sub=(x,y,t,a='start')=>`<text x="${x}" y="${y}" text-anchor="${a}" font-size="10.5" fill="#8296b5">${t}</text>`;
+  return `<div class="pump-tall" style="margin-top:12px"><svg viewBox="0 0 360 560" style="width:100%;max-width:420px;margin:0 auto;display:block" role="img" aria-label="Skiss av pumphuset uppifrån och ned: dammen, matarpumpen P1, filtret, högtryckspumpen P2, flödesmätaren och de två ledningarna ut mot spåret">
+    <!-- dammen och intagsbrunnen -->
+    ${lbl(64,20,'Dammen','middle')}
+    <path d="M16 30h96l-16 46H32z" fill="#12314a" stroke="#ffffff26"/><path d="M22 40h84l-12 32H34z" fill="${HI}" opacity=".45"/>
+    ${sub(64,92,damPct()+' % · beräknat','middle')}${sub(64,106,'nivån mäts inte','middle')}
+    <path d="M104 58H160" stroke="#8ba0bd" stroke-width="4" fill="none"/>
+    <rect x="160" y="28" width="80" height="58" fill="#12314a" stroke="#ffffff26"/><rect x="162" y="46" width="76" height="38" fill="${HI}" opacity=".35"/>
+    <!-- lågtryckssidan -->
+    <path d="M200 76V243" stroke="${LO}" stroke-width="5" fill="none"/>
+    ${pump(200,60,LO,'')}${lbl(250,54,'P1')}${sub(250,69,'matarpump')}
+    ${tag(268,104,'PT01',p1.tryckUt,'bar')}
+    <path d="M200 156l14 14-14 14-14-14z" fill="#0c1a2b" stroke="${LO}" stroke-width="2.5"/>${sub(178,174,'filter','end')}
+    ${tag(268,190,'PTS01',p2.tryckIn,'bar')}
+    <!-- högtryckssidan -->
+    <path d="M200 277V430M90 430H310M90 430V510M310 430V510" stroke="${HI}" stroke-width="5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+    ${pump(200,260,HI,'')}${lbl(176,256,'P2','end')}${sub(176,271,'högtryckspump','end')}
+    ${tag(268,290,'TT01',p2.vattenTemp,'°C')}
+    ${tag(268,336,'PT02',p2.tryckUt,'bar')}
+    ${tag(268,382,'FT01',undefined,'m³/h')}
+    ${tag(90,452,'PT03',L('L121'),'bar')}
+    ${tag(310,452,'PT04',L('L122'),'bar')}
+    ${lbl(90,530,'↓ Ledning 001','middle')}${sub(90,546,num(L('L001'))+' bar','middle')}
+    ${lbl(310,530,'↓ Ledning 002','middle')}${sub(310,546,num(L('L002'))+' bar','middle')}
+    <!-- luftningen -->
+    <rect x="14" y="118" width="52" height="26" rx="5" fill="#0c1a2b" stroke="#ffffff26"/>
+    <path d="M14 131H6V58H23" stroke="#8ba0bd" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+    <text x="40" y="135" text-anchor="middle" font-size="10" fill="#8296b5">AC02</text>
+    ${lbl(74,128,'Luftning')}${sub(74,143,'går vid +3 °C ute')}${sub(74,157,'läget läses inte')}
   </svg></div>`;
 }
 
@@ -833,7 +878,7 @@ function vWaterR(){
   return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
   <div class="card"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset</h3>
     ${pumps?pumpSVG():'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
-    <p class="muted small" style="line-height:1.6;margin:12px 0 0">Vattnet går från vänster till höger: <b style="color:var(--text)">P1</b> lyfter det ur intagsbrunnen, genom filtret, och <b style="color:var(--text)">P2</b> trycker ut det i de två ledningarna mot spåret. Grönt är lågt tryck, blått högt. Namnen vid värdena är givarnas namn på skärmen i pumphuset.</p>
+    <p class="muted small" style="line-height:1.6;margin:12px 0 0">Vattnet går från dammen till ledningarna: <b style="color:var(--text)">P1</b> lyfter det ur intagsbrunnen, genom filtret, och <b style="color:var(--text)">P2</b> trycker ut det i de två ledningarna mot spåret. Grönt är lågt tryck, blått högt. Namnen vid värdena är givarnas namn på skärmen i pumphuset.</p>
   </div>
   ${missing('<b>Flödesmätaren FT01</b> sitter efter högtryckspumpen och mäter i m³/h — men vi vet inte än vilket av styrsystemets värden som är den. Två passar in, och just nu visar de <b>'+num(p2.k125)+'</b> och <b>'+num(p2.k126)+'</b>. När pumpen går syns vilket som är flödet. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
 
