@@ -87,6 +87,73 @@ startar → förvärmer → drift → …). Funderingar:
 
 ---
 
+## 4. Nivågivare i dammen — sommarjobb inför säsongen 2027
+
+Parkerad 23 november 2026. Hinns inte före säsongen, och en givare monteras
+lättast när det inte är is.
+
+**Idén:** en givare som ligger under vattnet och mäter trycket, och ur trycket
+räknar ut djupet (en så kallad hydrostatisk nivågivare). Den fungerar under
+is, vilket en givare som mäter uppifrån (ultraljud, radar) inte gör. Kristian
+tittade på en billig stålgivare med 33 m kabel och mätområde 0–5 m
+(Amazon B0BH1DM5BG). Manualen saknar det viktigaste, så det måste
+kontrolleras före köp:
+
+- **Utsignal:** 4–20 mA är det vanliga och tål lång kabel. Andra varianter
+  har 0–5 V, 0–10 V eller RS485.
+- **Matning:** oftast 12–36 V.
+- **Noggrannhet:** 0,5 % av 5 m är ±2,5 cm, ungefär ±40 m³. 0,25 % eller
+  0,1 % är värt pengarna.
+- **Kabeltyp:** de flesta har ett tunt luftrör i kabeln, så att lufttrycket
+  räknas bort. Då måste kabeländen sitta torrt, i en kopplingslåda. Saknas
+  luftröret måste lufttrycket mätas separat, eftersom det varierar så mycket
+  som ±30 cm vattenpelare.
+
+**Två sätt att koppla in den:**
+
+1. **I styrsystemet.** Det är den bästa vägen. GSSystem är redan förberett:
+   statistiken har kolumnen `niveau_lac`, som står på 1, och skärmen visar
+   "Lake lvl. 95,5 m" som fast text (se `kolumnmappning.md`). Med en givare
+   syns nivån i pumphuset, sparas i statistiken och kan läsas av bryggan som
+   allt annat. Men det är en ändring i anläggningen: leverantören måste säga
+   vilken ingång, signal och vilket mätområde som gäller, och ställa in den.
+   Fråga därför innan ni köper. Systemet kan också använda nivån i sin egen
+   logik, till exempel för att stoppa pumparna vid låg nivå. Det är
+   leverantörens beslut, och vi bygger inget som styr.
+2. **Egen ESP32.** Den är helt fristående och passar reglerna, eftersom den
+   bara läser och skickar ut. Den behöver 24 V till givaren och en modul som
+   gör om 4–20 mA till spänning, eller ett motstånd och en separat
+   AD-omvandlare (till exempel ADS1115). ESP32:ans egen omvandlare är för
+   onoggrann. Den behöver också ström och nät vid dammen. Står den på samma
+   nät som styrdatorn kan bryggan hämta värdet och skicka det med resten.
+   Annars behövs ett eget konto i Firebase och nya regler, eftersom bara
+   bryggan skriver i dag.
+
+**Montering:**
+
+- **Inga ankare genom duken.** Lägg ett perforerat PE-rör längs slänten med
+  givaren nere i röret, en bit över botten där slammet ligger. Röret skyddar
+  givaren och kabeln mot isen, och tyngden håller det på plats.
+- **Inte vid pumpintaget**, där suget stör trycket.
+- **Kalibrera en gång.** Givarens höjd över botten blir okänd. Den
+  kalibreras mot en flottmätning med pucken, där vattenytan mäts i samma
+  höjdsystem som krönet.
+
+**Vad den skulle ge:**
+
+- Damm-koll kan visa uppmätt nivå i stället för beräknad, och måttbandet blir
+  en kontroll.
+- Den kan reda ut de cirka 200 m³ som saknas (`damm-matningar.md`):
+  - **När bara påfyllningen går**, med 8,93 m³/h, stiger ytan ungefär 6 mm i
+    timmen. Hur fort den stiger ger vattenytans verkliga area på varje nivå,
+    och därmed dammens verkliga volym.
+  - **När allt står still** är det som försvinner läckage.
+
+  Det kräver upplösning på millimetern, inte absolut noggrannhet, eftersom
+  man kan räkna medelvärden över flera timmar. Ett par veckors data räcker.
+
+---
+
 ## Beroenden att reda ut innan "på riktigt"
 
 1. Vilka tabeller/kolumner finns och vad betyder de numrerade kolumnerna
