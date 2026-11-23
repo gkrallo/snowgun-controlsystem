@@ -109,3 +109,70 @@ vatten går genom båda. Volymerna ovan får alltså inte läggas ihop:
 
 Skärmen visar också en flödesmätare, **FT01, i m³/h**, efter högtryckspumpen.
 Det är det uppmätta flöde appen saknar; se `kolumnmappning.md`.
+
+## Krönet inmätt (22 november)
+
+En band-ATV körde längs krönet med pucken (u-blox). Mätningen efterberäknades
+mot Swepos-stationen LIDK och fick 100 % fix runt dammen. Krönet räknas
+0,7 m innanför körlinjen (uppskattat ur foto, stämmer med ritningen).
+Underlaget ligger i `snowgun-forecast`, `matdata/ppk-2026-11-22-hog-damm/`
+(`dammen.json` och `dammen.png`).
+
+|                      | Ritningen M16.1-0000 | Inmätt        |
+|----------------------|----------------------|---------------|
+| Krönets bredd        | 36,5 m               | 36,65 m       |
+| Krönets längd        | 44,5 m               | 44,67 m       |
+| Yta innanför krönet  | 1 624 m²             | 1 637 m²      |
+| Slänt                | 1:1,5                | inte mätt     |
+| Djup                 | 3,5 m                | inte mätt     |
+
+Sidorna är 44,95 m (väster), 36,70 m (norr), 44,38 m (öster) och
+36,59 m (söder). Långsidorna går 6,5° öster om norr.
+
+Höjden i hörnen jämfört med krönets mittvärde:
+
+| Hörn | cm    |
+|------|-------|
+| SV   | +4,5  |
+| NV   | +2,1  |
+| SO   | −3,1  |
+| NO   | −5,6  |
+
+NO är lägst, 8 cm under NV och 10 cm under SV. Det stämmer med fältuppgiften
+om ett hörn som ligger 10 cm lägre. Krönet varierar 22 cm runt om. Lägsta
+punkten ligger 11 cm under mittvärdet, på norra sidan några meter väster om
+NO, och där bräddar dammen först.
+
+Höjderna är ellipsoidhöjder (samma system som barmarken i prognosappen),
+inte RH2000. Bara skillnaderna används. Södra sidan kördes bara på östra
+13 m, och resten är linjen förlängd. SV-hörnets höjd bygger på 9 punkter.
+**Vattenytan mättes inte.**
+
+### Vad det betyder för volymen
+
+- **Måtten i plan förklarar inte de ~200 m³.** Med samma slänt och djup ger
+  det inmätta krönet 3 884 m³ till snorkeln, alltså bara 35 m³ (0,9 %) mer än
+  ritningens 3 850. Rymmer dammen mer än ritningen ligger skillnaden i botten
+  eller slänten. Båda är omätta. Formeln i appen står därför kvar.
+- **Höjden i hörnen betyder mer.** 10 cm i höjd är ungefär 155 m³ vid
+  snorkeln, och längs duken blir 10 cm i höjd 18 cm. Den som mäter vid NO
+  läser alltså 18 cm kortare än den som mäter vid SV, fast vattnet står lika.
+
+### Så här används mätningen i appen (Kristian, 23 november)
+
+- Krönets mittvärde räknas som ritningens 3,50 m. Hörnen ligger då på
+  SV 3,545, NV 3,521, SO 3,469 och NO 3,444 m.
+- Vid kalibreringen väljer man vilket hörn man mätt vid (SV, NV, NO, SO), i
+  stället för ”normalt krön” och ”låga hörnet”. Valet sparas i telefonen.
+- Bräddnivån i tvärsnittet är krönets lägsta punkt, 3,39 m (förut 3,40), och
+  varningen ligger 15 cm under den, på 3,24 m (förut 3,25).
+- Kartan visar krönet som en ruta. Damm-koll visar krönet uppifrån och
+  jämför det med ritningen.
+
+Vid snorkeln (3,20 m) ska måttbandet visa ungefär SV 62, NV 58, SO 48 och
+NO 44 cm längs duken. Tidigare räknade appen med 54 cm vid ”normalt krön”
+och 36 cm vid ”låga hörnet”.
+
+**Nästa gång:** lägg pucken vid vattenlinjen en minut. Då hamnar ytan i samma
+höjdsystem som krönet, och det går att se var snorkeln ligger mot krönet
+och om 3,50 m är rätt utgångspunkt.

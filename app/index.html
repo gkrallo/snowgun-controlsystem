@@ -314,6 +314,11 @@ canvas{max-width:100%}
 .readout{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px}
 .readout div b{display:block;font-size:1.1rem;color:var(--text)}
 .readout div span{color:var(--muted2);font-size:.7rem}
+/* inmätningen mot ritningen, under dammen */
+.kron-tab{width:100%;border-collapse:collapse;margin-top:10px;font-size:.84rem}
+.kron-tab th{color:var(--muted2);font-weight:600;font-size:.72rem;text-align:left;padding:0 6px 6px 0}
+.kron-tab td{padding:6px 6px 6px 0;border-top:1px solid var(--border);color:var(--muted)}
+.kron-tab td b{color:var(--text)}
 </style>
 </head>
 <body>
@@ -1013,10 +1018,18 @@ function vWater(){
    längd växer olika snabbt, så Geminis frustum-formel är en approximation —
    skillnaden är <1 m³, men den exakta är lika enkel):
         V(h) = 884·h + 90·h² + 3·h³     (h = vattendjup i m, 0..3,5)
-   Snorkeln (+20 cm, 100 % = 3850 m³) och det 10 cm lägre hörnet är anläggningens
-   verkliga tillägg, inte ritningens — därför ligger de som inställbara värden.
+   Snorkeln (+20 cm, 100 % = 3850 m³) är anläggningens verkliga tillägg, inte
+   ritningens.
+
+   Krönet mättes in 22 november 2026 (KRON nedan). Måtten i plan stämmer med
+   ritningen: 36,65×44,67 m i stället för 36,5×44,5 skulle bara ge 35 m³ mer
+   till snorkeln, så formeln står kvar. Det som skiljer är höjden. Krönet
+   varierar 22 cm runt om, och 10 cm i höjd är ca 155 m³. Därför räknas
+   krönets mittvärde som ritningens 3,50 m, och varje hörn får sin inmätta
+   höjd därifrån. Måttbandet läses från det hörn man mätt vid.
+   (Förut: "normalt krön" 3,50 och ett "10 cm lägre hörn" 3,40, ur minnet.)
    ============================================================ */
-const DAM={slope:1.5, hMax:3.50, lowDrop:0.10, crestArea:1624.25};
+const DAM={slope:1.5, hMax:3.50};                    // hMax = krönets mittvärde
 const SF=Math.sqrt(1+DAM.slope*DAM.slope);          // släntfaktor 1,80278
 const volAt=h=>884*h+90*h*h+3*h*h*h;                // exakt, m³
 const areaAt=h=>(26+3*h)*(34+3*h);                  // vattenytans area, m²
@@ -1025,22 +1038,50 @@ function hFromVol(v){                               // invers via binärsökning
   if(v<=0)return 0; if(v>=volAt(DAM.hMax))return DAM.hMax;
   let lo=0,hi=DAM.hMax; for(let i=0;i<44;i++){const m=(lo+hi)/2; volAt(m)<v?lo=m:hi=m;} return (lo+hi)/2;
 }
-const tapeNormal=h=>(DAM.hMax-h)*SF*100;            // cm längs duk från normalt krön
-const tapeLow=h=>((DAM.hMax-DAM.lowDrop)-h)*SF*100; // cm från låga hörnet (3,40 m)
-const hFromTape=(cm,low)=>(low?DAM.hMax-DAM.lowDrop:DAM.hMax)-cm/(SF*100);
 
-// nivåmarkörer (h i m, etikett, färg) — från botten och upp
+/* Krönet inmätt 22 november 2026: band-ATV med pucken längs krönet,
+   efterberäknad mot Swepos-stationen LIDK, 100 % fix (dammen.json i
+   snowgun-forecast, matdata/ppk-2026-11-22-hog-damm). Krönet ligger 0,7 m
+   innanför körlinjen. z är ellipsoidhöjd, inte RH2000 — appen använder bara
+   skillnaderna mellan höjderna, aldrig nivån i sig. Södra sidan kördes bara
+   på östra 13 m; resten är linjen förlängd, och SV-hörnets höjd bygger på
+   9 punkter. Vattenytan är inte inmätt. */
+const KRON={
+  datum:'22 november',
+  horn:[                                            // medsols från sydväst
+    {id:'SV',namn:'sydvästra', lat:58.5041403,lon:13.0883177,z:128.426},
+    {id:'NV',namn:'nordvästra',lat:58.5045413,lon:13.0884046,z:128.402},
+    {id:'NO',namn:'nordöstra', lat:58.5045027,lon:13.0890298,z:128.325},
+    {id:'SO',namn:'sydöstra',  lat:58.5041069,lon:13.0889420,z:128.350},
+  ],
+  sidor:[44.95,36.70,44.38,36.59],                  // SV–NV, NV–NO, NO–SO, SO–SV (m)
+  bredd:36.65, langd:44.67, yta:1637, baring:6.5,   // m, m, m², grader öster om norr
+  zMed:128.381, zMin:128.271, zMax:128.491,         // runt hela krönet
+};
+const kronHorn=id=>KRON.horn.find(k=>k.id===id)||KRON.horn[1];
+const hornCm=id=>(kronHorn(id).z-KRON.zMed)*100;     // hörnet mot krönets mittvärde, cm
+const hornH=id=>DAM.hMax+hornCm(id)/100;             // hörnets krön över botten, m
+const H_LAG=DAM.hMax+(KRON.zMin-KRON.zMed);          // krönets lägsta punkt, 3,39 m — där bräddar den först
+const H_VARN=H_LAG-0.15;                             // varningsnivå, 15 cm marginal under den
+const tapeAt=(h,id)=>(hornH(id)-h)*SF*100;           // cm längs duken från hörnets krön ner till ytan
+const hFromTape=(cm,id)=>hornH(id)-cm/(SF*100);
+const tapeMax=id=>Math.floor(hornH(id)*SF*100);      // från krönet ända ner till botten
+
+// nivåmarkörer (h i m, etikett, färg) — uppifrån och ned
 const DAMLV=[
-  [3.50,'Normalt krön','#fbbf24'],
-  [3.40,'Låga hörnet bräddar','#f59e0b'],
-  [3.25,'Varning · 15 cm marginal','#f87171'],
+  [DAM.hMax,'Krönets mittvärde','#fbbf24'],
+  [H_LAG,'Lägsta punkten bräddar','#f59e0b'],
+  [H_VARN,'Varning · 15 cm marginal','#f87171'],
   [3.20,'Snorkel · 100 %','#38bdf8'],
   [3.00,'Ursprungligt bräddrör','#8ba0bd'],
 ];
 
 /* tillstånd — simulerat i prototypen. Senaste kalibrering = "nu".
-   Riktig app: V0/t0 i localStorage eller Firebase, uttaget från driftdatan. */
-let dam={ V0:3743, t0:Date.now(), drawn:0, fill:false, fillStart:null, fillStop:null, fillRate:213, leak:2.0, floorH:0.5, calMode:'normal' };
+   Riktig app: V0/t0 i localStorage eller Firebase, uttaget från driftdatan.
+   Hörnet där man håller måttbandet sparas på enheten, så att det står rätt
+   nästa gång. NV är förvalt: det ligger närmast krönets mittvärde (+2 cm). */
+let damHorn='NV'; try{const s=localStorage.getItem('snokollHorn'); if(KRON.horn.some(k=>k.id===s))damHorn=s;}catch(e){}
+let dam={ V0:3743, t0:Date.now(), drawn:0, fill:false, fillStart:null, fillStop:null, fillRate:213, leak:2.0, floorH:0.5, horn:damHorn };
 
 /* Volymen JUST NU = volymen vid senaste kalibreringen (V0 vid t0)
      + det påfyllningspumpen gett sedan dess
@@ -1059,7 +1100,7 @@ function damVolNow(now=Date.now()){
   const v=dam.V0 + damFillHoursSinceCal(now)/24*dam.fillRate - dam.drawn - (now-dam.t0)/3600e3/24*dam.leak;
   return Math.max(0,Math.min(volAt(DAM.hMax),v));
 }
-let damTape=Math.round(tapeNormal(hFromVol(dam.V0)));  // måttbandsreglagets läge
+let damTape=Math.round(tapeAt(hFromVol(dam.V0),dam.horn));  // måttbandsreglagets läge
 
 /* flöden */
 const damUttakM3h=()=>totalWater();                  // snökanonernas uttag (m³/h)
@@ -1115,26 +1156,80 @@ function damSVG(h){
   </svg>`;
 }
 
+const pm=(v,d=1)=>(v>0?'+':'')+num(v,d);            // +4,5 / −5,6
+// Volymen om krönet vore det inmätta i stället för ritningens, med samma slänt
+// och djup. Bara för jämförelsen i vyn — räkningen använder ritningen.
+function volKron(h){const w=KRON.bredd-2*DAM.slope*DAM.hMax, l=KRON.langd-2*DAM.slope*DAM.hMax;
+  return w*l*h+(w+l)*DAM.slope*h*h+4/3*DAM.slope*DAM.slope*h*h*h;}
+
+/* Krönet uppifrån, norr uppåt, ritat ur de inmätta hörnen i skala. Varje hörn
+   visar sin höjd mot krönets mittvärde; det lägsta är gult. */
+function kronSVG(){
+  const H=KRON.horn, n=H.length;
+  const la0=H.reduce((s,k)=>s+k.lat,0)/n, lo0=H.reduce((s,k)=>s+k.lon,0)/n;
+  const mLat=111320, mLon=111320*Math.cos(la0*Math.PI/180);   // m per grad, gott nog för en skiss
+  const s=5.2, cx=170, cy=170;                                // px per meter, mitten
+  const P=H.map(k=>[cx+(k.lon-lo0)*mLon*s, cy-(k.lat-la0)*mLat*s]);
+  const lag=H.reduce((a,k)=>k.z<a.z?k:a);
+  const f=v=>v.toFixed(1);
+  const sidor=H.map((k,i)=>{const [x1,y1]=P[i],[x2,y2]=P[(i+1)%n];
+    let mx=(x1+x2)/2, my=(y1+y2)/2; const dx=cx-mx, dy=cy-my, d=Math.hypot(dx,dy)||1;
+    mx+=dx/d*30; my+=dy/d*30;                                  // in mot mitten
+    return `<text x="${f(mx)}" y="${f(my+4)}" fill="#e9f0fa" font-size="12" font-weight="600" text-anchor="middle">${num(KRON.sidor[i],2)} m</text>`;}).join('');
+  const horn=H.map((k,i)=>{const [x,y]=P[i], upp=y<cy, vanster=x<cx, lg=k===lag;
+    const tx=vanster?x-7:x+7, anc=vanster?'end':'start', y1=upp?y-18:y+15;
+    return `<circle cx="${f(x)}" cy="${f(y)}" r="4.5" fill="${lg?'#f59e0b':'#e9f0fa'}"/>`+
+      `<text x="${f(tx)}" y="${f(y1)}" fill="${lg?'#f59e0b':'#e9f0fa'}" font-size="12" font-weight="700" text-anchor="${anc}">${k.id}</text>`+
+      `<text x="${f(tx)}" y="${f(y1+13)}" fill="${lg?'#f59e0b':'#9fb0c7'}" font-size="11" text-anchor="${anc}">${pm(hornCm(k.id))} cm</text>`;}).join('');
+  return `<svg viewBox="0 0 340 330" class="dam-svg" style="max-width:420px;margin:4px auto 0" role="img" aria-label="Dammens krön uppifrån med sidornas längd och hörnens höjd mot krönets mittvärde">
+    <polygon points="${P.map(p=>p.map(f).join(',')).join(' ')}" fill="#0e5a7a" fill-opacity=".55" stroke="#22d3ee" stroke-width="2"/>
+    ${sidor}${horn}
+    <line x1="18" y1="40" x2="18" y2="16" stroke="#8296b5" stroke-width="1.5"/><path d="M13,22 L18,13 L23,22 Z" fill="#8296b5"/>
+    <text x="18" y="54" fill="#8296b5" font-size="11" text-anchor="middle">N</text>
+  </svg>`;
+}
+
+// Inmätningen bredvid ritningen, och vad höjdskillnaderna betyder i m³
+function kronFakta(){
+  const H=KRON.horn, lag=H.reduce((a,k)=>k.z<a.z?k:a);
+  const ovriga=H.filter(k=>k!==lag).sort((a,b)=>a.z-b.z)
+    .map((k,i)=>`${Math.round((k.z-lag.z)*100)}${i===0?' cm':''} under ${k.id}`);
+  const lista=ovriga.slice(0,-1).join(', ')+' och '+ovriga[ovriga.length-1];
+  const rad=(t,r,m)=>`<tr><td>${t}</td><td>${r}</td><td><b>${m}</b></td></tr>`;
+  return `<table class="kron-tab">
+      <tr><th></th><th>Ritningen</th><th>Inmätt</th></tr>
+      ${rad('Krönets bredd','36,5 m',num(KRON.bredd,2)+' m')}
+      ${rad('Krönets längd','44,5 m',num(KRON.langd,2)+' m')}
+      ${rad('Yta innanför krönet',Math.round(36.5*44.5).toLocaleString('sv-SE')+' m²',KRON.yta.toLocaleString('sv-SE')+' m²')}
+      ${rad('Slänt','1:1,5','inte mätt')}
+      ${rad('Djup','3,5 m','inte mätt')}
+    </table>
+    <p class="muted small" style="line-height:1.6;margin:12px 0 0"><b style="color:var(--text)">Måtten i plan stämmer med ritningen.</b> Räknat med de inmätta måtten blir det bara ${Math.round(volKron(3.20)-V100)} m³ mer till snorkeln, så volymen räknas fortfarande ur ritningen.</p>
+    <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Höjden skiljer mer.</b> Krönet varierar ${Math.round((KRON.zMax-KRON.zMin)*100)} cm runt om, och 10 cm i höjd är ca ${Math.round(areaAt(3.20)*0.1)} m³ vid snorkeln. ${lag.id} är lägst: ${lista}. Lägsta punkten, ${Math.round((KRON.zMed-KRON.zMin)*100)} cm under mittvärdet, ligger på norra sidan några meter väster om NO — där bräddar dammen först. Därför frågar kalibreringen vid vilket hörn du mätt. Krönets mittvärde räknas som ritningens 3,50 m.</p>
+    <p class="muted small" style="line-height:1.6;margin:10px 0 0">Band-ATV med pucken längs krönet ${KRON.datum}, efterberäknad mot Swepos (100 % fix). Södra sidan kördes bara på östra 13 m; resten är linjen förlängd, och SV-hörnets höjd bygger på 9 punkter. Vattenytan är inte inmätt — läggs pucken vid vattenlinjen nästa gång vet vi också var snorkeln ligger mot krönet.</p>`;
+}
+
 function vDam(){
   const V=damVolNow(), h=hFromVol(V), pct=damPct();
   const net=damNetM3h(), uttak=damUttakM3h();
   let proj, projEta='';
   if(net>0.01){
     // redan över en nivå? Då finns ingen tid dit — säg det i stället för "1 min"
-    const t=(V100-V)/net, tv=(volAt(3.25)-V)/net;
+    const t=(V100-V)/net, tv=(volAt(H_VARN)-V)/net;
     if(tv<=0)proj='Fyller — redan över varningsnivån (15 cm marginal)';
     else if(t<=0)proj=`Fyller — över snorkeln, ≈ ${fmtDur(tv)} till varningsnivå`;
     else proj=`Fyller ≈ ${fmtDur(t)} till snorkeln, ≈ ${fmtDur(tv)} till varningsnivå`;
     projEta=etaStr(Math.max(t,tv));}
   else if(net<-0.01){const t=usableVol(V)/(-net); proj=`Sjunker ≈ ${fmtDur(t)} till lägsta driftnivå`; projEta=etaStr(t);}
   else proj='I det närmaste i balans';
-  const wh=hFromTape(damTape, dam.calMode==='low'), wv=volAt(Math.max(0,Math.min(DAM.hMax,wh)));
+  const wh=hFromTape(damTape, dam.horn), wv=volAt(Math.max(0,Math.min(DAM.hMax,wh)));
+  const hn=kronHorn(dam.horn).namn, tmax=tapeMax(dam.horn);
   return topbar('Vattenbalans','Damm-koll — magasinet vid Råda ås')+`<div class="view">
-   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Geometrin är hämtad ur byggritningen. ${real?'<b style="color:var(--text)">Uttaget läses inte ur styrsystemet än</b>, så beräkningen tar bara hänsyn till påfyllning och läckage — kalibrera om med måttbandet efter varje körning.':'Uttaget kommer från driftdatan;'} Påfyllning och kalibrering matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
+   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Volymen räknas ur byggritningen, och krönets hörn är inmätta ${KRON.datum}. ${real?'<b style="color:var(--text)">Uttaget läses inte ur styrsystemet än</b>, så beräkningen tar bara hänsyn till påfyllning och läckage — kalibrera om med måttbandet efter varje körning.':'Uttaget kommer från driftdatan;'} Påfyllning och kalibrering matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
 
    <div class="grid g-kpi">
      <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Aktuell volym</h3><div class="val">${Math.round(V).toLocaleString('sv-SE')}<small> m³</small></div><div class="bar ${pct>101?'amber':pct<30?'red':'green'}"><i style="width:${Math.min(100,pct)}%"></i></div><div class="foot">${pct}% av snorkelnivån (${Math.round(V100).toLocaleString('sv-SE')} m³)</div></div>
-     <div class="card kpi"><h3>${icon('sliders','#7dd3fc',15)} Nivå & måttband</h3><div class="val">${h.toFixed(2)}<small> m djup</small></div><div class="foot">${Math.round(tapeNormal(h))} cm längs duk · ${Math.round(tapeLow(h))} cm i låga hörnet</div></div>
+     <div class="card kpi"><h3>${icon('sliders','#7dd3fc',15)} Nivå & måttband</h3><div class="val">${h.toFixed(2)}<small> m djup</small></div><div class="foot">längs duken: ${KRON.horn.map(k=>`${k.id} ${Math.max(0,Math.round(tapeAt(h,k.id)))}`).join(' · ')} cm</div></div>
      <div class="card kpi"><h3>${icon('gauge','#7dd3fc',15)} Nettoflöde nu</h3><div class="val ${net<0?'down':'up'}">${net>=0?'+':''}${net.toFixed(1)}<small> m³/h</small></div><div class="foot">${proj}${projEta?' · '+projEta:''}</div></div>
      <div class="card kpi"><h3>${icon('clock','#7dd3fc',15)} Drifttid vid nuvarande uttag</h3><div class="val">≈ ${fmtDur(damDaysAt(totalWater())*24)}</div><div class="foot">uttag ${uttak.toFixed(0)} m³/h${dam.fill?' · pump på':' · pump av'}</div></div>
    </div>
@@ -1146,8 +1241,8 @@ function vDam(){
      </div>
      <div class="card dam-ctrl">
        <h3>${icon('sliders','#7dd3fc',15)} Måttband — snabbkoll</h3>
-       <p class="muted small" style="margin:8px 0 2px">Dra måttbandet (0–631 cm längs duken) och se vilken volym det motsvarar.</p>
-       <input type="range" min="0" max="631" value="${damTape}" oninput="damSlide(this.value)">
+       <p class="muted small" style="margin:8px 0 2px">Dra måttbandet (0–${tmax} cm längs duken från ${hn} hörnet, ${dam.horn}) och se vilken volym det motsvarar.</p>
+       <input type="range" min="0" max="${tmax}" value="${damTape}" oninput="damSlide(this.value)">
        <div class="readout">
          <div><b id="ro_cm">${Math.round(damTape)} cm</b><span>längs duk</span></div>
          <div><b id="ro_v">${Math.round(wv).toLocaleString('sv-SE')} m³</b><span>volym</span></div>
@@ -1162,10 +1257,11 @@ function vDam(){
      <div class="card dam-ctrl">
        <h3>${icon('temp','#7dd3fc',15)} Kalibrera med måttband</h3>
        <p class="muted small" style="margin:8px 0 2px">Mät nivån fysiskt och synka modellen. Nollställer ackumulerad drift.</p>
-       <label>Mätt vid</label>
-       <div class="seg"><button class="${dam.calMode==='normal'?'on':''}" onclick="damMode('normal')">Normalt krön</button><button class="${dam.calMode==='low'?'on':''}" onclick="damMode('low')">Låga hörnet</button></div>
+       <label>Mätt vid hörn</label>
+       <div class="seg">${KRON.horn.map(k=>`<button class="${dam.horn===k.id?'on':''}" onclick="damMode('${k.id}')">${k.id}</button>`).join('')}</div>
+       <p class="muted small" style="margin:6px 0 0">Hörnen ligger olika högt. Krönet i ${hn} hörnet ligger ${num(Math.abs(hornCm(dam.horn)),1)} cm ${hornCm(dam.horn)>=0?'över':'under'} krönets mittvärde (inmätt ${KRON.datum}).</p>
        <label>Mått längs duken (cm)</label>
-       <input type="number" id="cal_cm" value="${Math.round(dam.calMode==='low'?tapeLow(h):tapeNormal(h))}" min="0" max="631">
+       <input type="number" id="cal_cm" value="${tapeFor(h)}" min="0" max="${tmax}">
        <button class="linkbtn" style="margin-top:14px" onclick="damCalib()">Spara kalibrering</button>
        <p class="muted small" style="margin-top:10px">Senaste kalibrering: ${fmtDT(dam.t0)} (${Math.round(dam.V0).toLocaleString('sv-SE')} m³). Sedan dess: uttag ${Math.round(dam.drawn).toLocaleString('sv-SE')} m³, påfyllt ${Math.round(damFillHoursSinceCal()/24*dam.fillRate).toLocaleString('sv-SE')} m³.</p>
      </div>
@@ -1188,24 +1284,38 @@ function vDam(){
      </div>
    </div>
 
-   <div class="note" style="margin-top:14px">⚠️ <b>Så snabbt töms den:</b> användbar volym ≈ ${Math.round(V100-floorVol()).toLocaleString('sv-SE')} m³. Vid fullt uttag — pumptaket <b>70 m³/h</b> (1 680 m³/dygn), som också är dammens högsta utflöde — räcker det ungefär <b>${((V100-floorVol())/(PUMP_MAX*24)).toFixed(1)} dygn</b>. Påfyllningspumpen ger bara 213 m³/dygn (≈9 m³/h), en bråkdel av uttaget, så den är en påfyllnad mellan passen snarare än i takt med kanonerna. Pumptaket är verkligt; lägsta driftnivå (${dam.floorH} m) och läckage är ännu exempel. Volymmodellen är exakt och förankrad i ritningen.</div>
+   <div class="dam-grid">
+     <div class="card">
+       <h3>${icon('map','#7dd3fc',15)} Krönet uppifrån — inmätt ${KRON.datum}</h3>
+       ${kronSVG()}
+     </div>
+     <div class="card">
+       <h3>${icon('sliders','#7dd3fc',15)} Inmätningen mot ritningen</h3>
+       ${kronFakta()}
+     </div>
+   </div>
+
+   <div class="note" style="margin-top:14px">⚠️ <b>Så snabbt töms den:</b> användbar volym ≈ ${Math.round(V100-floorVol()).toLocaleString('sv-SE')} m³. Vid fullt uttag — pumptaket <b>70 m³/h</b> (1 680 m³/dygn), som också är dammens högsta utflöde — räcker det ungefär <b>${((V100-floorVol())/(PUMP_MAX*24)).toFixed(1)} dygn</b>. Påfyllningspumpen ger bara 213 m³/dygn (≈9 m³/h), en bråkdel av uttaget, så den är en påfyllnad mellan passen snarare än i takt med kanonerna. Pumptaket är verkligt; lägsta driftnivå (${dam.floorH} m) och läckage är ännu exempel. Volymmodellen är exakt och förankrad i ritningen, och krönets höjd i hörnen är inmätt.</div>
   </div>`;
 }
-function damSlide(cm){cm=+cm; const h=Math.max(0,Math.min(DAM.hMax,hFromTape(cm,dam.calMode==='low'))); const v=volAt(h); damTape=cm;
+function damSlide(cm){cm=+cm; const h=Math.max(0,Math.min(DAM.hMax,hFromTape(cm,dam.horn))); const v=volAt(h); damTape=cm;
   const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t;};
   set('ro_cm',Math.round(cm)+' cm'); set('ro_v',Math.round(v).toLocaleString('sv-SE')+' m³');
   set('ro_p',Math.round(v/V100*100)+' %'); set('ro_h',h.toFixed(2)+' m');}
 // En ny kalibrering börjar om: uppmätt nivå gäller, och uttaget räknas från nu.
 function damSetCal(h){dam.V0=volAt(h);dam.t0=Date.now();dam.drawn=0;}
-// Måttbandsreglaget läses från den kant som är vald. Förut ställdes det alltid
-// efter normala krönet, så i läget "låga hörnet" visade reglaget 10 cm
-// (ca 150 m³) fel — och sparade man därifrån blev kalibreringen fel.
-const tapeFor=h=>Math.max(0,Math.round(dam.calMode==='low'?tapeLow(h):tapeNormal(h)));
+// Måttbandsreglaget läses från det hörn som är valt. Hörnen ligger upp till
+// 10 cm olika högt (ca 155 m³), så läses det från fel hörn blir kalibreringen
+// fel. Byter man hörn står vattnet kvar och reglaget flyttas. Måttet hålls
+// oavrundat när man byter — avrundat till hel cm kröp nivån några m³ per byte.
+const tapeFor=h=>Math.max(0,Math.round(tapeAt(h,dam.horn)));
 const clampH=h=>Math.max(0,Math.min(DAM.hMax,h));
-function damCalibFromTape(){damSetCal(clampH(hFromTape(damTape,dam.calMode==='low')));render();}
-function damMode(m){const h=clampH(hFromTape(damTape,dam.calMode==='low'));dam.calMode=m;damTape=tapeFor(h);render();}
+function damCalibFromTape(){damSetCal(clampH(hFromTape(damTape,dam.horn)));render();}
+function damMode(m){const h=clampH(hFromTape(damTape,dam.horn));dam.horn=m;
+  try{localStorage.setItem('snokollHorn',m);}catch(e){}
+  damTape=Math.max(0,tapeAt(h,dam.horn));render();}
 function damCalib(){const cm=+document.getElementById('cal_cm').value; if(!Number.isFinite(cm))return;
-  const h=clampH(hFromTape(cm,dam.calMode==='low')); damSetCal(h); damTape=tapeFor(h); render();}
+  const h=clampH(hFromTape(cm,dam.horn)); damSetCal(h); damTape=tapeFor(h); render();}
 function damFill(b){ if(b && !dam.fill){dam.fillStart=Date.now(); dam.fillStop=null;}
   if(!b && dam.fill){dam.fillStop=Date.now();} dam.fill=b; render(); }
 function damFillTime(which,v){ const ts=v?new Date(v).getTime():null;
@@ -1312,9 +1422,10 @@ function vMap(){
      ${Object.keys(real?UCOL_REAL:UCOL).map(k=>`<span class="row"><i style="background:${(real?UCOL_REAL:UCOL)[k]};border:1px solid #0a111e"></i><span class="muted small">${STATE[k][1]}</span></span>`).join('')}
      <span class="row"><i style="background:#0e2a3d;border:2px solid #22d3ee"></i><span class="muted small">Väderstation (br 7)</span></span>
      <span class="row"><i style="background:#1a2a42;border:1px solid #8ba0bd;width:9px;height:9px"></i><span class="muted small">Brunn</span></span>
+     <span class="row"><i style="background:#0e5a7a;border:2px solid #22d3ee;border-radius:2px"></i><span class="muted small">Dammens krön</span></span>
    </div>
    ${real?missing('<b>Enheterna ritas inte ut än.</b> Vilken brunn varje enhet står vid finns inte bland de värden vi hittat i styrsystemet. Kartan visar spåret och brunnarna.'):''}
-   <div class="note" style="margin-top:12px">Enheterna sitter vid sin brunn, färgade efter läge — tryck för detaljer. Spårlinjen är medellinjen ur drygt sex varv med klocka, och brunnarna är inmätta med pucken. Brunn 17 och 18 ligger en bit från linjen: gatan är 15–20 m bred längst ner i stora slingan, och varven gick på andra sidan. Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
+   <div class="note" style="margin-top:12px">Enheterna sitter vid sin brunn, färgade efter läge — tryck för detaljer. Spårlinjen är medellinjen ur drygt sex varv med klocka, och brunnarna och dammens krön är inmätta med pucken. Brunn 17 och 18 ligger en bit från linjen: gatan är 15–20 m bred längst ner i stora slingan, och varven gick på andra sidan. Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
   </div>`;
 }
 let mapInst=null;
@@ -1326,6 +1437,12 @@ function initMap(){
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {maxZoom:19,attribution:'Flygbild © Esri'}).addTo(mapInst);
   const line=L.polyline(TRACK.pts,{color:'#38bdf8',weight:3,opacity:.9}).addTo(mapInst);
+  // dammens krön, inmätt med pucken (KRON under Damm-koll)
+  L.polygon(KRON.horn.map(k=>[k.lat,k.lon]),{color:'#22d3ee',weight:2,fillColor:'#0e5a7a',fillOpacity:.35})
+   .addTo(mapInst).bindPopup(`<b>Dammen</b> · krönet inmätt ${KRON.datum}<br>`+
+     `${num(KRON.bredd,2)} × ${num(KRON.langd,2)} m, ${KRON.yta.toLocaleString('sv-SE')} m² innanför krönet<br>`+
+     `Hörnen mot krönets mittvärde: ${KRON.horn.map(k=>`${k.id} ${pm(hornCm(k.id))}`).join(' · ')} cm<br>`+
+     `<a href="#" onclick="go('dam');return false">Öppna Damm-koll</a>`);
   const fit=()=>{if(mapInst){mapInst.invalidateSize();mapInst.fitBounds(line.getBounds().pad(0.12));}};
   fit();
   // containern kan sakna sin höjd när kartan skapas (vyn fejdas in) — passa in igen
