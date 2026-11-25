@@ -311,6 +311,10 @@ canvas{max-width:100%}
 .seg{display:inline-flex;background:#0c1626;border:1px solid var(--border);border-radius:9px;overflow:hidden}
 .seg button{background:transparent;border:0;color:var(--muted);padding:7px 13px;font-size:.82rem;font-weight:600;cursor:pointer}
 .seg button.on{background:#13304d;color:var(--text)}
+/* Periodvalet över kurvorna: fem knappar ska rymmas på en telefon. */
+.seg.sm{max-width:100%;overflow-x:auto}
+.seg.sm button{padding:6px 10px;flex:0 0 auto}
+.histbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:10px}
 .readout{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px}
 .readout div b{display:block;font-size:1.1rem;color:var(--text)}
 .readout div span{color:var(--muted2);font-size:.7rem}
@@ -463,9 +467,71 @@ function applyLive(v){
 }
 function applyHist(h){
   if(!real)return;
-  histPts=Object.keys(h||{}).sort().map(k=>h[k]).filter(x=>x&&x.ts);
+  histLive=h||{};
+  rebuildHist();
+}
+
+/* Längre historik (25 november 2026). Bryggan sparar hela säsongen sedan
+   version 4, men appen lyssnar bara på det senaste dygnet — det är läsningen
+   som kostar, inte lagringen. En längre period hämtas en gång när man väljer
+   den, och igen först när man väljer om efter en halvtimme. Valet sparas
+   INTE till nästa gång: den som lämnat "Säsong" valt skulle annars hämta
+   flera MB varje gång appen öppnas. */
+const HIST_RANGES=[{h:24,t:'24 h'},{h:72,t:'3 dygn'},{h:168,t:'Vecka'},{h:720,t:'Månad'},{h:0,t:'Säsong'}];
+const SLOT=5*60e3, MAXPTS=600;
+let histRange=24, histLive={}, histOld={}, histOldRange=null, histOldAt=0, histTok=0, histLoading=false, histErr='', histInfo='';
+// Nyckeln är bryggans femminutersslag i UTC (yyyyMMddHHmm). Kurvorna räknas
+// på den och inte på ts, som kommer några sekunder efter slaget och annars
+// kan lägga två punkter i samma fack och lämna ett hål bredvid.
+const keyMs=k=>Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8),+k.slice(8,10),+k.slice(10,12));
+const HIST_F=['t','tw','tryckUt','k125','k126'];
+function rebuildHist(){
+  const all=Object.assign({},histRange===24?{}:histOld,histLive);
+  const keys=Object.keys(all).filter(k=>/^\d{12}$/.test(k)&&all[k]).sort();
+  const now=Date.now();
+  let from=histRange?now-histRange*3600e3:(keys.length?keyMs(keys[0]):now);
+  // Fler än 600 punkter gör inte kurvan tydligare på en telefon, bara
+  // långsammare. Långa perioder visas därför som medelvärden, i fack som är
+  // jämna steg (20 min, 2 h …) och ligger på jämna slag.
+  const need=(now-from)/MAXPTS/60e3;
+  const step=([5,10,15,20,30,60,120,180,360,720,1440].find(m=>m>=need)||1440)*60e3;
+  from=Math.floor(from/step)*step;
+  const n=Math.ceil((now-from)/step)+1, acc=Array.from({length:n},()=>({c:{},s:{}}));
+  for(const k of keys){
+    const i=Math.floor((keyMs(k)-from)/step); if(i<0||i>=n)continue;
+    const p=all[k], a=acc[i];
+    for(const f of HIST_F)if(Number.isFinite(p[f])){a.s[f]=(a.s[f]||0)+p[f];a.c[f]=(a.c[f]||0)+1;}
+  }
+  // Tomma fack blir hål i kurvan — där har bryggan inte hörts. Tomt i början
+  // betyder bara att historiken inte gick så långt tillbaka, och klipps bort.
+  let pts=acc.map((a,i)=>{const o={ts:from+i*step,n:Object.keys(a.c).length};
+    for(const f of HIST_F)o[f]=a.c[f]?+(a.s[f]/a.c[f]).toFixed(2):null;return o;});
+  // Det sista facket är det pågående, som bryggan inte hunnit fylla än.
+  if(pts.length&&!pts[pts.length-1].n)pts.pop();
+  const first=pts.findIndex(p=>p.n);
+  histPts=first<0?[]:pts.slice(first);
+  const info=[];
+  if(histLoading)info.push('Hämtar historiken …');
+  else if(histErr)info.push(histErr);
+  else if(histRange!==24&&histPts.length&&(histRange===0||first*step>step))
+    info.push('Sparat sedan '+fmtDay(new Date(histPts[0].ts)));
+  if(step>SLOT&&histPts.length)info.push('medelvärde per '+(step<3600e3?step/60e3+' min':(step/3600e3).toLocaleString('sv-SE',{maximumFractionDigits:1})+' h'));
+  histInfo=info.join(' · ');
   liveRefresh();
 }
+const fmtDay=d=>d.getDate()+' '+['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'][d.getMonth()];
+function setHistRange(h){
+  histRange=h; histErr='';
+  if(h===24||!real||!window.loadHist){histLoading=false;rebuildHist();return;}
+  const covers=histOldRange!==null&&(histOldRange===0||(h!==0&&histOldRange>=h));
+  if(covers&&Date.now()-histOldAt<30*60e3){rebuildHist();return;}
+  const tok=++histTok;
+  histLoading=true; rebuildHist();
+  window.loadHist(h).then(v=>{if(tok!==histTok)return;histOld=v||{};histOldRange=h;histOldAt=Date.now();},
+    ()=>{if(tok===histTok)histErr='Kunde inte hämta historiken. Försök igen.';})
+    .finally(()=>{if(tok!==histTok)return;histLoading=false;rebuildHist();});
+}
+const histSeg=()=>real?`<div class="histbar"><div class="seg sm">${HIST_RANGES.map(r=>`<button class="${histRange===r.h?'on':''}" onclick="setHistRange(${r.h})">${r.t}</button>`).join('')}</div>${histInfo?`<span class="muted small">${histInfo}</span>`:''}</div>`:'';
 // Ny data ritar om vyn, men inte medan någon skriver i ett fält (dammen) och
 // inte kartan, som annars hoppar tillbaka till utgångsläget.
 function liveRefresh(){
@@ -771,7 +837,7 @@ function vOverviewR(){
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
-    <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur vid väderstationen</h3>
+    <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur vid väderstationen</h3>${histSeg()}
       ${histPts.length>1?'<div class="chartbox"><canvas id="cTw"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}</div>
     <div class="card"><h3>${icon('clock','#7dd3fc',15)} Går det att köra?</h3>
       <div class="row" style="margin-top:8px">${cold===null?'<span class="chip s-off"><span class="d"></span>Inget värde</span>':cold?'<span class="chip s-run"><span class="d"></span>Kallt nog just nu</span>':'<span class="chip s-limit"><span class="d"></span>För varmt just nu</span>'}</div>
@@ -903,7 +969,7 @@ function vWaterR(){
   </div>
   ${missing('Teoretiskt flöde är styrsystemets egen siffra för vad enheten <b>skulle</b> dra för fullt vid den temperatur den mäter — inte vad den drar just nu.')}
 
-  <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck efter högtryckspumpen (PT02)</h3>
+  <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck efter högtryckspumpen (PT02)</h3>${histSeg()}
     ${histPts.length>1?'<div class="chartbox"><canvas id="cWater"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
     <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren</button>
   </div>
@@ -1571,10 +1637,12 @@ const interp=(a,m)=>Array.from({length:m},(_,i)=>{const x=i/(m-1)*(a.length-1),k
 
 let softRender=false;   // sant när vyn bara fräschas upp med nya värden
 function chOpts(ts,unit,xTick,yExtra){
+  // Över ett dygn räcker inte veckodagen i rutan — då står datumet med.
+  const long=ts.length>1&&ts[ts.length-1]-ts[0]>1.1*864e5;
   return {responsive:true,maintainAspectRatio:false,animation:softRender?false:{duration:450},
     interaction:{mode:'index',intersect:false},   // ett finger var som helst på grafen räcker
     plugins:{legend:{display:false},tooltip:{callbacks:{
-      title:it=>{const d=ts[it[0].dataIndex];return d?WD[d.getDay()]+' '+hhmm(d):''},
+      title:it=>{const d=ts[it[0].dataIndex];return d?WD[d.getDay()]+' '+(long?fmtDay(d)+' ':'')+hhmm(d):''},
       label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString('sv-SE',{maximumFractionDigits:1})} ${unit}`}}},
     scales:{x:{grid:{color:'#ffffff0c'},ticks:{color:'#8ba0bd',maxRotation:0,autoSkip:false,font:{size:11},callback:xTick}},
             y:Object.assign({grid:{color:'#ffffff0c'},ticks:{color:'#8ba0bd',font:{size:11}}},yExtra||{})}};
@@ -1593,6 +1661,15 @@ const series=(data,label,col)=>({data,label,borderColor:col,borderWidth:2,tensio
 // Etikett vid första punkten i varje ny timme (varannan om kurvan är lång).
 // Riktiga punkter ligger inte på jämna klockslag, så tickHours passar inte.
 function histTick(ts){
+  // Längre än ett par dygn: datum vid varje nytt dygn, glesare ju längre
+  // perioden är, så att axeln går att läsa på en telefon.
+  const span=ts.length>1?ts[ts.length-1]-ts[0]:0;
+  if(span>2.5*864e5){
+    const days=span/864e5, every=days>60?14:days>20?7:days>8?2:1;
+    const dayNo=d=>Math.floor((d.getTime()-d.getTimezoneOffset()*6e4)/864e5);
+    return (v,i)=>{const d=ts[i],q=ts[i-1];if(!d||!q)return null;const a=dayNo(d);
+      return a!==dayNo(q)&&a%every===0?d.getDate()+'/'+(d.getMonth()+1):null};
+  }
   const step=ts.length>72?2:1, b=d=>d.getDate()*100+Math.floor(d.getHours()/step);
   return (v,i)=>{const d=ts[i],q=ts[i-1];return d&&q&&b(d)!==b(q)?String(d.getHours()).padStart(2,'0')+':00':null};
 }
@@ -1728,7 +1805,8 @@ function clearApp(){
   if(mapInst){try{mapInst.remove();}catch(e){} mapInst=null;}
   document.getElementById('main').innerHTML='';
   // Riktig data ska inte ligga kvar i minnet åt nästa som loggar in.
-  if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;}
+  if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;
+    histLive={};histOld={};histOldRange=null;histRange=24;histTok++;histLoading=false;histErr='';histInfo='';}
   isAdmin=false;myKey='';members=null;memMsg='';memForm={email:'',name:'',role:'viewer'};
   if(current==='members')current='overview';
 }
@@ -1821,6 +1899,16 @@ function stopData() {
   if (stopMembers) { stopMembers(); stopMembers = null; }
   if (window.setAdmin) window.setAdmin(false, '');
 }
+// Längre historik hämtas en gång, inte med en lyssnare: den ändras bara i
+// änden, och änden täcks redan av dygnslyssnaren. Nycklarna är UTC
+// yyyyMMddHHmm, så en startnyckel räcker för att bara få perioden.
+window.loadHist = hours => {
+  if (!fb) return Promise.reject(new Error('Inget Firebase'));
+  const r = fb.dbm.ref(fb.db, 'hist');
+  const start = new Date(Date.now() - hours * 3600e3).toISOString().replace(/\D/g, '').slice(0, 12);
+  const q = hours ? fb.dbm.query(r, fb.dbm.orderByKey(), fb.dbm.startAt(start)) : r;
+  return fb.dbm.get(q).then(s => s.val());
+};
 // Skrivningen prövas av databasens regler: bara en administratör kommer igenom.
 window.memberWrite = (key, data) => {
   const r = fb.dbm.ref(fb.db, 'members/' + key);

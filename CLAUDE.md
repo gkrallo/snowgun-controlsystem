@@ -43,8 +43,11 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   medlemmar läser, administratörer sköter `/members`. `/hist` får en punkt
   var femte minut och sparas hela säsongen (bryggans version 4, 22 november;
   runt 4 MB per säsong). **Appen får aldrig hämta hela `/hist` när den
-  öppnas** — det är läsningen som kostar. I dag hämtar den det senaste
-  dygnet; längre perioder ska hämtas bara när man väljer dem.
+  öppnas** — det är läsningen som kostar. Den lyssnar på det senaste
+  dygnet; längre perioder (3 dygn, vecka, månad, säsong) hämtas en gång när
+  man väljer dem över kurvorna (`setHistRange`, `loadHist`) och visas som
+  medelvärden, högst 600 punkter. Valet sparas medvetet inte till nästa
+  gång appen öppnas.
 - **Appen** loggar in med Google, visar riktig data och går att installera på
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
   siffror: uppmätt flöde, driftläge, dyssteg, strypning och vilken brunn en
