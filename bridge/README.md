@@ -4,14 +4,17 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 22 november 2026:** version 4 är byggd och provad med självtestet,
-men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 3 går
-där sedan 16 november med `GSS_Login` enligt avsteget nedan, som schemalagd
+**Läget 25 november 2026:** version 5 är byggd och provad med självtestet,
+men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 4 går
+där sedan 24 november med `GSS_Login` enligt avsteget nedan, som schemalagd
 uppgift. En läsning tar 29–46 ms. Inte provat: en omstart av datorn, och hur
 bryggan beter sig när kanonerna går.
 
-Version 4 sparar historiken hela säsongen; version 3 tog bort punkter äldre
-än 48 timmar.
+- Version 5 sparar också varje enhets luft- och våttemperatur i historiken,
+  men bara för enheter som styrsystemet hört de senaste 15 minuterna. En tyst
+  enhet blir ett hål i kurvan i stället för sitt gamla värde om och om igen.
+- Version 4 sparar historiken hela säsongen; version 3 tog bort punkter
+  äldre än 48 timmar.
 
 ## Uppdatera bryggan på styrdatorn
 
@@ -36,7 +39,7 @@ datorn och det kontot, och följer inte med i zipfilen.
 
        powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -Visa
 
-   Loggen ska ha en rad `Bryggan startar (version 4, ...)`.
+   Loggen ska ha en rad `Bryggan startar (version 5, ...)`.
 
 Raden `Klart på … ms` efter `-EnGang` räknar med tiden det tar att skriva
 lösenordet (10 656 ms första gången). Den riktiga lästiden står som `lasMs`
@@ -138,7 +141,7 @@ läser därför var 20:e sekund men skickar bara det som ändrats:
 | Hela nuläget | vid start och en gång i timmen |
 | Ändrade fält | när ett värde gått utanför sitt dödband |
 | Hjärtslag (molnets klocka, om databasen svarar, GSSystems senaste tid) | en gång i minuten |
-| Historikpunkt för graferna | var femte minut; sparas hela säsongen (sedan version 4, förut 48 h) |
+| Historikpunkt för graferna | var femte minut; sparas hela säsongen (sedan version 4, förut 48 h); hörda enheters t och tw sedan version 5 |
 
 Dödband: temperatur och tryck 0,2, luftfuktighet 2 %, vindfart 0,5 m/s,
 riktning 15°. Jämförelsen görs mot det värde som senast *skickades*, så ett

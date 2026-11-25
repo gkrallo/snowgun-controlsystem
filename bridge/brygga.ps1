@@ -26,6 +26,7 @@
   hjärtslag i minuten och en historikpunkt var femte minut. Datorn står på
   dygnet runt, och värdena står still det mesta av året. Historiken sparas
   hela säsongen (sedan version 4); förut rensades den efter 48 timmar.
+  Sedan version 5 har den också varje hörd enhets luft- och våttemperatur.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -54,7 +55,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "4"
+$VERSION = "5"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -305,6 +306,29 @@ function Build-HistPatch($snap, [datetime]$slot) {
   if ($snap["pump"] -and $snap["pump"]["dep12"]) {
     $d = $snap["pump"]["dep12"]
     $pt["tryckUt"] = $d["tryckUt"]; $pt["k125"] = $d["k125"]; $pt["k126"] = $d["k126"]
+  }
+  # Varje enhets luft- och våttemperatur (version 5, 25 november), så att
+  # appen kan visa kurvan när man trycker på en kanons värde. Bara enheter
+  # som styrsystemet hört de senaste 15 minuterna (samma gräns som appens
+  # "hörd"): en tyst enhets värden står still, och sparade var femte minut
+  # skulle de se ut som mätningar. Saknas enheten blir det ett hål i kurvan.
+  # Bara t och tw - varje fält till gör säsongen större OCH varje hämtning
+  # av en lång period dyrare. Runt 15 MB per säsong med nio enheter.
+  $ref = Newest $snap
+  if ($snap["enheter"] -and $ref) {
+    $fmt = "yyyy-MM-ddTHH:mm:ss"
+    $refT = [datetime]::ParseExact($ref, $fmt, $null)
+    $e = [ordered]@{}
+    foreach ($k in @($snap["enheter"].Keys)) {
+      $u = $snap["enheter"][$k]
+      if (-not $u["senastHord"]) { continue }
+      try { $h = [datetime]::ParseExact("" + $u["senastHord"], $fmt, $null) } catch { continue }
+      if ([math]::Abs(($refT - $h).TotalMinutes) -gt 15) { continue }
+      $x = [ordered]@{}
+      foreach ($f in @("t", "tw")) { if ($null -ne $u[$f]) { $x[$f] = $u[$f] } }
+      if ($x.Count -gt 0) { $e[$k] = $x }
+    }
+    if ($e.Count -gt 0) { $pt["e"] = $e }
   }
   $p[(SlotKey $slot)] = $pt
   return $p
@@ -752,6 +776,18 @@ if ($Sjalvtest) {
   $bort = @($h.Keys | Where-Object { $null -eq $h[$_] })
   Check "ingen nyckel sätts till tom (ingen städning)" ($bort.Count -eq 0)
   Check "punkten har våttemperatur och tryck" ($h["202611151805"]["tw"] -eq 1.8 -and $h["202611151805"]["tryckUt"] -eq 7.2)
+  Check "utan senaste kontakt sparas ingen enhet" (-not $h["202611151805"].Contains("e"))
+
+  # En enhet hörd nyss och en som varit tyst sedan förmiddagen.
+  $s = Fake 7.3 @()
+  $s["enheter"]["SGC400-3"]["senastHord"] = "2026-11-15T18:43:20"
+  $s["enheter"]["SGC400-3"]["t"] = -1.2
+  $s["enheter"]["SGC400-4"]["senastHord"] = "2026-11-15T11:02:00"
+  $h = Build-HistPatch $s $slot
+  $e = $h["202611151805"]["e"]
+  Check "enhet hörd nyss: t och tw sparas" ($e -and $e["SGC400-3"]["tw"] -eq 7.3 -and $e["SGC400-3"]["t"] -eq -1.2)
+  Check "enhet hörd nyss: inget mer än t och tw" ($e["SGC400-3"].Count -eq 2)
+  Check "tyst enhet sparas inte (blir ett hål)" (-not $e.Contains("SGC400-4"))
 
   if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
   Write-Host ("Självtestet hittade " + $script:bad + " fel."); exit 1
