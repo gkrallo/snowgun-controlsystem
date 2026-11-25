@@ -34,7 +34,8 @@ En rad per avgång: `11` = P1 (lågtryck, LPP01), `12` = P2 (högtryck, HPP01).
 | 122 | vattentemperatur, °C (TT01 = 11,8) | säker |
 | 123 | tryck ut, bar (PT02 = 7,2; 0,1 för avgång 11) | säker |
 | 124 | temperatur ut, °C | säker (statistikens `temperature_refoulement`) |
-| 125, 126 | båda 0,1 — den ena uppmätt flöde (FT01), den andra trycket efter filtret (PITS01) eller nivån | **osäker** |
+| 125 | uppmätt flöde ut, m³/h (FT01) — steg till 6–12 när pumparna startade 25 november och följde skärmen (8,6). **Mätaren misstänks visa ungefär hälften.** | säker att det är FT01; storleken okontrollerad |
+| 126 | stod på 0,1 även när pumpen gick — inte flödet; kanske trycket efter filtret (PITS01) | **osäker** |
 | 128 | maxflöde, 70 m³/h | säker |
 | 158 | senaste kontakt | säker |
 
@@ -54,7 +55,9 @@ Ledning 001 och 002 är dräneringsventilerna vid brunn 7 och 18
 ## Kanoner och lansar — `[SGC400_Com]`
 
 Sju rader. n° 1, 2, 3, 6, 7 är fläktkanoner (S ACCESS 300), n° 4 och 5 är
-lansar (TAURUS_2.0, T2N65). Adress = n° + 2.
+lansar (TAURUS_2.0, T2N65). **Adress = n° + 2** — bekräftat 25 november mot
+skärmen Gun searching: lansarna har adress 6 och 7. Snögruppen talar om
+adressen, inte n°.
 
 | Kolumn | Betydelse | Säkerhet |
 |---|---|---|
@@ -63,12 +66,22 @@ lansar (TAURUS_2.0, T2N65). Adress = n° + 2.
 | 401 | luftfuktighet, % | säker |
 | 402 | våttemperatur, °C | säker |
 | 411 | teoretiskt vattenflöde, m³/h (statistikens `debit_eau_theorique` ÷ 10) | säker |
-| 408 | 8–15 — vattentemperatur eller tryck? | **osäker** |
+| **707** | **brunnen enheten står vid** ("Shelter" på skärmen Gun searching) | **säker** — alla sju stämde 25 november: n° 1–7 = 7, 10, 9, 7, 8, 5, 8 |
+| 408 (= 706) | vattentemperatur vid enheten, °C — 2,5–2,7 hos kanonerna när vattnet ut var 2,8–3,6 | trolig |
+| 415 | läge: 11 för de som var OK, 1 för den som fått fel (adress 4, "fault" 21:09), 2 för den som stoppats (adress 8, "stopped" 21:08) | trolig, ett tillfälle |
+| 416 | 50 för OK, 42 för felet, 1 för den stoppade — felkod eller steg? | **osäker** |
 | 413 | 19 för n° 2, annars 0 | **osäker** |
-| 415, 416 | 2/1 eller 11/50 — läge? | **osäker** |
-| 702, 703 | −2 … −4 — startgränser? | **osäker** |
+| 702, 703 | −2,4/−1,9, −4/−3,5, −3/−2,5 (lansarna), −2/−1,5 — start- och stoppgräns i våttemperatur per enhet? Skillnaden är alltid 0,5 | **osäker** |
+| 417 | 11–14 för kanonerna, 21 för lansarna | **osäker** |
+| 852 | 9–20 för kanonerna, 50 för lansarna | **osäker** |
 | 801, 802 | typ och modell | säker |
 | 850 | senaste kontakt med kanonen | säker |
+
+Händelsernas namn är "server adress brunn": `2 4 10 fault` är adress 4 vid
+brunn 10, och `Disappeared S ACCESS 300 (adr = 4) from 10` säger samma sak.
+Kvällen 25 november försvann adress 4, 8, 9 och 5 en i taget 21:12–21:17.
+En enhet som försvinner behåller sina sista värden i tabellen, också läget i
+415.
 
 Uppmätt flöde (`debit_eau_reel`) och tryck (`pression_eau`) var noll och går
 inte att peka ut förrän något går.
@@ -80,8 +93,12 @@ Två rader. n° 1 lever. n° 2 har inte hörts sedan 19 oktober 2022.
 | Kolumn | Betydelse | Säkerhet |
 |---|---|---|
 | 2, 3, 7 | lufttemperatur, fukt, våttemperatur | säker |
-| 88 | n° | säker |
+| 88 | n° (= adress på det här kortet: n° 1 har adress 1, n° 2 adress 2) | säker |
 | 104 | senaste kontakt | säker |
+| **108** | **brunnen** ("Shelter"): n° 1 = 6, n° 2 = 7 | **säker** (25 november) |
+
+n° 2 finns inte längre men ska inte tas bort ur styrsystemets databas. Appen
+ska strunta i den.
 
 ## Väder — `[TH_Com]`, `[Wind_Com]`
 
@@ -166,9 +183,13 @@ Vad det betyder för datan:
   0,1 = PTS01, `dep12/tryckUt` 7,2 = PT02, `dep12/vattenTemp` 11,9 = TT01,
   `ledningar/L121` 7,7 = PT03, `ledningar/L122` 7,2 = PT04. `L001` och `L002`
   är ledningarna ut mot spåret, `L111` matarledningen.
-- **FT01 är det uppmätta flödet, i m³/h.** Bilden visar 0,1, och `dep12` har
-  `k125` = `k126` = 0,1. En av de två är alltså nästan säkert FT01 — vilken
-  går att se först när pumpen går. Båda sparas redan i historiken.
+- **FT01 är `dep12/k125`, i m³/h.** Utpekad 25 november: när pumparna
+  startade steg `k125` från 0,1 till 6–12 och stämde med skärmens 8,6, medan
+  `k126` stod kvar på 0,1. Snögruppen upplever att mätaren visar ungefär
+  hälften av verkligt flöde, kanske ett skalningsfel sedan den byttes. Appen
+  visar värdet orättat. Rätt faktor tas fram mot dammen: mät med måttbandet
+  före och efter en lång körning och jämför med FT01 summerat över körningen
+  ur historiken. Uttaget i dammen räknas inte på FT01 förrän dess.
 - **Dammens nivå mäts inte.** "Lake lvl.95,5m" är en fast text.
 - Varje pump och ledning har ett läge (`stop` på bilden), och filtret en
   varningslampa. Inget av det är hittat bland kolumnerna än.

@@ -32,7 +32,7 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
-- **Bryggan** (`bridge/brygga.ps1`, version 4 på styrdatorn, version 5
+- **Bryggan** (`bridge/brygga.ps1`, version 5 på styrdatorn, version 6
   byggd 25 november men inte utlagd) går på styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
@@ -73,9 +73,20 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   gemensamt. Loggen i Damm-koll visar avläsningar, pumppass och mätningar,
   och varje flik går att ladda ner för Excel. Säg "mätning", inte
   "kalibrering", i det som syns — ordet förvirrade.
-- **Inte gjort:** svar från leverantören och läs-only-kontot; hitta
-  flödesmätaren FT01 bland kolumnerna (kräver att pumpen går); prova en
-  omstart av styrdatorn; backup av styrdatorn.
+- **FT01 (flöde ut) är `dep12/k125`**, utpekad 25 november när pumparna
+  startade. Mätaren misstänks visa ungefär hälften. Appen visar den orättad
+  och märkt så; **räkna inte dammens uttag på den** förrän faktorn
+  kontrollerats mot måttbandet (se `docs/kolumnmappning.md`).
+- **Enheterna heter efter Modbus-adressen** ("Kanon 4", "Lans 6"), som
+  styrsystemets skärm visar och snögruppen säger. Adress = n° + 2 på SGC400,
+  = n° på det äldre kortet. Brunnen ("Shelter") skickas från bryggans
+  version 6 och placerar enheterna på kartan. Läget (kolumn 415: 1 fel,
+  2 stoppad, 11 OK) är tolkat ur ett tillfälle och visas bara när enheten
+  hörs — en urkopplad enhet behåller sitt sista läge. **Kanonen på adress 2
+  finns inte längre** men står kvar i styrsystemets databas med flit; appen
+  hoppar över den och dess gamla larm.
+- **Inte gjort:** svar från leverantören och läs-only-kontot; faktorn för
+  FT01; prova en omstart av styrdatorn; backup av styrdatorn.
 
 ## Adresser, och var en ny måste läggas in
 
