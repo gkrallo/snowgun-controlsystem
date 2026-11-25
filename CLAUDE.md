@@ -52,9 +52,10 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
   siffror: uppmätt flöde, driftläge, dyssteg, strypning och vilken brunn en
   enhet står vid. Körfönstret är fortfarande ett exempel (märkt så), och
-  dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönets
-  hörn är inmätta (22 november). Kalibreringen frågar vid vilket hörn man
-  mätt, se `docs/damm-matningar.md`.
+  dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönet
+  och snorkeln är inmätta mot vattenytan (24 november): 100 % är snorkeln,
+  3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Kalibreringen mäts
+  helst vid snorkeln, se `docs/damm-matningar.md`.
 - **Inte gjort:** svar från leverantören och läs-only-kontot; hitta
   flödesmätaren FT01 bland kolumnerna (kräver att pumpen går); prova en
   omstart av styrdatorn; backup av styrdatorn.

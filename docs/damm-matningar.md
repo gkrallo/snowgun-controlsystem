@@ -176,3 +176,87 @@ och 36 cm vid ”låga hörnet”.
 **Nästa gång:** lägg pucken vid vattenlinjen en minut. Då hamnar ytan i samma
 höjdsystem som krönet, och det går att se var snorkeln ligger mot krönet
 och om 3,50 m är rätt utgångspunkt.
+
+*(Gjort 24 november, se nästa avsnitt. Hörnhöjderna och snorkeln ovan
+gäller inte längre i appen.)*
+
+## Snorkeln och vattenytan inmätta (24 november)
+
+Kristian mätte med GPS:en (SparkFun RTK Facet) i en låda som flyter. Lådan
+är 235×180 mm i botten och sjunker 30 mm. Antennens fascentrum sitter 74 mm
+över lådans botten. Stående på kanten sitter antennen alltså 74 mm över
+marken, och flytande 44 mm över ytan. På varje ställe stod lådan först på
+krönets kant och flöt sedan vid vattenlinjen, några minuter senare. Passet
+gick 19:19–20:04 och efterberäknades mot LIDK (dygn 328): 100 % fix på alla
+punkter, utom kanten vid snorkeln, där bara bakåträkningen hade fix.
+Underlaget ligger i `snowgun-forecast`, `matdata/ppk-2026-11-24-damm/`
+(`stilla.json`, `pass.pos`).
+
+Fältanteckningar:
+
+- Vid snorkeln var det 40 cm längs duken från kanten ner till ytan.
+- Ytan låg 3–4 cm under snorkelns kant. Kristian bedömde nivån som
+  praktiskt max, eftersom vattnet låg nära kanten på norra sidan.
+- Duken är ojämn i hörnen, så där mättes inget med måttband.
+
+| Ställe   | Krönet över ytan | Krönet över snorkelns kant |
+|----------|------------------|----------------------------|
+| Snorkeln | 18,1 cm          | 14,6 cm                    |
+| SV       | 22,6 cm          | 19,1 cm                    |
+| NO       | 18,6 cm          | 15,1 cm                    |
+| NV       | 13,1 cm          | 9,6 cm                     |
+| SO       | 12,9 cm          | 9,4 cm                     |
+
+Felmarginalen är ±2 cm. Snorkelns kant räknas som ytan + 3,5 cm.
+
+- **Krön minus yta på samma ställe.** Vattenytan är plan, men de åtta
+  flytpunkterna skilde 4,4 cm (antennhöjd 128,130–128,174). De låg högt där
+  kanten låg högt, så skillnaden på samma ställe, mätt med några minuters
+  mellanrum, är säkrare än höjderna var för sig. Mot medianen av alla
+  flytpunkter blir det samma sak inom 2,5 cm.
+- **De lägsta hörnen är NV och SO**, inte NO som ATV:ns hörn 22 november
+  visade. ATV:ns hörnhöjder var uppskattade i svängarna. Lådan står direkt
+  på kanten. ATV:ns nivå låg i snitt ca 10 cm högre än lådans, möjligen på
+  grund av antennhöjden på ATV:n. Bara skillnaderna används.
+- **Måttbandet vid snorkeln** ger 40 cm längs duken, som motsvarar 22 cm i
+  höjd vid slänten 1:1,5. GPS:en säger 18 cm. Troligen är slänten flackare
+  upptill.
+
+### Vad det betyder för volymen
+
+- **Snorkeln sitter 13 cm under krönets medel** (de fyra hörnen), inte 30 cm.
+  Med ritningens djup sitter den på **3,37 m**, och 100 % blir **4 111 m³** i
+  stället för 3 849.
+- **Det stämmer med vattenmätaren.** Fram till 13 november, när ytan nådde
+  snorkeln, fylldes 4 059 m³ på. Provkörningen tog 4–10 m³, så ca 4 050 m³
+  fanns kvar i dammen. Skillnaden mot 4 111 är ca 60 m³, ungefär 35 mm regn
+  på dammen. De ca 200 m³ som saknades i kalkylen ovan var alltså troligen
+  inget läckage, utan en snorkel som sitter högre än appen trodde.
+- **Snorkeln sitter ca 37 cm över ritningens bräddrör** (3,00 m), inte 20.
+  Antingen höjdes den mer än 20 cm, eller så satt det gamla röret högre än
+  ritningen säger.
+- **Botten är fortfarande inte mätt.** Volymen bygger på ritningens djup.
+  Vattenmätaren är kontrollen, och den stämmer inom 1,5 %.
+
+### Så här används mätningen i appen (Kristian, 25 november)
+
+- De fyra hörnens medel räknas som ritningens 3,50 m. Ytan 24 november låg
+  då på 3,33 m.
+- **100 % är snorkelns kant, 3,37 m ≈ 4 110 m³.**
+- **Lägsta inmätta krönet** är SO och NV, 3,46 m, och **varningen** ligger
+  5 cm över snorkeln, på 3,42 m. Den slår till om vattnet stiger förbi
+  snorkeln, till exempel om den fryser. Mellan hörnen kan det finnas lägre
+  ställen som inte är mätta.
+- **Kalibreringen** mäts helst vid snorkeln, som är förvald. Där räknas
+  måttbandet direkt från mätningen: 40 cm betyder att ytan står 3,5 cm under
+  snorkelns kant. Full damm är ungefär 34 cm. Hörnen går att välja, men
+  duken är ojämn där. Valet sparas i telefonen under en ny nyckel, så att ett
+  hörn som valts med ATV:ns höjder inte ligger kvar.
+- Kartan och skissen visar krönet med ATV:ns plan, och snorkeln som en punkt.
+
+Vid 100 % ska måttbandet visa ungefär 34 cm vid snorkeln. I hörnen blir det
+ungefär SV 34, NO 27, NV 17 och SO 17 cm, om slänten är 1:1,5.
+
+**Öppet:** gick påfyllningen mellan 13 och 24 november? Om den stängdes när
+ytan nådde snorkeln har ytan sjunkit 3,5 cm på elva dygn, ungefär 55 m³
+eller drygt 5 m³ per dygn. Det vore första riktiga måttet på läckaget.
