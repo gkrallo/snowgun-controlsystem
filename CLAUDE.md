@@ -40,7 +40,9 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
 - **Firebase** (projekt `snoprognos`): Realtime Database
   `snoprognos-default-rtdb` i europe-west1, regler i
   `firebase/database.rules.json`. Bryggan skriver `/live` och `/hist`,
-  medlemmar läser, administratörer sköter `/members`. `/hist` får en punkt
+  medlemmar läser, administratörer sköter `/members`. Medlemmar skriver
+  dammens avläsningar och kalibreringar under `/damm` (sina egna; sedan 25
+  november, provat i emulatorn). `/hist` får en punkt
   var femte minut och sparas hela säsongen (bryggans version 4, 22 november;
   runt 4 MB per säsong). **Appen får aldrig hämta hela `/hist` när den
   öppnas** — det är läsningen som kostar. Den lyssnar på det senaste
@@ -55,7 +57,9 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönet
   och snorkeln är inmätta mot vattenytan (24 november): 100 % är snorkeln,
   3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Kalibreringen mäts
-  helst vid snorkeln, se `docs/damm-matningar.md`.
+  helst vid snorkeln, se `docs/damm-matningar.md`. Avläsningarna av
+  vattenmätaren (start, stopp, emellan) förs i appen i stället för i Excel,
+  och påfyllningen räknas ur dem. Kalibreringarna sparas gemensamt.
 - **Inte gjort:** svar från leverantören och läs-only-kontot; hitta
   flödesmätaren FT01 bland kolumnerna (kräver att pumpen går); prova en
   omstart av styrdatorn; backup av styrdatorn.
@@ -94,7 +98,10 @@ I korthet:
 4. **Bryggan lätt och utåtgående.** Kör på PC:n, öppna aldrig en port in.
    SQL Server Express tog slut på minne en kväll (24 dec 2022) — läs lite.
 5. **Lösenord/nycklar aldrig i git.** Se `SECRETS.md` (gitignore-ad).
-6. **Firebase-regler låsta:** bara bryggan skriver, bara inloggade läser.
+6. **Firebase-regler låsta:** bara bryggan skriver driftdata, bara inloggade
+   medlemmar läser. Undantaget är `/damm`, där medlemmar skriver sina egna
+   avläsningar av vattenmätaren och måttbandet (Kristian, 25 november).
+   Inget i Firebase kan styra anläggningen.
 7. **Tidsstämpel på allt** — appen varnar för gammal data, visar aldrig stale
    som live.
 8. **Bryggan auto-startar** vid omboot. **Budgetlarm** i Google Cloud, skriv

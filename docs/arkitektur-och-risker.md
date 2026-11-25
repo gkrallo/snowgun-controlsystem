@@ -81,9 +81,12 @@ medvetet tänka om hela säkerhetsbilden.
 7. **Lösenord och nycklar aldrig i git.** Platshållare i spårbara filer, riktiga
    värden i `SECRETS.md` (gitignore-ad). Gäller både SQL-inloggningen och
    Firebase-nyckeln.
-8. **Firebase-regler måste låsas och testas:** bara bryggan får *skriva*, bara
-   inloggade användare får *läsa*. Utan det kan vem som helst läsa eller mata in
-   falska värden.
+8. **Firebase-regler måste låsas och testas:** bara bryggan får *skriva*
+   driftdata, bara inloggade medlemmar får *läsa*. Utan det kan vem som helst
+   läsa eller mata in falska värden. Sedan 25 november får medlemmar också
+   skriva under `/damm`, men bara sina egna avläsningar av vattenmätaren och
+   måttbandet, med fälten kontrollerade av reglerna. Det är sådant de själva
+   läst av, inte driftdata, och det kan inte styra något.
 
 ### Mot vilseledande data
 9. **Varje mätvärde ska bära en tidsstämpel, och appen ska varna för gammal

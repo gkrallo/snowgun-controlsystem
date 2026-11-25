@@ -38,6 +38,21 @@ inloggningsrutan. Exempelsiffrorna (som bara visas med `?demo`) står i sidans k
 läsbara utan inloggning — de är påhittade, men riktiga värden får aldrig
 läggas i själva filen.
 
+**Dammens avläsningar, 25 november 2026:** medlemmar får skriva under
+`/damm`. Där sparas avläsningarna av vattenmätaren på påfyllningen
+(`/damm/avlas`) och kalibreringarna med måttband (`/damm/kalib`), som förut
+fördes i Excel och i minnet på varje telefon. Kristian bestämde det 25
+november. En medlem får lägga till, och rätta eller ta bort det hen själv
+lagt in. En administratör får rätta och ta bort allt, men den som läste av
+står kvar. Reglerna kontrollerar fälten: tiden får inte ligga i framtiden,
+typen måste vara start, stopp eller avläsning, platsen en av de fem, och
+inga andra fält får finnas. Att mätaren inte går baklänges kontrollerar
+appen, eftersom reglerna bara ser en avläsning i taget. Inget av det rör
+anläggningen. Provat i Firebases lokala emulator med ett låtsasprojekt (26
+fall: medlem, annan medlem, administratör, icke-medlem, obekräftad adress,
+felaktiga fält, tömning av hela listan). Inte provat mot den riktiga
+databasen.
+
 **Inloggningen i appen, 16 november 2026:** `app/index.html` loggar in med
 Google på riktigt och lyssnar på sin egen rad under `/members`; utan rad visas
 "har inte åtkomst" och en utloggningsknapp, och tas raden bort medan appen är
@@ -84,12 +99,13 @@ Tre sorters konton:
 
 | Konto | Loggar in med | Får |
 |---|---|---|
-| Medlem (`viewer`) | Google | läsa `/live` och `/hist` |
-| Administratör (`admin`) | Google | som medlem, plus läsa och ändra medlemslistan |
+| Medlem (`viewer`) | Google | läsa `/live`, `/hist` och `/damm`. Lägga till dammens avläsningar och kalibreringar, och rätta eller ta bort sina egna |
+| Administratör (`admin`) | Google | som medlem, plus läsa och ändra medlemslistan, och rätta alla avläsningar |
 | Bryggan | eget konto, e-post och lösenord | skriva `/live` och `/hist`. Ingenting annat, och inte läsa medlemslistan |
 
-Ingen människa får skriva mätvärden och ingen får styra något — appen har
-ingen väg tillbaka till anläggningen.
+Ingen människa får skriva driftdata ur styrsystemet, och ingen får styra
+något — appen har ingen väg tillbaka till anläggningen. Det medlemmar skriver
+under `/damm` är bara det de själva läst av på mätaren och måttbandet.
 
 Ha **minst två administratörer**. Annars står gruppen utan någon som kan
 släppa in folk den dag en person slutar eller tappar sitt konto.
@@ -223,6 +239,10 @@ bryggkontots användar-id (Authentication → Users → kolumnen User UID).
   }
 }
 ```
+
+Kopian ovan visar grunden. Sedan 25 november finns också grenen `/damm`,
+där medlemmar skriver dammens avläsningar. Den gällande versionen står i
+`firebase/database.rules.json`.
 
 Reglerna är skrivna men **inte provade**. Innan riktig data: kör dem i
 regelsimulatorn (Rules → Rules Playground) och bocka av:

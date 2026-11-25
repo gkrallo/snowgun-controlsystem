@@ -5,6 +5,10 @@ avläsningar längst ner i tabellen; räkna inte om gamla.
 
 ## Vattenmätaren på påfyllningen
 
+*Sedan 25 november förs avläsningarna i appen (Damm-koll → Vattenmätaren),
+inte i Excel. Tabellen nedan är de fyra första. De läggs in i appen en gång,
+och därifrån går de att ladda ner som en fil för Excel.*
+
 | Datum      | Tid   | Mätarställning (m³) | Påfyllt sedan 25/10 (m³) | Takt sedan förra (m³/h) | m³/dygn |
 |------------|-------|---------------------|--------------------------|-------------------------|---------|
 | 2026-10-25 | 17:00 | 69 418,963          | 0                        | –                       | –       |

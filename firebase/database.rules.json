@@ -12,6 +12,34 @@
       ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'"
     },
 
+    "damm": {
+      ".read": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+      "avlas": {
+        "$id": {
+          ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
+          ".validate": "newData.hasChildren(['ts', 'm3', 'typ', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
+          "ts":   { ".validate": "newData.isNumber() && newData.val() > 1735689600000 && newData.val() < now + 600000" },
+          "m3":   { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() < 100000000" },
+          "typ":  { ".validate": "newData.isString() && newData.val().matches(/^(start|stopp|avl)$/)" },
+          "uid":  { ".validate": "newData.isString()" },
+          "namn": { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "$annat": { ".validate": false }
+        }
+      },
+      "kalib": {
+        "$id": {
+          ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
+          ".validate": "newData.hasChildren(['ts', 'cm', 'punkt', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
+          "ts":    { ".validate": "newData.isNumber() && newData.val() > 1735689600000 && newData.val() < now + 600000" },
+          "cm":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+          "punkt": { ".validate": "newData.isString() && newData.val().matches(/^(SN|SV|NV|NO|SO)$/)" },
+          "uid":   { ".validate": "newData.isString()" },
+          "namn":  { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "$annat": { ".validate": false }
+        }
+      }
+    },
+
     "members": {
       ".read":  "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",
       ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",
