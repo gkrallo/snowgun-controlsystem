@@ -251,15 +251,37 @@ Felmarginalen är ±2 cm. Snorkelns kant räknas som ytan + 3,5 cm.
   5 cm över snorkeln, på 3,42 m. Den slår till om vattnet stiger förbi
   snorkeln, till exempel om den fryser. Mellan hörnen kan det finnas lägre
   ställen som inte är mätta.
-- **Kalibreringen** mäts helst vid snorkeln, som är förvald. Där räknas
-  måttbandet direkt från mätningen: 40 cm betyder att ytan står 3,5 cm under
-  snorkelns kant. Full damm är ungefär 34 cm. Hörnen går att välja, men
-  duken är ojämn där. Valet sparas i telefonen under en ny nyckel, så att ett
-  hörn som valts med ATV:ns höjder inte ligger kvar.
+- **Måttbandet läses bara vid snorkeln** (ändrat 25 november: först gick
+  hörnen att välja, men duken är ojämn där och Kristian mäter bara vid
+  snorkeln). Där räknas måttbandet direkt från mätningen: 40 cm betyder att
+  ytan står 3,5 cm under snorkelns kant. Full damm är ungefär 34 cm.
 - Kartan och skissen visar krönet med ATV:ns plan, och snorkeln som en punkt.
 
-Vid 100 % ska måttbandet visa ungefär 34 cm vid snorkeln. I hörnen blir det
-ungefär SV 34, NO 27, NV 17 och SO 17 cm, om slänten är 1:1,5.
+### Måttbandet, vattenmätaren och loggen i appen (25 november)
+
+Kristian provade första versionen samma dag och tyckte att den var
+förvirrande. Nu ser Damm-koll ut så här:
+
+- **Måttbandet vid snorkeln** är en ruta. Man drar i reglaget eller skriver
+  måttet och ser vad det motsvarar, och det sparas först när man trycker
+  **Spara mätningen**. Ordet "kalibrering" syns inte längre. Rutan säger i
+  stället vad som händer: mätningen blir dammens nya utgångsläge för alla,
+  och sedan räknar appen vidare med vattenmätaren och läckaget. Tiden går att
+  sätta när man sparar och att ändra efteråt.
+- **Vattenmätaren** är bara till för att läsa in: ställning, tid och Start,
+  Stopp eller Avläsning.
+- **Loggen** visar allt som sparats, i tre flikar: **Avläsningar** (som
+  kolumnerna i Excel), **Pumppass** (start till stopp, med tid, m³ och
+  takt) och **Måttband**. Den visar säsongen, och "Visa alla" visar resten.
+  Tryck på en rad för att rätta eller ta bort. **Ladda ner för Excel** ger
+  fliken som är vald, alla säsonger.
+- Mellan de två senaste mätningarna med måttband räknar loggen ut hur mycket
+  som försvunnit (läckage, avdunstning och bräddning, minus regn).
+
+Förut låg avläsningarna under knapparna i inmatningsrutan, och Kristian
+hittade dem inte efteråt.
+
+Vid 100 % ska måttbandet visa ungefär 34 cm vid snorkeln.
 
 **Öppet:** gick påfyllningen mellan 13 och 24 november? Om den stängdes när
 ytan nådde snorkeln har ytan sjunkit 3,5 cm på elva dygn, ungefär 55 m³

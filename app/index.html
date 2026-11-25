@@ -1186,15 +1186,13 @@ const DAMLV=[
   [3.00,'Ritningens bräddrör','#8ba0bd'],
 ];
 
-/* Stället där man håller måttbandet sparas på enheten, så att det står rätt
-   nästa gång. Snorkeln är förvald: där är duken jämn och måttbandet
-   kontrollerat. Nyckeln är ny sedan 25 november, så att ett hörn som valts
-   med ATV:ns gamla höjder inte ligger kvar.
-   V0/t0 är den senaste kalibreringen. Finns ingen sparad är V0 ett exempel,
-   och vyn säger det. Läckage, lägsta driftnivå och reservtakten är
+/* Måttbandet läses bara vid snorkeln, där duken är jämn (Kristian,
+   25 november). Hörnen finns kvar i KANT för skissen och för gamla
+   mätningar, men går inte att välja.
+   V0/t0 är den senaste mätningen med måttband. Finns ingen sparad är V0 ett
+   exempel, och vyn säger det. Läckage, lägsta driftnivå och reservtakten är
    inställningar i telefonen. */
-let damHorn='SN'; try{const s=localStorage.getItem('snokollPunkt'); if(KANT.pkt.some(p=>p.id===s))damHorn=s;}catch(e){}
-let dam={ V0:3743, t0:Date.now(), kalId:null, drawn:0, fillRate:213, leak:2.0, floorH:0.5, horn:damHorn };
+let dam={ V0:3743, t0:Date.now(), kalId:null, drawn:0, fillRate:213, leak:2.0, floorH:0.5, horn:'SN' };
 
 /* ---------- Vattenmätaren och kalibreringarna (25 november 2026) ----------
    Avläsningarna av vattenmätaren på påfyllningen och kalibreringarna med
@@ -1403,16 +1401,14 @@ function vDam(){
     projEta=etaStr(Math.max(t,tv));}
   else if(net<-0.01){const t=usableVol(V)/(-net); proj=`Sjunker ≈ ${fmtDur(t)} till lägsta driftnivå`; projEta=etaStr(t);}
   else proj='I det närmaste i balans';
-  const wh=hFromTape(damTape, dam.horn), wv=volAt(Math.max(0,Math.min(DAM.hMax,wh)));
-  const pk=kantPkt(dam.horn), tmax=tapeMax(dam.horn);
   return topbar('Vattenbalans','Damm-koll — magasinet vid Råda ås')+`<div class="view">
-   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Volymen räknas ur byggritningen. Krönet och snorkeln är inmätta mot vattenytan ${KANT.datum}. ${real?'<b style="color:var(--text)">Uttaget läses inte ur styrsystemet än</b>, så beräkningen tar bara hänsyn till påfyllning och läckage — kalibrera om med måttbandet efter varje körning.':'Uttaget kommer från driftdatan;'} Påfyllning och kalibrering matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
+   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Volymen räknas ur byggritningen. Krönet och snorkeln är inmätta mot vattenytan ${KANT.datum}. ${real?'<b style="color:var(--text)">Uttaget läses inte ur styrsystemet än</b>, så beräkningen tar bara hänsyn till påfyllning och läckage — mät med måttbandet efter varje körning.':'Uttaget kommer från driftdatan;'} Vattenmätaren och måttbandet matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
    ${dammErr?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${dammErr}</b></div></div>`:''}
-   ${real&&!kalibList().length?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>Ingen kalibrering är sparad än.</b> <span class="muted small">Volymen nedan är ett exempel tills någon mätt med måttbandet och sparat under Kalibrera.</span></div></div>`:''}
+   ${real&&!kalibList().length?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>Ingen mätning med måttband är sparad än.</b> <span class="muted small">Volymen nedan är ett exempel tills någon mätt vid snorkeln och sparat mätningen.</span></div></div>`:''}
 
    <div class="grid g-kpi">
      <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Aktuell volym</h3><div class="val">${Math.round(V).toLocaleString('sv-SE')}<small> m³</small></div><div class="bar ${pct>101?'amber':pct<30?'red':'green'}"><i style="width:${Math.min(100,pct)}%"></i></div><div class="foot">${pct}% av snorkelnivån (${Math.round(V100).toLocaleString('sv-SE')} m³)</div></div>
-     <div class="card kpi"><h3>${icon('sliders','#7dd3fc',15)} Nivå & måttband</h3><div class="val">${h.toFixed(2)}<small> m djup</small></div><div class="foot">längs duken: ${KANT.pkt.map(p=>`${p.id==='SN'?'snorkeln':p.kort} ${Math.max(0,Math.round(tapeAt(h,p.id)))}`).join(' · ')} cm</div></div>
+     <div class="card kpi"><h3>${icon('sliders','#7dd3fc',15)} Nivå & måttband</h3><div class="val">${h.toFixed(2)}<small> m djup</small></div><div class="foot">måttbandet vid snorkeln: ${Math.max(0,Math.round(tapeAt(h,'SN')))} cm (fullt ≈ ${Math.round(tapeAt(H_SNORKEL,'SN'))} cm)</div></div>
      <div class="card kpi"><h3>${icon('gauge','#7dd3fc',15)} Nettoflöde nu</h3><div class="val ${net<0?'down':'up'}">${net>=0?'+':''}${net.toFixed(1)}<small> m³/h</small></div><div class="foot">${proj}${projEta?' · '+projEta:''}</div></div>
      <div class="card kpi"><h3>${icon('clock','#7dd3fc',15)} Drifttid vid nuvarande uttag</h3><div class="val">≈ ${fmtDur(damDaysAt(totalWater())*24)}</div><div class="foot">uttag ${uttak.toFixed(0)} m³/h${pumpInfo().on?' · påfyllningen går':' · påfyllningen står'}</div></div>
    </div>
@@ -1422,40 +1418,18 @@ function vDam(){
        <h3>${icon('dam','#7dd3fc',15)} Tvärsnitt — vattennivå och bräddnivåer</h3>
        ${damSVG(h)}
      </div>
-     <div class="card dam-ctrl">
-       <h3>${icon('sliders','#7dd3fc',15)} Måttband — snabbkoll</h3>
-       <p class="muted small" style="margin:8px 0 2px">Dra måttbandet (0–${tmax} cm längs duken från krönet ${pk.var}) och se vilken volym det motsvarar.</p>
-       <input type="range" min="0" max="${tmax}" value="${damTape}" oninput="damSlide(this.value)">
-       <div class="readout">
-         <div><b id="ro_cm">${Math.round(damTape)} cm</b><span>längs duk</span></div>
-         <div><b id="ro_v">${Math.round(wv).toLocaleString('sv-SE')} m³</b><span>volym</span></div>
-         <div><b id="ro_p">${Math.round(wv/V100*100)} %</b><span>av 100 %</span></div>
-         <div><b id="ro_h">${Math.max(0,Math.min(DAM.hMax,wh)).toFixed(2)} m</b><span>djup</span></div>
-       </div>
-       <button class="linkbtn" style="margin-top:14px" onclick="damCalibFromTape()">Fyll i kalibreringen</button>
+     <div class="card dam-ctrl" id="mbkort">
+       ${mbCard(h)}
      </div>
    </div>
 
    <div class="dam-grid">
-     <div class="card dam-ctrl" id="kalibkort">
-       <h3>${icon('temp','#7dd3fc',15)} Kalibrera med måttband</h3>
-       <p class="muted small" style="margin:8px 0 2px">Mät nivån och spara. Kalibreringen sparas för hela gruppen och blir utgångsläget för beräkningen.</p>
-       <label>Mätt vid</label>
-       <div class="seg">${KANT.pkt.map(p=>`<button class="${dam.horn===p.id?'on':''}" onclick="damMode('${p.id}')">${p.kort}</button>`).join('')}</div>
-       <p class="muted small" style="margin:6px 0 0">${pk.band!=null
-         ?`Håll måttbandet rakt ner längs duken från krönets kant vid snorkeln. ${KANT.datum} var det ${pk.band} cm ner till ytan, och ytan låg 3–4 cm under snorkelns kant. Full damm är ungefär ${Math.round(tapeAt(H_SNORKEL,pk.id))} cm.`
-         :`Krönet ${pk.var} ligger ${Math.round(overSnorkel(pk.id))} cm över snorkelns kant (inmätt ${KANT.datum}). Duken är ojämn i hörnen, så mät helst vid snorkeln.`}</p>
-       <label>Mått längs duken (cm)</label>
-       <input type="text" inputmode="decimal" id="cal_cm" value="${esc(calForm.cm)}" placeholder="t.ex. ${tapeFor(h)}" oninput="calForm.cm=this.value">
-       <label>Mättes</label>
-       <input type="datetime-local" id="cal_ts" value="${calForm.ts||toLocalDT(Date.now())}" onchange="calForm.ts=this.value">
-       <button class="linkbtn" style="margin-top:14px" onclick="damCalib()">Spara kalibrering</button>
-       ${calForm.msg?`<p class="mt-msg ${calForm.err?'fel':''}">${calForm.msg}</p>`:''}
-       ${kalibInfo()}
-     </div>
-     <div class="card dam-ctrl">
+     <div class="card dam-ctrl" id="mtkort">
        <h3>${icon('drop','#7dd3fc',15)} Vattenmätaren — påfyllningen</h3>
        ${mtCard()}
+     </div>
+     <div class="card dam-ctrl" id="loggkort">
+       ${loggCard()}
      </div>
    </div>
 
@@ -1473,105 +1447,109 @@ function vDam(){
    <div class="note" style="margin-top:14px">⚠️ <b>Så snabbt töms den:</b> användbar volym ≈ ${Math.round(V100-floorVol()).toLocaleString('sv-SE')} m³. Vid fullt uttag — pumptaket <b>70 m³/h</b> (1 680 m³/dygn), som också är dammens högsta utflöde — räcker det ungefär <b>${((V100-floorVol())/(PUMP_MAX*24)).toFixed(1)} dygn</b>. Påfyllningspumpen ger bara 213 m³/dygn (≈9 m³/h), en bråkdel av uttaget, så den är en påfyllnad mellan passen snarare än i takt med kanonerna. Pumptaket är verkligt; lägsta driftnivå (${dam.floorH} m) och läckage är ännu exempel. Volymmodellen är exakt och förankrad i ritningen, och krönet och snorkeln är inmätta mot vattenytan.</div>
   </div>`;
 }
-function damSlide(cm){cm=+cm; const h=Math.max(0,Math.min(DAM.hMax,hFromTape(cm,dam.horn))); const v=volAt(h); damTape=cm;
-  const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t;};
-  set('ro_cm',Math.round(cm)+' cm'); set('ro_v',Math.round(v).toLocaleString('sv-SE')+' m³');
-  set('ro_p',Math.round(v/V100*100)+' %'); set('ro_h',h.toFixed(2)+' m');}
-// Måttbandsreglaget läses från det ställe som är valt. Krönet ligger upp till
-// 10 cm olika högt (ca 160 m³), så läses det från fel ställe blir
-// kalibreringen fel. Byter man ställe står vattnet kvar och reglaget flyttas.
-// Måttet hålls oavrundat när man byter — avrundat till hel cm kröp nivån
-// några m³ per byte.
-const tapeFor=h=>Math.max(0,Math.round(tapeAt(h,dam.horn)));
 const clampH=h=>Math.max(0,Math.min(DAM.hMax,h));
-// Snabbkollen är en lekyta och sparar inget själv: den fyller bara i
-// kalibreringen, så att ingen råkar ändra utgångsläget för hela gruppen.
-function damCalibFromTape(){calForm.cm=String(Math.round(damTape));calForm.msg='';render();
-  const e=document.getElementById('kalibkort'); if(e)e.scrollIntoView({behavior:'smooth',block:'center'});}
-function damMode(m){const h=clampH(hFromTape(damTape,dam.horn));dam.horn=m;
-  try{localStorage.setItem('snokollPunkt',m);}catch(e){}
-  damTape=Math.max(0,tapeAt(h,dam.horn));render();}
+const tapeFor=h=>Math.max(0,Math.round(tapeAt(h,'SN')));
 function damNum(k,v){const n=parseFloat(String(v).replace(',','.')); if(!isNaN(n)&&n>=0)dam[k]=n; render();}
 
 /* Formulären hålls i variabler, inte bara i fälten. Vyn ritas om när ny
    data kommer, och då skulle det man skrivit annars försvinna. */
-let calForm={cm:'',ts:'',msg:'',err:false};
-let mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,alla:false,sparar:false};
+let calForm={cm:'',ts:'',edit:null,msg:'',err:false};
+let mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,sparar:false};
+let loggFlik='avl', loggAlla=false;
 // "73 478,4" och "73478.4" ska båda gå: telefonens tangentbord ger komma.
 const talIn=s=>{const t=String(s??'').replace(/[\s  ]/g,'').replace(',','.');return /^\d+(\.\d+)?$/.test(t)?parseFloat(t):NaN;};
 const tidIn=s=>s?new Date(s).getTime():Date.now();
 const fmtM3=v=>Number.isFinite(v)?v.toLocaleString('sv-SE',{maximumFractionDigits:3}):'–';
 const fmtHel=v=>Number.isFinite(v)?Math.round(v).toLocaleString('sv-SE'):'–';
+const fmtCm=v=>num(v,v%1?1:0);
 const felText=e=>e&&e.code==='PERMISSION_DENIED'?'databasen sa nej (saknas behörighet, eller är reglerna inte utlagda?)':esc(e&&(e.code||e.message)||e);
+const tillKort=id=>{const e=document.getElementById(id); if(e)e.scrollIntoView({behavior:'smooth',block:'start'});};
+
+/* ---------- måttbandet vid snorkeln ----------
+   Förut fanns två rutor: en snabbkoll att dra i och en kalibrering där man
+   valde hörn. Det var förvirrande (Kristian, 25 november), och måttbandet
+   läses bara vid snorkeln, där duken är jämn. Nu är det en ruta: dra eller
+   skriv måttet och se vad det motsvarar. Det sparas först när man trycker
+   Spara, och då blir mätningen dammens nya utgångsläge för hela gruppen. */
+function mbCard(h){
+  const tmax=tapeMax('SN'), red=calForm.edit, ed=red&&dammData.kalib[red];
+  // Utan eget mått står reglaget där beräkningen säger att ytan är nu.
+  const cm=talIn(calForm.cm), visa=Number.isFinite(cm)?cm:Math.max(0,Math.round(tapeAt(h,'SN')));
+  const hh=clampH(hFromTape(visa,'SN')), v=volAt(hh);
+  const K=kalibList(), s=K[K.length-1];
+  return `<h3>${icon('sliders','#7dd3fc',15)} Måttbandet vid snorkeln</h3>
+    <p class="muted small" style="margin:8px 0 2px">Mät från krönets kant rakt ner längs duken till vattenytan, vid snorkeln. Full damm är ungefär ${Math.round(tapeAt(H_SNORKEL,'SN'))} cm. Dra i reglaget eller skriv måttet, så syns vad det motsvarar.</p>
+    ${red?`<p class="mt-msg">Ändrar mätningen ${fmtDT(ed&&ed.ts)}${ed&&ed.namn?' ('+esc(ed.namn)+')':''}.</p>`:''}
+    <input type="range" id="mb_range" min="0" max="${tmax}" value="${Math.round(visa)}" oninput="mbDra(this.value)">
+    <div class="readout">
+      <div><b id="ro_cm">${fmtCm(Math.round(visa*10)/10)} cm</b><span>längs duken</span></div>
+      <div><b id="ro_v">${fmtHel(v)} m³</b><span>volym</span></div>
+      <div><b id="ro_p">${Math.round(v/V100*100)} %</b><span>av 100 %</span></div>
+      <div><b id="ro_h">${hh.toFixed(2)} m</b><span>djup</span></div>
+    </div>
+    <label>Mått längs duken (cm)</label>
+    <input type="text" inputmode="decimal" id="mb_cm" value="${esc(calForm.cm)}" placeholder="enligt beräkningen ≈ ${tapeFor(h)}" oninput="mbSkriv(this.value)">
+    <label>Mättes</label>
+    <input type="datetime-local" id="mb_ts" value="${calForm.ts||toLocalDT(Date.now())}" onchange="calForm.ts=this.value">
+    <div class="row" style="margin-top:12px">${red
+      ?`<button class="linkbtn fram" onclick="damCalib()">Spara ändring</button><button class="linkbtn" onclick="kalibTaBort()">Ta bort</button><button class="linkbtn" onclick="mbAvbryt()">Avbryt</button>`
+      :`<button class="linkbtn fram" onclick="damCalib()">Spara mätningen</button>`}</div>
+    ${calForm.msg?`<p class="mt-msg ${calForm.err?'fel':''}">${calForm.msg}</p>`:''}
+    <p class="muted small" style="margin-top:12px"><b style="color:var(--text)">Vad händer när jag sparar?</b> Mätningen blir dammens nya utgångsläge för alla i gruppen. Sedan räknar appen vidare själv — plus det vattenmätaren fyller på, minus läckaget — tills nästa mätning. Att bara dra i reglaget sparar ingenting.</p>
+    <p class="muted small" style="margin-top:8px">${s
+      ?`Senaste mätningen: <b style="color:var(--text)">${fmtDT(s.ts)}, ${fmtCm(s.cm)} cm</b>${s.namn?' ('+esc(s.namn)+')':''}, alltså ${fmtHel(dam.V0)} m³. Sedan dess: påfyllt ${fmtHel(damFillSince(s.ts))} m³, läckage ${fmtHel((Date.now()-s.ts)/864e5*dam.leak)} m³${real?'':', uttag '+fmtHel(dam.drawn)+' m³'}. Alla mätningar finns i loggen.`
+      :`Ingen mätning sparad än.${real?'':' (I ?demo sparas den bara i minnet.)'}`}</p>`;
+}
+// Reglaget och fältet följer varandra utan att hela vyn ritas om — annars
+// tappar reglaget greppet mitt i draget.
+function mbVisa(cm){
+  const hh=clampH(hFromTape(cm,'SN')), v=volAt(hh), set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t;};
+  set('ro_cm',fmtCm(Math.round(cm*10)/10)+' cm'); set('ro_v',fmtHel(v)+' m³');
+  set('ro_p',Math.round(v/V100*100)+' %'); set('ro_h',hh.toFixed(2)+' m');
+}
+function mbDra(v){const cm=+v; damTape=cm; calForm.cm=String(cm); const f=document.getElementById('mb_cm'); if(f)f.value=calForm.cm; mbVisa(cm);}
+function mbSkriv(v){calForm.cm=v; const cm=talIn(v); if(!Number.isFinite(cm))return;
+  damTape=cm; const r=document.getElementById('mb_range'); if(r)r.value=Math.round(cm); mbVisa(cm);}
+function mbAvbryt(){calForm={cm:'',ts:'',edit:null,msg:'',err:false};render();}
+function mbRedigera(id){const k=dammData.kalib[id]; if(!k)return;
+  calForm={cm:fmtCm(k.cm),ts:toLocalDT(k.ts),edit:id,msg:'',err:false}; damTape=k.cm; render(); tillKort('mbkort');}
 
 async function damCalib(){
-  const cm=talIn(calForm.cm), ts=tidIn(calForm.ts), me=dammJag();
+  const cm=talIn(calForm.cm), ts=tidIn(calForm.ts), me=dammJag(), red=calForm.edit;
   const fel=t=>{calForm.msg=t;calForm.err=true;render();};
-  if(!Number.isFinite(cm)||cm>tapeMax(dam.horn))return fel(`Skriv måttet i cm längs duken, 0–${tapeMax(dam.horn)}.`);
+  if(!Number.isFinite(cm)||cm>tapeMax('SN'))return fel(`Skriv måttet i cm längs duken, 0–${tapeMax('SN')}.`);
   if(!Number.isFinite(ts))return fel('Tiden går inte att läsa.');
   if(ts>Date.now()+10*60e3)return fel('Tiden ligger i framtiden.');
   if(!me)return fel('Inte inloggad.');
+  // Den som mätte står kvar när någon annan rättar.
+  const gammal=red?dammData.kalib[red]:null;
   try{
-    await dammSkriv('kalib',null,{ts:Math.round(ts),cm:Math.round(cm*10)/10,punkt:dam.horn,uid:me.uid,namn:me.namn});
-    damTape=cm; calForm={cm:'',ts:'',msg:`Sparat: ${num(cm,cm%1?1:0)} cm ${kantPkt(dam.horn).var}, ${fmtDT(ts)}.`,err:false}; render();
+    await dammSkriv('kalib',red,{ts:Math.round(ts),cm:Math.round(cm*10)/10,punkt:'SN',uid:gammal?gammal.uid:me.uid,namn:gammal?gammal.namn:me.namn});
+    damTape=cm; calForm={cm:'',ts:'',edit:null,msg:`Sparat: ${fmtCm(cm)} cm vid snorkeln, ${fmtDT(ts)}.`,err:false}; render();
   }catch(e){fel('Kunde inte spara: '+felText(e));}
 }
-async function kalibTaBort(id){
-  const k=dammData.kalib[id]; if(!k)return;
-  if(!confirm(`Ta bort kalibreringen ${fmtDT(k.ts)}, ${num(k.cm,k.cm%1?1:0)} cm ${kantPkt(k.punkt).var}?`))return;
-  try{await dammSkriv('kalib',id,null);calForm.msg='';render();}
+async function kalibTaBort(){
+  const id=calForm.edit, k=id&&dammData.kalib[id]; if(!k)return;
+  if(!confirm(`Ta bort mätningen ${fmtDT(k.ts)}, ${fmtCm(k.cm)} cm?`))return;
+  try{await dammSkriv('kalib',id,null);calForm={cm:'',ts:'',edit:null,msg:'Borttagen.',err:false};render();}
   catch(e){calForm.msg='Kunde inte ta bort: '+felText(e);calForm.err=true;render();}
 }
 
-// Den senaste kalibreringen, och vad som hänt sedan dess.
-function kalibInfo(){
-  const K=kalibList(), s=K[K.length-1], p=pumpInfo();
-  if(!s)return `<p class="muted small" style="margin-top:10px">Ingen kalibrering sparad.${real?'':' (I ?demo sparas den bara i minnet.)'}</p>`;
-  const now=Date.now(), fill=damFillSince(s.ts,now), lak=(now-s.ts)/3600e3/24*dam.leak;
-  let ut=`<p class="muted small" style="margin-top:10px">Senaste kalibrering: <b style="color:var(--text)">${fmtDT(s.ts)}</b>, ${num(s.cm,s.cm%1?1:0)} cm ${kantPkt(s.punkt).var}${s.namn?' ('+esc(s.namn)+')':''}, alltså ${fmtHel(dam.V0)} m³. `+
-    `Sedan dess: påfyllt ${fmtHel(fill)} m³${avlasList().length?' enligt vattenmätaren'+(p.on?' (räknat framåt)':''):' — inga avläsningar'}, läckage ${fmtHel(lak)} m³${real?'':', uttag '+fmtHel(dam.drawn)+' m³'}.</p>`;
-  // Läckaget ur två kalibreringar: det som försvunnit är nivåskillnaden
-  // minus det mätaren fyllt på. Det kräver att kanonerna stått still emellan
-  // (uttaget läses inte än), och regn räknas in som minus.
-  if(K.length>=2){
-    const a=K[K.length-2], d=(s.ts-a.ts)/864e5;
-    if(d>=1){
-      const va=volAt(clampH(hFromTape(a.cm,a.punkt))), vb=dam.V0, f=avlasList().length?meterAt(s.ts)-meterAt(a.ts):null;
-      if(f!==null){const borta=va+f-vb;
-        ut+=`<p class="muted small" style="margin-top:8px"><b style="color:var(--text)">Mellan de två senaste kalibreringarna</b> (${num(d,1)} dygn) fyllde mätaren ${fmtHel(f)} m³ och nivån ändrades ${vb>=va?'+':'−'}${fmtHel(Math.abs(vb-va))} m³. Då försvann <b style="color:var(--text)">${fmtHel(borta)} m³, ${num(borta/d,1)} m³/dygn</b>: läckage, avdunstning och bräddning, minus regn. Har kanonerna gått emellan ingår uttaget också. Måttbandet ger ca ±10 m³${a.punkt!==s.punkt?', och mer när kalibreringarna gjorts på olika ställen':''}.</p>`;}
-    }
-  }
-  const sena=K.slice(-4).reverse();
-  ut+=`<table class="kron-tab mt-tab" style="margin-top:8px"><tr><th>Kalibreringar</th><th class="r">cm</th><th>Var</th><th class="r">m³</th><th></th></tr>`+
-    sena.map(k=>`<tr><td>${fmtDT(k.ts)}</td><td class="r">${num(k.cm,k.cm%1?1:0)}</td><td>${kantPkt(k.punkt).kort}</td><td class="r">${fmtHel(volAt(clampH(hFromTape(k.cm,k.punkt))))}</td>`+
-      `<td class="r">${dammFarAndra(k)?`<button class="xbtn" title="Ta bort" onclick="kalibTaBort('${esc(k.id)}')">✕</button>`:''}</td></tr>`).join('')+`</table>`;
-  return ut;
-}
-
-/* ---------- vattenmätaren ---------- */
+/* ---------- vattenmätaren ----------
+   Rutan är bara till för att läsa in. Allt som sparats syns i loggen bredvid,
+   där det också går att rätta och ladda ner. */
 const sasong=ts=>{const d=new Date(ts);return d.getMonth()>=6?d.getFullYear():d.getFullYear()-1;};  // säsongen börjar 1 juli
 const TYPTXT={start:'Start',stopp:'Stopp',avl:'Avläst'};
-// Varje avläsning med påfyllt sedan säsongens första och takten sedan förra,
-// som kolumnerna i Excel.
-function mtRader(L=avlasList()){
-  let y=null, bas=0;
-  return L.map((a,i)=>{const f=L[i-1];
-    if(sasong(a.ts)!==y){y=sasong(a.ts);bas=a.m3;}
-    const sammaS=f&&sasong(f.ts)===y, dt=sammaS?(a.ts-f.ts)/3600e3:0, d=sammaS?a.m3-f.m3:0;
-    return Object.assign({},a,{sasong:y,pafyllt:a.m3-bas,takt:d>0&&dt>0?d/dt:null});});
-}
 function mtCard(){
   const L=avlasList(), p=pumpInfo(L), now=Date.now(), est=meterAt(now,L);
-  const R=mtRader(L), ar=R.length?(R.some(r=>r.sasong===sasong(now))?sasong(now):R[R.length-1].sasong):null;
-  const visa=R.filter(r=>r.sasong===ar).reverse(), kort=mtForm.alla?visa:visa.slice(0,8);
-  const startA=p.on?[...L].reverse().find(a=>a.typ==='start'):null;
+  const startA=p.on?[...L].reverse().find(a=>a.typ==='start'):null, sist=L[L.length-1];
   const status=!L.length?'Inga avläsningar än. Läs av mätaren när pumpen startar och stoppar, och gärna någon gång emellan.'
     :p.on?`<b style="color:var(--text)">Påfyllningen går</b> sedan ${fmtDT(p.since)}${startA?`, ≈ ${fmtHel(est-startA.m3)} m³ sedan start`:''}. Takt ${num(p.rate,2)} m³/h${p.uppmatt?' enligt mätaren':' (reservtakten — ingen avläsning med pumpen igång än)'}.`
     :`<b style="color:var(--text)">Påfyllningen står</b>${p.since?' sedan '+fmtDT(p.since):''}.`;
   const red=mtForm.edit, ed=red&&dammData.avlas[red];
   const knappar=red
     ?`<div class="seg" style="margin-top:12px">${['start','stopp','avl'].map(t=>`<button class="${mtForm.typ===t?'on':''}" onclick="mtForm.typ='${t}';render()">${TYPTXT[t]}</button>`).join('')}</div>
-      <div class="row" style="margin-top:12px"><button class="linkbtn" onclick="mtSpara(mtForm.typ)">Spara ändring</button><button class="linkbtn" onclick="mtTaBort()">Ta bort</button><button class="linkbtn" onclick="mtAvbryt()">Avbryt</button></div>`
+      <div class="row" style="margin-top:12px"><button class="linkbtn fram" onclick="mtSpara(mtForm.typ)">Spara ändring</button><button class="linkbtn" onclick="mtTaBort()">Ta bort</button><button class="linkbtn" onclick="mtAvbryt()">Avbryt</button></div>`
     :`<div class="row" style="margin-top:12px">${['start','stopp','avl'].map(t=>`<button class="linkbtn${(t==='start'&&!p.on)||(t==='stopp'&&p.on)?' fram':''}" ${mtForm.sparar?'disabled':''} onclick="mtSpara('${t}')">${t==='avl'?'Avläsning':TYPTXT[t]}</button>`).join('')}</div>`;
   return `<p class="muted small" style="margin:8px 0 0">${status}</p>
     ${red?`<p class="mt-msg">Ändrar avläsningen ${fmtDT(ed&&ed.ts)}${ed&&ed.namn?' ('+esc(ed.namn)+')':''}.</p>`:''}
@@ -1581,12 +1559,7 @@ function mtCard(){
     <input type="datetime-local" id="mt_ts" value="${mtForm.ts||toLocalDT(now)}" onchange="mtForm.ts=this.value">
     ${knappar}
     ${mtForm.msg?`<p class="mt-msg ${mtForm.err?'fel':''}">${mtForm.msg}</p>`:''}
-    ${visa.length?`<table class="kron-tab mt-tab" style="margin-top:14px">
-      <tr><th>Avläst</th><th></th><th class="r">Ställning</th><th class="r">Påfyllt</th><th class="r">m³/h</th></tr>
-      ${kort.map(r=>`<tr class="${dammFarAndra(r)?'kan':''}" ${dammFarAndra(r)?`onclick="mtRedigera('${esc(r.id)}')" title="Rätta eller ta bort"`:''}><td>${fmtDT(r.ts)}</td><td>${TYPTXT[r.typ]||''}</td><td class="r">${fmtM3(r.m3)}</td><td class="r">${fmtHel(r.pafyllt)}</td><td class="r">${r.takt===null?'–':num(r.takt,2)}</td></tr>`).join('')}
-    </table>
-    <p class="muted small" style="margin-top:6px">Påfyllt räknas från säsongens första avläsning${ar!==null?` (${ar}/${String(ar+1).slice(2)})`:''}. Tryck på en rad för att rätta den.</p>
-    <div class="row" style="margin-top:6px">${visa.length>8?`<button class="linkbtn" onclick="mtForm.alla=!mtForm.alla;render()">${mtForm.alla?'Visa färre':'Visa alla '+visa.length}</button>`:''}<button class="linkbtn" onclick="mtExcel()">Ladda ner för Excel</button></div>`:''}
+    ${sist&&!red?`<p class="muted small" style="margin-top:10px">Senast: ${fmtDT(sist.ts)}, ${TYPTXT[sist.typ].toLowerCase()} ${fmtM3(sist.m3)} m³${sist.namn?' ('+esc(sist.namn)+')':''}. Alla avläsningar finns i loggen.</p>`:''}
     <label>Reservtakt när avläsningar saknas (m³/dygn)</label>
     <input type="number" id="dam_rate" value="${dam.fillRate}" onchange="damNum('fillRate',this.value)">
     <label>Läckage / avdunstning (m³/dygn)</label>
@@ -1594,8 +1567,7 @@ function mtCard(){
     <p class="muted small" style="margin-top:10px">Påfyllningen ger ca 9 m³/h (214 m³/dygn) — den är en påfyllnad mellan passen, inte i takt med snökanonernas uttag (upp till 70 m³/h).</p>`;
 }
 function mtRedigera(id){const a=dammData.avlas[id]; if(!a)return;
-  mtForm=Object.assign(mtForm,{edit:id,m3:fmtM3(a.m3),ts:toLocalDT(a.ts),typ:a.typ,msg:'',err:false});render();
-  const e=document.getElementById('mt_m3'); if(e)e.scrollIntoView({behavior:'smooth',block:'center'});}
+  mtForm=Object.assign(mtForm,{edit:id,m3:fmtM3(a.m3),ts:toLocalDT(a.ts),typ:a.typ,msg:'',err:false});render(); tillKort('mtkort');}
 function mtAvbryt(){mtForm=Object.assign(mtForm,{edit:null,m3:'',ts:'',msg:'',err:false});render();}
 async function mtSpara(typ){
   const fel=t=>{mtForm.msg=t;mtForm.err=true;mtForm.sparar=false;render();};
@@ -1618,7 +1590,8 @@ async function mtSpara(typ){
   mtForm.sparar=true; mtForm.msg='Sparar …'; mtForm.err=false; render();
   try{
     await dammSkriv('avlas',mtForm.edit,data);
-    mtForm=Object.assign(mtForm,{edit:null,m3:'',ts:'',sparar:false,err:false,msg:`Sparat: ${TYPTXT[typ].toLowerCase()} ${fmtM3(data.m3)} m³, ${fmtDT(data.ts)}.`});render();
+    mtForm=Object.assign(mtForm,{edit:null,m3:'',ts:'',sparar:false,err:false,msg:`Sparat: ${TYPTXT[typ].toLowerCase()} ${fmtM3(data.m3)} m³, ${fmtDT(data.ts)}.`});
+    loggFlik='avl'; render();
   }catch(e){fel('Kunde inte spara: '+felText(e));}
 }
 async function mtTaBort(){const id=mtForm.edit, a=id&&dammData.avlas[id]; if(!a)return;
@@ -1626,19 +1599,98 @@ async function mtTaBort(){const id=mtForm.edit, a=id&&dammData.avlas[id]; if(!a)
   try{await dammSkriv('avlas',id,null);mtForm=Object.assign(mtForm,{edit:null,m3:'',ts:'',msg:'Borttagen.',err:false});render();}
   catch(e){mtForm.msg='Kunde inte ta bort: '+felText(e);mtForm.err=true;render();}
 }
+
+/* ---------- loggen ----------
+   Allt som sparats, i tre flikar: avläsningarna (som kolumnerna i Excel),
+   pumppassen (start till stopp) och mätningarna med måttband. Varje flik går
+   att ladda ner som en fil för Excel. Förut låg avläsningarna under
+   knapparna i inmatningsrutan och var svåra att hitta. */
+// Varje avläsning med påfyllt sedan säsongens första och takten sedan förra.
+function mtRader(L=avlasList()){
+  let y=null, bas=0;
+  return L.map((a,i)=>{const f=L[i-1];
+    if(sasong(a.ts)!==y){y=sasong(a.ts);bas=a.m3;}
+    const sammaS=f&&sasong(f.ts)===y, dt=sammaS?(a.ts-f.ts)/3600e3:0, d=sammaS?a.m3-f.m3:0;
+    return Object.assign({},a,{sasong:y,pafyllt:a.m3-bas,takt:d>0&&dt>0?d/dt:null});});
+}
+// Pumppassen: från en start till nästa stopp. Ett pass som inte stoppats än
+// räknas fram till nu med takten.
+function pumpPass(L=avlasList()){
+  const P=[]; let cur=null;
+  for(const a of L){
+    if(a.typ==='start'){if(!cur)cur={start:a};}
+    else if(a.typ==='stopp'){P.push(Object.assign(cur||{start:null},{stopp:a}));cur=null;}
+  }
+  if(cur)P.push(cur);
+  const now=Date.now();
+  return P.map(p=>{const s=p.start, e=p.stopp||null, t2=e?e.ts:now, m2=e?e.m3:meterAt(now,L);
+    const h=s?(t2-s.ts)/3600e3:null, m=s&&m2!=null?m2-s.m3:null;
+    return {id:(s||e).id, ts:s?s.ts:e.ts, start:s, stopp:e, pagar:!e, h, m3:m, takt:h>0&&m!=null?m/h:null, sasong:sasong(s?s.ts:e.ts)};});
+}
+const fmtTim=h=>!Number.isFinite(h)?'–':h>=48?num(h/24,1)+' d':num(h,1)+' h';
+function loggCard(){
+  const now=Date.now(), nu=sasong(now);
+  const urval=R=>{if(loggAlla)return R.slice().reverse();
+    const ar=R.some(r=>r.sasong===nu)?nu:(R.length?R[R.length-1].sasong:nu);
+    return R.filter(r=>r.sasong===ar).reverse().slice(0,10);};
+  const radAttr=(x,fn)=>dammFarAndra(x)?`class="kan" onclick="${fn}('${esc(x.id)}')" title="Rätta eller ta bort"`:'';
+  let tab='', antal=0, visat=0, tips='', extra='';
+  if(loggFlik==='avl'){
+    const R=mtRader(); antal=R.length; const V=urval(R); visat=V.length;
+    tab=V.length?`<tr><th>Avläst</th><th></th><th class="r">Ställning</th><th class="r">Påfyllt</th><th class="r">m³/h</th></tr>`+
+      V.map(r=>`<tr ${radAttr(r,'mtRedigera')}><td>${fmtDT(r.ts)}</td><td>${TYPTXT[r.typ]||''}</td><td class="r">${fmtM3(r.m3)}</td><td class="r">${fmtHel(r.pafyllt)}</td><td class="r">${r.takt===null?'–':num(r.takt,2)}</td></tr>`).join(''):'';
+    tips='Påfyllt räknas från säsongens första avläsning. Tryck på en rad för att rätta eller ta bort den.';
+  }else if(loggFlik==='pass'){
+    const R=pumpPass(); antal=R.length; const V=urval(R); visat=V.length;
+    tab=V.length?`<tr><th>Start</th><th>Stopp</th><th class="r">Tid</th><th class="r">m³</th><th class="r">m³/h</th></tr>`+
+      V.map(p=>`<tr><td>${p.start?fmtDT(p.start.ts):'?'}</td><td>${p.pagar?'<b style="color:var(--text)">går</b>':fmtDT(p.stopp.ts)}</td><td class="r">${fmtTim(p.h)}</td><td class="r">${p.pagar?'≈ ':''}${fmtHel(p.m3)}</td><td class="r">${p.takt===null?'–':num(p.takt,2)}</td></tr>`).join(''):'';
+    tips='Ett pass går från Start till Stopp. Pågår det räknas det fram till nu.';
+  }else{
+    const K=kalibList().map(k=>Object.assign({},k,{sasong:sasong(k.ts),v:volAt(clampH(hFromTape(k.cm,k.punkt)))}));
+    antal=K.length; const V=urval(K); visat=V.length;
+    tab=V.length?`<tr><th>Mättes</th><th class="r">cm</th><th class="r">m³</th><th class="r">%</th><th>Av</th></tr>`+
+      V.map(k=>`<tr ${radAttr(k,'mbRedigera')}><td>${fmtDT(k.ts)}</td><td class="r">${fmtCm(k.cm)}</td><td class="r">${fmtHel(k.v)}</td><td class="r">${Math.round(k.v/V100*100)}</td><td>${esc((k.namn||'').split(' ')[0])}</td></tr>`).join(''):'';
+    tips='Tryck på en rad för att ändra mått eller tid, eller ta bort mätningen.'; extra=lackage();
+  }
+  const fl=[['avl','Avläsningar'],['pass','Pumppass'],['mb','Måttband']];
+  return `<h3>${icon('clock','#7dd3fc',15)} Loggen — påfyllning och måttband</h3>
+    <div class="seg" style="margin-top:10px">${fl.map(([k,t])=>`<button class="${loggFlik===k?'on':''}" onclick="loggFlik='${k}';render()">${t}</button>`).join('')}</div>
+    ${tab?`<table class="kron-tab mt-tab" style="margin-top:12px">${tab}</table>`:`<p class="muted small" style="margin-top:12px">Inget sparat än.</p>`}
+    <p class="muted small" style="margin-top:8px">${tips}</p>${extra}
+    <div class="row" style="margin-top:8px">${loggAlla||antal>visat?`<button class="linkbtn" onclick="loggAlla=!loggAlla;render()">${loggAlla?'Bara den här säsongen':'Visa alla '+antal}</button>`:''}${antal?`<button class="linkbtn" onclick="loggExcel()">Ladda ner för Excel</button>`:''}</div>`;
+}
+// Läckaget ur de två senaste mätningarna: det som försvunnit är
+// nivåskillnaden minus det mätaren fyllt på. Det kräver att kanonerna stått
+// still emellan (uttaget läses inte än), och regn räknas in som minus.
+function lackage(){
+  const K=kalibList(); if(K.length<2||!avlasList().length)return '';
+  const a=K[K.length-2], s=K[K.length-1], d=(s.ts-a.ts)/864e5; if(d<1)return '';
+  const va=volAt(clampH(hFromTape(a.cm,a.punkt))), vb=volAt(clampH(hFromTape(s.cm,s.punkt))), f=meterAt(s.ts)-meterAt(a.ts), borta=va+f-vb;
+  return `<p class="muted small" style="margin-top:8px"><b style="color:var(--text)">Mellan de två senaste mätningarna</b> (${num(d,1)} dygn) fyllde mätaren ${fmtHel(f)} m³ och nivån ändrades ${vb>=va?'+':'−'}${fmtHel(Math.abs(vb-va))} m³. Då försvann <b style="color:var(--text)">${fmtHel(borta)} m³, ${num(borta/d,1)} m³/dygn</b>: läckage, avdunstning och bräddning, minus regn. Har kanonerna gått emellan ingår uttaget också. Måttbandet ger ca ±10 m³.</p>`;
+}
 // En fil som Excel öppnar direkt: semikolon, decimalkomma och en BOM så att
-// å, ä och ö blir rätt.
-function mtExcel(){
+// å, ä och ö blir rätt. Filen gäller fliken som är vald, alla säsonger.
+function loggExcel(){
   const c=v=>{const s=String(v??'');return /[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
   const tal=(v,d)=>Number.isFinite(v)?v.toFixed(d).replace('.',','):'';
   const p2=n=>String(n).padStart(2,'0');
-  const rad=[['Datum','Tid','Händelse','Mätarställning (m³)','Påfyllt sedan säsongens början (m³)','Takt sedan förra (m³/h)','m³/dygn','Avläst av']]
-    .concat(mtRader().map(r=>{const d=new Date(r.ts);
-      return [`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`,`${p2(d.getHours())}:${p2(d.getMinutes())}`,TYPTXT[r.typ]||r.typ,
-        tal(r.m3,3),tal(r.pafyllt,3),tal(r.takt,2),tal(r.takt===null?NaN:r.takt*24,1),r.namn||''];}));
+  const dag=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;};
+  const kl=ts=>{const d=new Date(ts);return `${p2(d.getHours())}:${p2(d.getMinutes())}`;};
+  let rad, namn;
+  if(loggFlik==='pass'){namn='pumppass';
+    rad=[['Start datum','Start tid','Stopp datum','Stopp tid','Timmar','Påfyllt (m³)','Takt (m³/h)','m³/dygn']]
+      .concat(pumpPass().map(p=>[p.start?dag(p.start.ts):'',p.start?kl(p.start.ts):'',p.pagar?'går':dag(p.stopp.ts),p.pagar?'':kl(p.stopp.ts),
+        tal(p.h,2),tal(p.m3,3),tal(p.takt,2),tal(p.takt===null?NaN:p.takt*24,1)]));}
+  else if(loggFlik==='mb'){namn='mattband';
+    rad=[['Datum','Tid','Måttband vid snorkeln (cm)','Volym (m³)','Andel av 100 %','Mätt av']]
+      .concat(kalibList().map(k=>{const v=volAt(clampH(hFromTape(k.cm,k.punkt)));
+        return [dag(k.ts),kl(k.ts),tal(k.cm,1),tal(v,0),tal(v/V100*100,0),k.namn||''];}));}
+  else{namn='vattenmataren';
+    rad=[['Datum','Tid','Händelse','Mätarställning (m³)','Påfyllt sedan säsongens början (m³)','Takt sedan förra (m³/h)','m³/dygn','Avläst av']]
+      .concat(mtRader().map(r=>[dag(r.ts),kl(r.ts),TYPTXT[r.typ]||r.typ,tal(r.m3,3),tal(r.pafyllt,3),tal(r.takt,2),tal(r.takt===null?NaN:r.takt*24,1),r.namn||'']));}
   const blob=new Blob(['﻿'+rad.map(r=>r.map(c).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a'), d=new Date();
-  a.href=URL.createObjectURL(blob); a.download=`vattenmataren-${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}.csv`;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`${namn}-${dag(Date.now())}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000);
 }
 
@@ -2067,7 +2119,7 @@ function clearApp(){
   if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;
     histLive={};histOld={};histOldRange=null;histRange=24;histTok++;histLoading=false;histErr='';histInfo='';
     dammData={avlas:{},kalib:{}};dammErr='';damSync();
-    calForm={cm:'',ts:'',msg:'',err:false};mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,alla:false,sparar:false};}
+    calForm={cm:'',ts:'',edit:null,msg:'',err:false};mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,sparar:false};loggAlla=false;}
   isAdmin=false;myKey='';members=null;memMsg='';memForm={email:'',name:'',role:'viewer'};
   if(current==='members')current='overview';
 }

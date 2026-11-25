@@ -56,10 +56,13 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   enhet står vid. Körfönstret är fortfarande ett exempel (märkt så), och
   dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönet
   och snorkeln är inmätta mot vattenytan (24 november): 100 % är snorkeln,
-  3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Kalibreringen mäts
-  helst vid snorkeln, se `docs/damm-matningar.md`. Avläsningarna av
+  3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Måttbandet läses
+  bara vid snorkeln, se `docs/damm-matningar.md`. Avläsningarna av
   vattenmätaren (start, stopp, emellan) förs i appen i stället för i Excel,
-  och påfyllningen räknas ur dem. Kalibreringarna sparas gemensamt.
+  och påfyllningen räknas ur dem. Mätningarna med måttband sparas
+  gemensamt. Loggen i Damm-koll visar avläsningar, pumppass och mätningar,
+  och varje flik går att ladda ner för Excel. Säg "mätning", inte
+  "kalibrering", i det som syns — ordet förvirrade.
 - **Inte gjort:** svar från leverantören och läs-only-kontot; hitta
   flödesmätaren FT01 bland kolumnerna (kräver att pumpen går); prova en
   omstart av styrdatorn; backup av styrdatorn.
