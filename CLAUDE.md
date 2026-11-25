@@ -32,7 +32,8 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
-- **Bryggan** (`bridge/brygga.ps1`, version 4) går på styrdatorn som en
+- **Bryggan** (`bridge/brygga.ps1`, version 4 på styrdatorn, version 5
+  byggd 25 november men inte utlagd) går på styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
   inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
@@ -49,7 +50,16 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   dygnet; längre perioder (3 dygn, vecka, månad, säsong) hämtas en gång när
   man väljer dem över kurvorna (`setHistRange`, `loadHist`) och visas som
   medelvärden, högst 600 punkter. Valet sparas medvetet inte till nästa
-  gång appen öppnas.
+  gång appen öppnas. Från bryggans version 5 har varje punkt också `e`:
+  luft och våttemperatur för de enheter styrsystemet hört de senaste 15
+  minuterna (runt 15 MB per säsong). Lägg inte till fler fält per enhet
+  utan att räkna på vad en hämtning av säsongen då kostar.
+- **Gamla värden får aldrig se live ut.** Ett kort vars enhet är tyst, eller
+  allt när bryggan tystnat, får klassen `old`: streckad kant, nedtonade
+  siffror och en klocka med åldern (`agoHTML`). Gult och rött är för larm,
+  inte för gammal data. Chippen säger "Hörs"/"Tyst" — vi vet inte om en
+  enhet kör, och "Kontakt" i blått lästes som att den gjorde det. Värden med
+  historik går att trycka på (`histAttr`, `openHist`).
 - **Appen** loggar in med Google, visar riktig data och går att installera på
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
   siffror: uppmätt flöde, driftläge, dyssteg, strypning och vilken brunn en

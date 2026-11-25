@@ -315,6 +315,28 @@ canvas{max-width:100%}
 .seg.sm{max-width:100%;overflow-x:auto}
 .seg.sm button{padding:6px 10px;flex:0 0 auto}
 .histbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:10px}
+/* Historikrutan: glider upp nerifrån på telefon, mitt på skärmen på dator. */
+.sheet-bg{position:fixed;inset:0;z-index:60;background:#020812b3;display:flex;align-items:flex-end;justify-content:center;
+  padding:0 max(0px,env(safe-area-inset-right,0px)) 0 max(0px,env(safe-area-inset-left,0px))}
+.sheet{width:100%;max-width:720px;background:#0f1c2e;border:1px solid var(--border);border-bottom:0;border-radius:16px 16px 0 0;
+  padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px));animation:sheetUp .2s ease}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sheet-head h3{margin:0;font-size:1rem;font-weight:700}
+@keyframes sheetUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+@media(min-width:861px){.sheet-bg{align-items:center}.sheet{border-radius:16px;border-bottom:1px solid var(--border)}}
+/* Värden som går att trycka på för att se historiken. */
+.histable{cursor:pointer;border-radius:6px}
+.histable:hover{background:#ffffff0d}
+.histable .m-v,.histable.val{text-decoration:underline dotted #7dd3fc66;text-underline-offset:4px}
+/* Inte live: nedtonat, streckad kant, klocka med åldern. */
+.ago{display:inline-flex;align-items:center;gap:4px;color:var(--muted2);font-size:.73rem;font-weight:500}
+.card.old{border:1px dashed #8aa2c459;background:#0c1422}
+.card.old .m-v,.card.old .val,.card.old .metric .m-v small,.card.old .val small{color:#6f7f96}
+.card.old .u-name{color:#a7b4c8}
+.card.old .fan,.card.old svg[role=img]{opacity:.55}
+.livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 0 #34d39988;animation:livepulse 2s infinite}
+@keyframes livepulse{0%{box-shadow:0 0 0 0 #34d39977}70%{box-shadow:0 0 0 6px #34d39900}100%{box-shadow:0 0 0 0 #34d39900}}
+@media(prefers-reduced-motion:reduce){.livedot,.sheet{animation:none}}
 .readout{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px}
 .readout div b{display:block;font-size:1.1rem;color:var(--text)}
 .readout div span{color:var(--muted2);font-size:.7rem}
@@ -496,7 +518,9 @@ let histRange=24, histLive={}, histOld={}, histOldRange=null, histOldAt=0, histT
 // kan lägga två punkter i samma fack och lämna ett hål bredvid.
 const keyMs=k=>Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8),+k.slice(8,10),+k.slice(10,12));
 const HIST_F=['t','tw','tryckUt','k125','k126'];
+let histUnitF=new Set();
 function rebuildHist(){
+  histUnitF=new Set();
   const all=Object.assign({},histRange===24?{}:histOld,histLive);
   const keys=Object.keys(all).filter(k=>/^\d{12}$/.test(k)&&all[k]).sort();
   const now=Date.now();
@@ -510,13 +534,18 @@ function rebuildHist(){
   const n=Math.ceil((now-from)/step)+1, acc=Array.from({length:n},()=>({c:{},s:{}}));
   for(const k of keys){
     const i=Math.floor((keyMs(k)-from)/step); if(i<0||i>=n)continue;
-    const p=all[k], a=acc[i];
-    for(const f of HIST_F)if(Number.isFinite(p[f])){a.s[f]=(a.s[f]||0)+p[f];a.c[f]=(a.c[f]||0)+1;}
+    const p=all[k], a=acc[i], add=(f,v)=>{if(Number.isFinite(v)){a.s[f]=(a.s[f]||0)+v;a.c[f]=(a.c[f]||0)+1;}};
+    for(const f of HIST_F)add(f,p[f]);
+    // Enheternas värden (bryggan 5) ligger under e, och plattas ut till
+    // "SGC400-3.tw" — samma namn som historikrutan frågar efter.
+    if(p.e)for(const [u,o] of Object.entries(p.e))if(o)for(const [f,v] of Object.entries(o))add(u+'.'+f,v);
+    for(const f in a.c)if(!HIST_F.includes(f))histUnitF.add(f);
   }
   // Tomma fack blir hål i kurvan — där har bryggan inte hörts. Tomt i början
   // betyder bara att historiken inte gick så långt tillbaka, och klipps bort.
   let pts=acc.map((a,i)=>{const o={ts:from+i*step,n:Object.keys(a.c).length};
-    for(const f of HIST_F)o[f]=a.c[f]?+(a.s[f]/a.c[f]).toFixed(2):null;return o;});
+    for(const f of HIST_F)o[f]=a.c[f]?+(a.s[f]/a.c[f]).toFixed(2):null;
+    for(const f of histUnitF)o[f]=a.c[f]?+(a.s[f]/a.c[f]).toFixed(2):null;return o;});
   // Det sista facket är det pågående, som bryggan inte hunnit fylla än.
   if(pts.length&&!pts[pts.length-1].n)pts.pop();
   const first=pts.findIndex(p=>p.n);
@@ -529,6 +558,7 @@ function rebuildHist(){
   if(step>SLOT&&histPts.length)info.push('medelvärde per '+(step<3600e3?step/60e3+' min':(step/3600e3).toLocaleString('sv-SE',{maximumFractionDigits:1})+' h'));
   histInfo=info.join(' · ');
   liveRefresh();
+  drawSheet();
 }
 const fmtDay=d=>d.getDate()+' '+['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'][d.getMonth()];
 function setHistRange(h){
@@ -542,6 +572,70 @@ function setHistRange(h){
     ()=>{if(tok===histTok)histErr='Kunde inte hämta historiken. Försök igen.';})
     .finally(()=>{if(tok!==histTok)return;histLoading=false;rebuildHist();});
 }
+/* Historikrutan (25 november 2026): tryck på ett värde och se dess kurva.
+   Samma periodval och samma hämtning som kurvorna i vyerna. Enheternas
+   värden finns i historiken först från bryggans version 5. */
+let sheet=null;   // {f:'tw' eller 'SGC400-3.tw', title, unit}
+function openHist(f,title,unit){
+  if(!real)return;
+  sheet={f,title,unit};
+  let el=document.getElementById('histSheet');
+  if(!el){el=document.createElement('div');el.id='histSheet';el.className='sheet-bg';
+    el.onclick=e=>{if(e.target===el)closeHist()};document.body.appendChild(el);}
+  el.innerHTML=`<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+    <div class="sheet-head"><h3>${esc(title)}</h3><button class="linkbtn" onclick="closeHist()" aria-label="Stäng">Stäng</button></div>
+    <div id="sheetSeg"></div><div id="sheetBody"></div></div>`;
+  document.addEventListener('keydown',sheetKey);
+  drawSheet();
+}
+function sheetKey(e){if(e.key==='Escape')closeHist()}
+function closeHist(){
+  sheet=null; document.removeEventListener('keydown',sheetKey);
+  if(charts.cHist){charts.cHist.destroy();delete charts.cHist;}
+  const el=document.getElementById('histSheet'); if(el)el.remove();
+}
+function drawSheet(){
+  if(!sheet)return;
+  const seg=document.getElementById('sheetSeg'), body=document.getElementById('sheetBody'); if(!seg||!body)return;
+  seg.innerHTML=histSeg();
+  // Klipp bort tomt i början: för en enhet är det tiden innan bryggan
+  // började spara enheternas värden, inte ett avbrott.
+  const first=histPts.findIndex(p=>Number.isFinite(p[sheet.f]));
+  const pts=first<0?[]:histPts.slice(first);
+  if(pts.length<2){
+    if(charts.cHist){charts.cHist.destroy();delete charts.cHist;}
+    body.innerHTML=`<p class="muted small" style="margin-top:14px;line-height:1.6">${histLoading?'Hämtar …':sheet.f.includes('.')
+      ?'Ingen historik för den här enheten under perioden. Enheternas värden sparas sedan bryggans version 5, och bara när styrsystemet hör enheten.'
+      :'Ingen historik för det här värdet under perioden.'}</p>`;
+    return;
+  }
+  if(!document.getElementById('cHist'))body.innerHTML='<div class="chartbox" style="margin-top:12px"><canvas id="cHist"></canvas></div>';
+  const ts=pts.map(x=>new Date(x.ts)), d=pts.map(x=>Number.isFinite(x[sheet.f])?x[sheet.f]:null);
+  const ds=[series(d,sheet.title,'#38bdf8')];
+  if(/(^|\.)tw$/.test(sheet.f))ds.push(flat(ts.length,FTHRESH,'Startgräns','#fbbf2499'));
+  chart('cHist',ts,ds,chOpts(ts,sheet.unit,histTick(ts)));
+}
+// Ett värde som går att trycka på. stopPropagation: på enhetskortet öppnar
+// ett tryck annars hela enhetsvyn i stället.
+// Klassen "histable" (prickad understrykning) läggs till för hand där
+// elementet redan har en klass.
+const histAttr=(f,title,unit)=>real?` onclick="event.stopPropagation();openHist('${esc(f)}','${esc(title)}','${esc(unit)}')" title="Visa historiken"`:'';
+const HC=real?' histable':'';
+
+/* Gamla värden. Ett värde som inte är live tonas ned och får en klocka med
+   hur gammalt det är — det ska inte gå att tro att en kanon kör för att
+   dess sista siffror står kvar. Gult och rött sparas till larm. */
+const bridgeOld=()=>real&&(!lastData||(Date.now()-lastData)/1000>STALE_S);
+function ago(t){
+  if(!t)return 'okänt när';
+  const m=Math.round((Date.now()-t)/60000);
+  if(m<2)return 'nyss';
+  if(m<60)return 'för '+m+' min sedan';
+  if(m<48*60)return 'för '+Math.round(m/60)+' h sedan';
+  return 'för '+Math.round(m/1440)+' dygn sedan';
+}
+const agoHTML=(t,abs)=>`<span class="ago" title="${esc(abs||'')}">${icon('clock','currentColor',12)} ${ago(t)}</span>`;
+
 const histSeg=()=>real?`<div class="histbar"><div class="seg sm">${HIST_RANGES.map(r=>`<button class="${histRange===r.h?'on':''}" onclick="setHistRange(${r.h})">${r.t}</button>`).join('')}</div>${histInfo?`<span class="muted small">${histInfo}</span>`:''}</div>`:'';
 // Ny data ritar om vyn, men inte medan någon skriver i ett fält (dammen) och
 // inte kartan, som annars hoppar tillbaka till utgångsläget.
@@ -665,7 +759,9 @@ function icon(name,c='currentColor',s=20){
 function fanSVG(run,fast){return `<svg width="22" height="22" viewBox="0 0 24 24" fill="#7dd3fc" class="fan ${run?('spin'+(fast?' fast':'')):''}"><circle cx="12" cy="12" r="2.1"/><path d="M12 10c0-3 .5-6-1.5-7.5C8 4 9 7 12 10zM12 14c0 3-.5 6 1.5 7.5C16 20 15 17 12 14zM10 12c-3 0-6-.5-7.5 1.5C4 16 7 15 10 12zM14 12c3 0 6 .5 7.5-1.5C20 8 17 9 14 12z"/></svg>`}
 
 const STATE={run:['s-run','Körs'],standby:['s-standby','Redo'],limit:['s-limit','Strypt'],alarm:['s-alarm','Larm'],off:['s-off','Av'],
-  conn:['s-standby','Kontakt'],nocon:['s-off','Ingen kontakt']};
+  // "Kontakt" i blått såg ut som att enheten körde. Det betyder bara att
+  // styrsystemet hört den de senaste 15 minuterna; om den kör läses inte.
+  conn:['s-standby','Hörs'],nocon:['s-off','Tyst']};
 /* Två skydd inför riktig data. Texter ur styrsystemets databas (namn, larm)
    är fritext och får aldrig tolkas som HTML — esc() gör dem ofarliga. Och ett
    värde som saknas (en kanon utan kontakt) ska visas som ett streck, inte
@@ -842,8 +938,8 @@ function vOverviewR(){
   return topbar('Driftövervakning','Översikt')+`<div class="view">${alarmBanner()}
   <div class="grid g-kpi">
     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} Med kontakt</h3><div class="val">${con}<small> / ${cannons.length} enheter</small></div><div class="foot">Om de kör går inte att läsa ur datan än</div></div>
-    <div class="card kpi" style="cursor:pointer" onclick="go('water')"><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">efter högtryckspumpen · vattnet ${num(p2.vattenTemp)} °C</div></div>
-    <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null?'':cold?'up':'warn'}">${cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
+    <div class="card kpi${bridgeOld()?' old':''}${HC}"${histAttr('tryckUt','Tryck efter högtryckspumpen (PT02)','bar')}><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">${bridgeOld()?agoHTML(lastData):'efter högtryckspumpen · vattnet '+num(p2.vattenTemp)+' °C'}</div></div>
+    <div class="card kpi${bridgeOld()?' old':''}${HC}"${histAttr('tw','Våttemperatur vid väderstationen','°C')}><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null||bridgeOld()?'':cold?'up':'warn'}">${bridgeOld()?agoHTML(lastData):cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx&&!bridgeOld()?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
     <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">Egen beräkning — nivån mäts inte</div></div>
   </div>
 
@@ -871,7 +967,8 @@ function vOverviewR(){
 function pumpSVG(){
   const p1=pumps&&pumps.dep11||{}, p2=pumps&&pumps.dep12||{}, L=k=>lines&&lines[k]?lines[k].tryck:null;
   const LO='#34d399', HI='#38bdf8';
-  const tag=(x,y,namn,v,enh,d=1)=>`<g><rect x="${x-29}" y="${y}" width="58" height="36" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
+  // h = historikens fält för de värden som har kurva (PT02); de går att trycka på.
+  const tag=(x,y,namn,v,enh,d=1,h,ht)=>`<g${h&&real?' style="cursor:pointer"'+histAttr(h,ht,enh):''}><rect x="${x-29}" y="${y}" width="58" height="36" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
     <text x="${x}" y="${y+13}" text-anchor="middle" font-size="9.5" fill="#8296b5">${namn}</text>
     <text x="${x}" y="${y+28}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#e9f0fa">${v===undefined?'?':num(v,d)}<tspan font-size="9.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
   const pump=(x,y,c,t)=>`<circle cx="${x}" cy="${y}" r="17" fill="#0c1a2b" stroke="${c}" stroke-width="2.5"/><path d="M${x-6} ${y-8}L${x+9} ${y}L${x-6} ${y+8}z" fill="${c}"/><text x="${x}" y="${y+33}" text-anchor="middle" font-size="10.5" font-weight="600" fill="#e9f0fa">${t}</text>`;
@@ -895,7 +992,7 @@ function pumpSVG(){
     ${tag(250,56,'PT01',p1.tryckUt,'bar')}
     ${tag(352,56,'PTS01',p2.tryckIn,'bar')}
     ${tag(462,56,'TT01',p2.vattenTemp,'°C')}
-    ${tag(526,56,'PT02',p2.tryckUt,'bar')}
+    ${tag(526,56,'PT02',p2.tryckUt,'bar',1,'tryckUt','Tryck efter högtryckspumpen (PT02)')}
     ${tag(590,56,'FT01',undefined,'m³/h')}
     ${tag(700,52,'PT04',L('L122'),'bar')}
     ${tag(700,152,'PT03',L('L121'),'bar')}
@@ -917,7 +1014,7 @@ function pumpSVG(){
    Rutorna är lite större än i den liggande, eftersom hela skissen ritas
    mindre på en smal skärm. */
 function pumpSVGtall(p1,p2,L,LO,HI,pump){
-  const tag=(x,y,namn,v,enh,d=1)=>`<g><rect x="${x-33}" y="${y}" width="66" height="40" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
+  const tag=(x,y,namn,v,enh,d=1,h,ht)=>`<g${h&&real?' style="cursor:pointer"'+histAttr(h,ht,enh):''}><rect x="${x-33}" y="${y}" width="66" height="40" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
     <text x="${x}" y="${y+14}" text-anchor="middle" font-size="10.5" fill="#8296b5">${namn}</text>
     <text x="${x}" y="${y+31}" text-anchor="middle" font-size="14" font-weight="700" fill="#e9f0fa">${v===undefined?'?':num(v,d)}<tspan font-size="10.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
   const lbl=(x,y,t,a='start')=>`<text x="${x}" y="${y}" text-anchor="${a}" font-size="12" font-weight="600" fill="#e9f0fa">${t}</text>`;
@@ -939,7 +1036,7 @@ function pumpSVGtall(p1,p2,L,LO,HI,pump){
     <path d="M200 277V430M90 430H310M90 430V510M310 430V510" stroke="${HI}" stroke-width="5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
     ${pump(200,260,HI,'')}${lbl(176,256,'P2','end')}${sub(176,271,'högtryckspump','end')}
     ${tag(268,290,'TT01',p2.vattenTemp,'°C')}
-    ${tag(268,336,'PT02',p2.tryckUt,'bar')}
+    ${tag(268,336,'PT02',p2.tryckUt,'bar',1,'tryckUt','Tryck efter högtryckspumpen (PT02)')}
     ${tag(268,382,'FT01',undefined,'m³/h')}
     ${tag(90,452,'PT03',L('L121'),'bar')}
     ${tag(310,452,'PT04',L('L122'),'bar')}
@@ -958,9 +1055,9 @@ function vWaterR(){
   const pct=Math.round(tot/PUMP_MAX*100), ps=pumpState(tot), hot=ps==='over'||ps==='at', near=ps!=='ok';
   const p2=pumps&&pumps.dep12||{};
   return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
-  <div class="card"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset</h3>
+  <div class="card${bridgeOld()?' old':''}"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset ${bridgeOld()?agoHTML(lastData):''}</h3>
     ${pumps?pumpSVG():'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
-    <p class="muted small" style="line-height:1.6;margin:12px 0 0">Vattnet går från dammen till ledningarna: <b style="color:var(--text)">P1</b> lyfter det ur intagsbrunnen, genom filtret, och <b style="color:var(--text)">P2</b> trycker ut det i de två ledningarna mot spåret. Grönt är lågt tryck, blått högt. Namnen vid värdena är givarnas namn på skärmen i pumphuset.</p>
+    <p class="muted small" style="line-height:1.6;margin:12px 0 0">Vattnet går från dammen till ledningarna: <b style="color:var(--text)">P1</b> lyfter det ur intagsbrunnen, genom filtret, och <b style="color:var(--text)">P2</b> trycker ut det i de två ledningarna mot spåret. Grönt är lågt tryck, blått högt. Namnen vid värdena är givarnas namn på skärmen i pumphuset. Tryck på PT02 för att se trycket bakåt i tiden.</p>
   </div>
   ${missing('<b>Flödesmätaren FT01</b> sitter efter högtryckspumpen och mäter i m³/h — men vi vet inte än vilket av styrsystemets värden som är den. Två passar in, och just nu visar de <b>'+num(p2.k125)+'</b> och <b>'+num(p2.k126)+'</b>. När pumpen går syns vilket som är flödet. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
 
@@ -989,33 +1086,38 @@ function vWaterR(){
 
 function vUnitR(){
   const c=cannons.find(x=>x.id===unitId); if(!c)return vOverviewR();
+  const old=c.state!=='conn'||bridgeOld(), O=old?' old':'';
   return topbar('Enhet / '+(c.typ==='kanon'?'Kanon':'Lans'),esc(c.namn),
     `<button class="linkbtn" onclick="go('${backTo}')">← Tillbaka</button>`)+`<div class="view">
     <div class="grid g-kpi">
-      <div class="card kpi"><h3>Status</h3><div style="margin-top:10px">${chip(c.state)}</div><div class="foot" style="margin-top:9px">${esc(c.modell)} · senast hörd ${dm(c.heard)}</div></div>
-      <div class="card kpi"><h3>Teoretiskt flöde</h3><div class="val">${num(c.fmax)}<small> m³/h</small></div><div class="foot">för fullt, vid enhetens temperatur</div></div>
-      <div class="card kpi"><h3>Luft vid enheten</h3><div class="val">${num(c.t)}<small> °C</small></div><div class="foot">${num(c.rh,0)} % luftfuktighet</div></div>
-      <div class="card kpi"><h3>Våttemp vid enheten</h3><div class="val">${num(c.tw)}<small> °C</small></div></div>
+      <div class="card kpi${O}"><h3>Status</h3><div style="margin-top:10px">${chip(c.state)}</div><div class="foot" style="margin-top:9px">${esc(c.modell)} · senast hörd ${dm(c.heard)}</div></div>
+      <div class="card kpi${O}"><h3>Flöde vid full drift</h3><div class="val">${num(c.fmax)}<small> m³/h</small></div><div class="foot">styrsystemets siffra vid enhetens temperatur — inte vad den drar nu</div></div>
+      <div class="card kpi${O}${HC}"${histAttr(c.key+'.t','Luft vid '+c.namn,'°C')}><h3>Luft vid enheten</h3><div class="val">${num(c.t)}<small> °C</small></div><div class="foot">${old?agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard)):num(c.rh,0)+' % luftfuktighet'}</div></div>
+      <div class="card kpi${O}${HC}"${histAttr(c.key+'.tw','Våttemp vid '+c.namn,'°C')}><h3>Våttemp vid enheten</h3><div class="val">${num(c.tw)}<small> °C</small></div>${old?'<div class="foot">'+agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard))+'</div>':''}</div>
     </div>
     ${c.state==='conn'?'':missing('<b>Ingen kontakt.</b> Värdena ovan är de sista styrsystemet fick innan kontakten bröts, och säger inget om hur det är nu.')}
-    ${missing('Flöde, driftläge, dyssteg och vilken brunn enheten står vid finns inte bland de värden vi hittat i styrsystemet än. Kurvor per enhet kommer när de gör det.')}
+    ${missing('Flöde, driftläge, dyssteg och vilken brunn enheten står vid finns inte bland de värden vi hittat i styrsystemet än. Tryck på luft eller våttemperatur för att se kurvan.')}
   </div>`;
 }
 
 function unitCard(c){
   const isFan=c.typ==='kanon';
-  if(real)return `<div class="card unit" onclick="openUnit('${esc(c.id)}')">
+  if(real){
+    const old=c.state!=='conn'||bridgeOld();
+    return `<div class="card unit${old?' old':''}" onclick="openUnit('${esc(c.id)}')">
     <div class="u-head">
-      <div><div class="u-name">${isFan?fanSVG(false,false):icon('lance','#7dd3fc',20)} ${esc(c.namn)}</div><div class="u-well">${esc(c.modell)} · hörd ${dm(c.heard)}</div></div>
+      <div><div class="u-name">${isFan?fanSVG(false,false):icon('lance','#7dd3fc',20)} ${esc(c.namn)}</div><div class="u-well">${esc(c.modell)}</div></div>
       ${chip(c.state)}
     </div>
     <div class="metric-row">
-      <div class="metric"><div class="m-l">Teor. flöde</div><div class="m-v">${num(c.fmax)} <small>m³/h</small></div></div>
-      <div class="metric"><div class="m-l">Luft</div><div class="m-v">${num(c.t)}<small>°C</small></div></div>
-      <div class="metric"><div class="m-l">Våttemp</div><div class="m-v">${num(c.tw)}<small>°C</small></div></div>
+      <div class="metric"><div class="m-l">Vid full drift</div><div class="m-v">${num(c.fmax)} <small>m³/h</small></div></div>
+      <div class="metric${HC}"${histAttr(c.key+'.t','Luft vid '+c.namn,'°C')}><div class="m-l">Luft</div><div class="m-v">${num(c.t)}<small>°C</small></div></div>
+      <div class="metric${HC}"${histAttr(c.key+'.tw','Våttemp vid '+c.namn,'°C')}><div class="m-l">Våttemp</div><div class="m-v">${num(c.tw)}<small>°C</small></div></div>
     </div>
-    <div class="foot" style="font-size:.73rem;margin-top:9px;color:var(--muted2)">${c.state==='conn'?'Värdena är aktuella':'Sista värdena innan kontakten bröts'}</div>
-  </div>`;
+    <div class="foot" style="font-size:.73rem;margin-top:9px;color:var(--muted2);display:flex;align-items:center;gap:6px">${old
+      ?agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard))+'<span>· sista värdena</span>'
+      :'<span class="livedot"></span> Hörd '+ago(c.heard)}</div>
+  </div>`;}
   return `<div class="card unit" onclick="openUnit('${esc(c.id)}')">
     <div class="u-head">
       <div><div class="u-name">${isFan?fanSVG(c.state!=='off',c.state==='run'):icon('lance','#7dd3fc',20)} ${esc(c.namn)}</div><div class="u-well">Brunn ${c.brunn} · steg ${esc(c.steg)}</div></div>
@@ -1981,7 +2083,8 @@ function histTick(ts){
     return (v,i)=>{const d=ts[i],q=ts[i-1];if(!d||!q)return null;const a=dayNo(d);
       return a!==dayNo(q)&&a%every===0?d.getDate()+'/'+(d.getMonth()+1):null};
   }
-  const step=ts.length>72?2:1, b=d=>d.getDate()*100+Math.floor(d.getHours()/step);
+  // Ett dygn på en telefon: var fjärde timme, annars flyter klockslagen ihop.
+  const step=ts.length>72?(innerWidth<600?4:2):1, b=d=>d.getDate()*100+Math.floor(d.getHours()/step);
   return (v,i)=>{const d=ts[i],q=ts[i-1];return d&&q&&b(d)!==b(q)?String(d.getHours()).padStart(2,'0')+':00':null};
 }
 function drawCharts(){
@@ -2117,7 +2220,7 @@ function clearApp(){
   document.getElementById('main').innerHTML='';
   // Riktig data ska inte ligga kvar i minnet åt nästa som loggar in.
   if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;
-    histLive={};histOld={};histOldRange=null;histRange=24;histTok++;histLoading=false;histErr='';histInfo='';
+    histLive={};histOld={};histOldRange=null;histRange=24;histTok++;histLoading=false;histErr='';histInfo='';closeHist();
     dammData={avlas:{},kalib:{}};dammErr='';damSync();
     calForm={cm:'',ts:'',edit:null,msg:'',err:false};mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,sparar:false};loggAlla=false;}
   isAdmin=false;myKey='';members=null;memMsg='';memForm={email:'',name:'',role:'viewer'};
