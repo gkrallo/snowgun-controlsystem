@@ -27,6 +27,7 @@
   dygnet runt, och värdena står still det mesta av året. Historiken sparas
   hela säsongen (sedan version 4); förut rensades den efter 48 timmar.
   Sedan version 5 har den också varje hörd enhets luft- och våttemperatur.
+  Sedan version 6 skickas brunnen varje enhet står vid.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -55,7 +56,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "5"
+$VERSION = "6"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -388,8 +389,12 @@ function Read-Snapshot {
       # Uppmätt flöde och driftläge är inte hittade än - anläggningen stod
       # still. Kör med -Ra när något går och jämför med skärmen.
       k408        = V $r "408"  # osäker (8-15, kan vara vattentemp eller tryck)
-      k415        = V $r "415"  # osäker (2 eller 11, kan vara läge)
+      # Troligen läget: 11 OK, 1 fel, 2 stoppad (ett tillfälle, 25 november).
+      k415        = V $r "415"
       senastHord  = V $r "850"  # säker: senaste kontakt med kanonen
+      # Brunnen enheten står vid ("Shelter" på skärmen Gun searching).
+      # Säker: alla sju stämde mot skärmen 25 november (version 6).
+      brunn       = V $r "707"
       uppdaterad  = V $r "DateUpd"
     }
     if ($Ra) { $u["ra"] = RawRow $r }
@@ -406,6 +411,7 @@ function Read-Snapshot {
       rh         = V $r "3"     # säker
       tw         = V $r "7"     # säker
       senastHord = V $r "104"
+      brunn      = V $r "108"   # säker: "Shelter", stämde 25 november
       uppdaterad = V $r "DateUpd"
     }
     if ($Ra) { $u["ra"] = RawRow $r }

@@ -4,12 +4,15 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 25 november 2026:** version 5 är byggd och provad med självtestet,
-men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 4 går
-där sedan 24 november med `GSS_Login` enligt avsteget nedan, som schemalagd
-uppgift. En läsning tar 29–46 ms. Inte provat: en omstart av datorn, och hur
+**Läget 25 november 2026:** version 6 är byggd och provad med självtestet,
+men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 5 går
+där sedan 25 november med `GSS_Login` enligt avsteget nedan, som schemalagd
+uppgift. En läsning tar 25–46 ms. Inte provat: en omstart av datorn, och hur
 bryggan beter sig när kanonerna går.
 
+- Version 6 skickar brunnen varje enhet står vid (`brunn`, kolumn 707 på
+  SGC400 och 108 på det äldre kortet), som "Shelter" på skärmen Gun
+  searching.
 - Version 5 sparar också varje enhets luft- och våttemperatur i historiken,
   men bara för enheter som styrsystemet hört de senaste 15 minuterna. En tyst
   enhet blir ett hål i kurvan i stället för sitt gamla värde om och om igen.
@@ -39,7 +42,7 @@ datorn och det kontot, och följer inte med i zipfilen.
 
        powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -Visa
 
-   Loggen ska ha en rad `Bryggan startar (version 5, ...)`.
+   Loggen ska ha en rad `Bryggan startar (version 6, ...)`.
 
 Raden `Klart på … ms` efter `-EnGang` räknar med tiden det tar att skriva
 lösenordet (10 656 ms första gången). Den riktiga lästiden står som `lasMs`
