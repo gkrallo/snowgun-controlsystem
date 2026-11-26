@@ -32,8 +32,8 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
-- **Bryggan** (`bridge/brygga.ps1`, version 7 på styrdatorn, version 8
-  byggd 26 november men inte utlagd) går på styrdatorn som en
+- **Bryggan** (`bridge/brygga.ps1`, version 10 på styrdatorn sedan 26
+  november 12:15) går på styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
   inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
@@ -87,7 +87,15 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
 - **Snömängden är vatten × 2,2**, som styrsystemet räknar — ingen kanon
   mäter snö. Bryggan 8 summerar bara vattnet, per enhet sedan den kom till
   brunnen (nollas vid byte av brunn, sågtand) och per säsong från 1 augusti,
-  i `brygga-state.json`. Faktorn står på ett ställe i appen (`SNO_FAKTOR`)
+  i `brygga-state.json`. Vattnet före bryggan 8 läggs till en gång med
+  `-Bakat` (version 9) ur styrsystemets statistik per kanon och journalens
+  inkopplingar; filen stämplas så att det inte kan räknas dubbelt. Gjort
+  26 november, med brunnsdelen rättad av `-BakatBrunn` (version 10): journalens
+  text börjar inte med "Appeared" i databasen, och version 9 tappade
+  stämpeln vid nästa sparning. Rapporten `bakat_*.txt` på styrdatorn är
+  därför också ett spärr — `-Bakat` vägrar om den finns. **`-TaBort` stoppar
+  inte en brygga som går**; processen måste avslutas för hand.
+  Faktorn står på ett ställe i appen (`SNO_FAKTOR`)
   och ska bytas mot den egna när snöytan mätts med pucken.
 - **Lamporna** (ringar 1–4, hydrant, kompressor, fläkt …) skickas från
   bryggan 7 som tända bitar och sparas i historiken bara när de ändras.

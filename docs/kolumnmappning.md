@@ -112,6 +112,14 @@ provberäkningen för Råda 27 december 2023: 33,97 → 74,73, 224,58 → 494,08
 yta. "Water" på skärmen är kanonernas summerade flöde (41 mot bryggans
 40,7), inte FT01 (18,6).
 
+Styrsystemets statistik per kanon (`stat_piste_canon_SGC400`/`_SGC300` i
+`Live_stat_<månad><1|2>SQL`) har `date`, `num_canon` (n°), temperatur,
+fukt, våttemperatur, `pression_eau`, `debit_eau_reel`,
+`debit_eau_theorique` (alla × 10) och `etat`. Raderna kommer inte med jämna
+mellanrum: ungefär varje minut på det äldre kortet, var 2–3 minut på
+SGC400 (räknat ur radantalen 1–15 november). Bryggan 9 `-Bakat` räknar
+vattnet före bryggan 8 ur dem.
+
 Bryggan 8 summerar vattnet per enhet sedan den kom till brunnen
 (`vattenBrunn`, nollas när brunnen byts) och för säsongen från 1 augusti
 (`vattenSasong`). Appen multiplicerar med `SNO_FAKTOR`. Den egna faktorn

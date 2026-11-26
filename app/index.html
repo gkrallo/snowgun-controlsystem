@@ -836,7 +836,7 @@ function snoPanel(c){
     <div class="card kpi"><h3>❄ Snö i säsongen</h3><div class="val">${num(sno(c.vs),0)}<small> m³</small></div>
       <div class="foot">${num(c.vs,0)} m³ vatten, alla brunnar</div></div>
   </div>
-  <p class="muted small" style="margin:8px 2px 0;line-height:1.6">Snö = vatten × ${num(SNO_FAKTOR)}, som styrsystemet räknar — ingen kanon mäter snö. Räkneverket vid brunnen börjar om när enheten kopplas till en annan brunn. Bryggan räknar från version 8; tidigare nätter finns inte med. Tryck på snön vid brunnen för kurvan.</p>`;
+  <p class="muted small" style="margin:8px 2px 0;line-height:1.6">Snö = vatten × ${num(SNO_FAKTOR)}, som styrsystemet räknar — ingen kanon mäter snö. Räkneverket vid brunnen börjar om när enheten kopplas till en annan brunn. Bryggan räknar själv sedan 26 november 09:53; tiden före är hämtad i efterhand ur styrsystemets statistik och journalens inkopplingar. Kurvan börjar 09:53. Tryck på snön vid brunnen för den.</p>`;
 }
 function lampPanel(c){
   if(c.bits==null)return missing('Lamporna (ringar, hydrant, kompressor …) kommer när bryggan på styrdatorn är version 7.');
