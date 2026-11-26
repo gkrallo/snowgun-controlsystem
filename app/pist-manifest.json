@@ -1,0 +1,19 @@
+{
+  "name": "Snökoll Pist — förarvyn",
+  "short_name": "Snökoll Pist",
+  "description": "Förarvyn för pistmaskinerna: snödjupet framför maskinen och driften längs spåret. Bara läsning.",
+  "lang": "sv",
+  "id": "./pist.html",
+  "start_url": "./pist.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#050a13",
+  "theme_color": "#050a13",
+  "icons": [
+    { "src": "./kanon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./kanon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./kanon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
