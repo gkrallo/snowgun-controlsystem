@@ -30,6 +30,8 @@
   Sedan version 6 skickas brunnen varje enhet står vid.
   Sedan version 7 skickas flöde och tryck per enhet, och historiken har
   varje hörd enhets flöde och summan av dem (flodeSum).
+  Sedan version 8 räknas vattnet per enhet sedan den kom till brunnen och
+  för säsongen (snömängden = vatten x 2,2 räknas i appen).
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -58,7 +60,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "7"
+$VERSION = "8"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -281,6 +283,10 @@ function Band([string]$path) {
   if ($f -match '^(tryck|tryckIn|tryckUt|tryckBor)$') { return 0.2 }
   if ($f -match '^(k125|k126|k408|flodeTeori|flode)$') { return 0.2 }
   if ($f -eq 'fart')                                { return 0.5 }
+  # Räkneverken växer hela tiden kanonen går; utan dödband skulle de
+  # skickas var 20:e sekund. Halv kubik vatten är några minuters körning.
+  if ($f -eq 'vattenBrunn')                         { return 0.5 }
+  if ($f -eq 'vattenSasong')                        { return 1 }
   if ($f -eq 'riktning')                            { return 15 }
   return 0
 }
@@ -331,6 +337,85 @@ function SlotOf([datetime]$utc) {
 # punkt är ungefär 90 byte och en säsong blir runt 4 MB - långt under
 # Firebases gratisnivå. Det som kostar är att LÄSA, så appen hämtar bara det
 # senaste dygnet (288 punkter) när den öppnas.
+# ------------------------------------------------- vatten per brunn och säsong
+# Snömängden per kanon (version 8, 26 november 2026). Styrsystemet räknar
+# snö som vatten x 2,2, utan hänsyn till väder - det gör appen också, men
+# bryggan summerar bara VATTNET, så att faktorn kan bytas när snöytan mätts
+# med pucken. Två räkneverk per enhet:
+#   vattenBrunn  - sedan enheten kom till den brunn den står vid nu. Flyttas
+#                  den till en annan brunn börjar det om på noll, så kurvan
+#                  blir en sågtand: en tand per delsträcka. En flytt på tio
+#                  meter vid samma brunn märks inte (Kristian, 26 november).
+#   vattenSasong - sedan 1 augusti, oavsett brunn.
+# Bryggan läser var 20:e sekund och lägger till flöde x tid. Bara när enheten
+# hörts nyss (2 min) och förra läsningen är högst 2 min gammal - efter ett
+# avbrott räknas inget för tiden emellan, hellre för lite än påhittat.
+# Räkneverken sparas i brygga-state.json och överlever en omstart.
+$script:acc = @{}
+
+function SeasonOf([datetime]$t) {
+  $y = $t.Year; if ($t.Month -lt 8) { $y-- }
+  return ("" + $y + "/" + (($y + 1) % 100).ToString("00"))
+}
+
+function Add-Water($snap, [datetime]$now) {
+  if (-not $snap["enheter"]) { return }
+  $ref = Newest $snap
+  if (-not $ref) { return }
+  $fmt = "yyyy-MM-ddTHH:mm:ss"
+  $refT = [datetime]::ParseExact($ref, $fmt, $null)
+  $season = SeasonOf $now
+  foreach ($k in @($snap["enheter"].Keys)) {
+    $u = $snap["enheter"][$k]
+    $a = $script:acc[$k]
+    if ($null -eq $a) {
+      $a = @{ brunn = $u["brunn"]; sedan = $now.ToString($fmt); brunnM3 = 0.0; sasong = $season; sasongM3 = 0.0; last = $null }
+      $script:acc[$k] = $a
+    }
+    if ($null -ne $u["brunn"] -and $a["brunn"] -ne $u["brunn"]) {
+      $a["brunn"] = $u["brunn"]; $a["sedan"] = $now.ToString($fmt); $a["brunnM3"] = 0.0
+    }
+    if ($a["sasong"] -ne $season) { $a["sasong"] = $season; $a["sasongM3"] = 0.0 }
+    $fresh = $false
+    if ($u["senastHord"]) {
+      try { $fresh = ([math]::Abs(($refT - [datetime]::ParseExact("" + $u["senastHord"], $fmt, $null)).TotalSeconds) -le 120) } catch { }
+    }
+    if ($fresh) {
+      if ($null -ne $a["last"] -and (IsNum $u["flode"]) -and $u["flode"] -gt 0) {
+        $dt = ($now - [datetime]$a["last"]).TotalSeconds
+        if ($dt -gt 0 -and $dt -le 120) {
+          $m3 = [double]$u["flode"] * $dt / 3600
+          $a["brunnM3"] = [double]$a["brunnM3"] + $m3
+          $a["sasongM3"] = [double]$a["sasongM3"] + $m3
+        }
+      }
+      $a["last"] = $now
+    } else { $a["last"] = $null }
+    $u["vattenBrunn"] = [math]::Round([double]$a["brunnM3"], 2)
+    $u["vattenSasong"] = [math]::Round([double]$a["sasongM3"], 1)
+    $u["brunnSedan"] = $a["sedan"]
+  }
+}
+
+# Räkneverken till och från tillståndsfilen ("last" sparas inte: efter en
+# omstart räknas första varvet inte, eftersom tiden emellan är okänd).
+function Acc-ToState {
+  $o = [ordered]@{}
+  foreach ($k in ($script:acc.Keys | Sort-Object)) {
+    $a = $script:acc[$k]
+    $o[$k] = [ordered]@{ brunn = $a["brunn"]; sedan = $a["sedan"]; brunnM3 = [math]::Round([double]$a["brunnM3"], 4); sasong = $a["sasong"]; sasongM3 = [math]::Round([double]$a["sasongM3"], 4) }
+  }
+  return $o
+}
+function Acc-FromState($obj) {
+  $script:acc = @{}
+  if ($null -eq $obj) { return }
+  foreach ($p in $obj.PSObject.Properties) {
+    $v = $p.Value
+    $script:acc[$p.Name] = @{ brunn = $v.brunn; sedan = "" + $v.sedan; brunnM3 = [double]$v.brunnM3; sasong = "" + $v.sasong; sasongM3 = [double]$v.sasongM3; last = $null }
+  }
+}
+
 # Lampornas bitar sparas i historiken bara när de ändrats sedan förra
 # punkten (fältet b, version 7): de ändras sällan, och en text på 40 tecken
 # per enhet och punkt skulle annars göra säsongen ett par gånger större. Det
@@ -371,6 +456,8 @@ function Build-HistPatch($snap, [datetime]$slot) {
       $heard[$k] = $true
       $x = [ordered]@{}
       foreach ($f in @("t", "tw", "flode")) { if ($null -ne $u[$f]) { $x[$f] = $u[$f] } }
+      # Vattnet sedan enheten kom till brunnen (version 8) - sågtanden.
+      if (IsNum $u["vattenBrunn"]) { $x["vb"] = [math]::Round([double]$u["vattenBrunn"], 1) }
       $b = $null
       if ($u.Contains("bitar")) { $b = $u["bitar"] } elseif ($u.Contains("flaggor")) { $b = $u["flaggor"] }
       if ($null -ne $b) {
@@ -912,6 +999,32 @@ if ($Sjalvtest) {
   $pt = (Build-HistPatch $s $slot)["202611151805"]
   Check "tyst och hörd igen: bitarna skrivs igen" ($pt["e"]["SGC300-1"]["b"] -eq "0")
 
+  # Vattnet per brunn och säsong.
+  $script:acc = @{}
+  function W([double]$q, [int]$brunn, [string]$hord, [datetime]$tid) {
+    return [ordered]@{ vader = [ordered]@{ uppdaterad = $tid.ToString("yyyy-MM-ddTHH:mm:ss") }; enheter = [ordered]@{ "SGC400-1" = [ordered]@{ flode = $q; brunn = $brunn; senastHord = $hord } } }
+  }
+  $t = Get-Date "2026-11-26 09:00:00"
+  $s = W 7.2 7 "2026-11-26T09:00:00" $t; Add-Water $s $t
+  Check "första läsningen räknar inget" ($s["enheter"]["SGC400-1"]["vattenBrunn"] -eq 0)
+  for ($i = 1; $i -le 180; $i++) { $t = $t.AddSeconds(20); $s = W 7.2 7 $t.ToString("yyyy-MM-ddTHH:mm:ss") $t; Add-Water $s $t }
+  Check "en timme med 7,2 m3/h ger 7,2 m3" ([math]::Abs($s["enheter"]["SGC400-1"]["vattenBrunn"] - 7.2) -lt 0.01)
+  $t = $t.AddMinutes(30); $s = W 7.2 7 $t.ToString("yyyy-MM-ddTHH:mm:ss") $t; Add-Water $s $t
+  Check "efter ett avbrott räknas inte tiden emellan" ([math]::Abs($s["enheter"]["SGC400-1"]["vattenBrunn"] - 7.2) -lt 0.01)
+  $t = $t.AddSeconds(20); $s = W 7.2 7 "2026-11-26T09:00:00" $t; Add-Water $s $t
+  Check "tyst enhet räknas inte" ([math]::Abs($s["enheter"]["SGC400-1"]["vattenBrunn"] - 7.2) -lt 0.01)
+  $t = $t.AddSeconds(20); $s = W 7.2 8 $t.ToString("yyyy-MM-ddTHH:mm:ss") $t; Add-Water $s $t
+  Check "ny brunn: brunnens räkneverk börjar om, säsongens inte" ($s["enheter"]["SGC400-1"]["vattenBrunn"] -eq 0 -and $s["enheter"]["SGC400-1"]["vattenSasong"] -eq 7.2 -and $s["enheter"]["SGC400-1"]["brunnSedan"] -eq $t.ToString("yyyy-MM-ddTHH:mm:ss"))
+  $saved = (Acc-ToState | ConvertTo-Json -Depth 5) | ConvertFrom-Json
+  Acc-FromState $saved
+  Check "räkneverken överlever en omstart" ($script:acc["SGC400-1"]["sasongM3"] -gt 7.19 -and $script:acc["SGC400-1"]["brunn"] -eq 8 -and $null -eq $script:acc["SGC400-1"]["last"])
+  Check "säsongen börjar 1 augusti" ((SeasonOf (Get-Date "2026-07-31")) -eq "2025/26" -and (SeasonOf (Get-Date "2026-08-01")) -eq "2026/27")
+  $t2 = Get-Date "2027-08-02 10:00:00"; $s = W 5 8 $t2.ToString("yyyy-MM-ddTHH:mm:ss") $t2; Add-Water $s $t2
+  Check "ny säsong: säsongens räkneverk börjar om" ($s["enheter"]["SGC400-1"]["vattenSasong"] -eq 0)
+  Check "räkneverken har dödband" ((Band "enheter/SGC400-1/vattenBrunn") -eq 0.5)
+  $s = W 7 8 "2027-08-02T10:00:00" $t2; $s["enheter"]["SGC400-1"]["vattenBrunn"] = 12.34
+  Check "historiken får vattnet vid brunnen" ((Build-HistPatch $s $slot)["202611151805"]["e"]["SGC400-1"]["vb"] -eq 12.3)
+
   Check "flöde och tryck har dödband" ((Band "enheter/SGC400-3/flode") -eq 0.2 -and (Band "enheter/SGC400-3/tryckBor") -eq 0.2)
 
   if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
@@ -942,9 +1055,18 @@ if (-not $EnGang) {
 $lastSlot = $null
 if (Test-Path $stateFile) {
   try {
-    $txt = (Get-Content $stateFile -Raw | ConvertFrom-Json).lastSlot
-    $lastSlot = [datetime]::SpecifyKind([datetime]::ParseExact($txt, "yyyyMMddHHmm", $null), [DateTimeKind]::Utc)
+    $st = Get-Content $stateFile -Raw | ConvertFrom-Json
+    $lastSlot = [datetime]::SpecifyKind([datetime]::ParseExact($st.lastSlot, "yyyyMMddHHmm", $null), [DateTimeKind]::Utc)
+    Acc-FromState $st.vatten
   } catch { $lastSlot = $null }
+}
+# Räkneverken sparas var femte minut med historikpunkten, och bara när
+# bryggan skickar - en -EnGang i torrläge bredvid den riktiga får inte
+# skriva över dem.
+function Save-State {
+  if (-not $Skicka) { return }
+  $o = [ordered]@{ lastSlot = (SlotKey $lastSlot); vatten = (Acc-ToState) }
+  (ConvertTo-Json -InputObject $o -Depth 5 -Compress) | Set-Content -Path $stateFile -Encoding ASCII
 }
 
 Log ("Bryggan startar (version " + $VERSION + ", konto " + $SqlUser + ", " + $(if ($Skicka) { "skickar till molnet" } else { "torrläge" }) + ")")
@@ -966,6 +1088,7 @@ while ($true) {
   $sqlOk = ($fails -eq 0)
   $now = Get-Date
   $ms = [int]($now - $t0).TotalMilliseconds
+  if ($sqlOk) { try { Add-Water $snap $now } catch { Log ("Kunde inte räkna vattnet: " + $_.Exception.Message) } }
 
   try {
     $plan = Plan-Round $snap $sqlOk $now $ms
@@ -996,7 +1119,7 @@ while ($true) {
       if ($null -eq $lastSlot -or $slot -gt $lastSlot) {
         Send-Cloud "Patch" "hist" (Build-HistPatch $snap $slot)
         $lastSlot = $slot
-        (@{ lastSlot = (SlotKey $slot) } | ConvertTo-Json -Compress) | Set-Content -Path $stateFile -Encoding ASCII
+        Save-State
       }
     }
     if ($EnGang) { Log ("Klart på " + $ms + " ms. Resultatet ligger i " + $outFile) }

@@ -4,12 +4,18 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 26 november 2026:** version 7 är byggd och provad med självtestet,
-men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 6 går
-där sedan 25 november med `GSS_Login` enligt avsteget nedan, som schemalagd
-uppgift. En läsning tar 25–46 ms, också med alla kanoner igång. Inte provat:
-en omstart av datorn.
+**Läget 26 november 2026:** version 8 är byggd och provad med självtestet,
+men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 7 går
+där sedan 26 november 09:07 med `GSS_Login` enligt avsteget nedan, som
+schemalagd uppgift. En läsning tar 25–70 ms, också med alla kanoner igång.
+Inte provat: en omstart av datorn.
 
+- Version 8 räknar vattnet per enhet sedan den kom till brunnen
+  (`vattenBrunn`, börjar om när brunnen byts) och för säsongen från 1
+  augusti (`vattenSasong`). Appen gör snö av det (× 2,2). Räkneverken sparas
+  i `brygga-state.json` var femte minut och överlever en omstart; tiden när
+  bryggan inte gick räknas inte. **Ta inte bort `brygga-state.json`** — då
+  börjar räkneverken om på noll.
 - Version 7 skickar flöde och tryck per enhet (`flode`, `flodeTeori`,
   `tryck`, `tryckBor`; se `docs\kolumnmappning.md`), och historiken får
   varje hörd enhets flöde och summan av dem (`flodeSum`) att jämföra med FT01.
@@ -47,7 +53,7 @@ datorn och det kontot, och följer inte med i zipfilen.
 
        powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -Visa
 
-   Loggen ska ha en rad `Bryggan startar (version 7, ...)`.
+   Loggen ska ha en rad `Bryggan startar (version 8, ...)`.
 
 Raden `Klart på … ms` efter `-EnGang` räknar med tiden det tar att skriva
 lösenordet (10 656 ms första gången). Den riktiga lästiden står som `lasMs`
