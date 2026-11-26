@@ -89,8 +89,18 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   timmens början i UTC); appen drar summan sedan senaste måttbandsmätningen
   (`damDrawnSince`), och nuvarande uttag är summan av `q`. Siffrorna är
   kanonernas beräknade flöde — måttbandet avgör om de stämmer.
-- **Pushlarm** är byggda men inte utlagda (`docs/forslag-pushlarm.md`, "Byggt
-  26 november"). En molnfunktion, `vakt` i `functions/`, körs varje minut,
+- **Pushlarm** är utlagda sedan 26 november 16:20 (`docs/forslag-pushlarm.md`,
+  "Byggt 26 november"). Läggs ut med `firebase deploy --only functions`.
+  Funktionen körs som projektets standardkonto
+  (`726097160825-compute@…`), som i det här projektet inte fick några roller
+  automatiskt. Det har fått Cloud Build Service Account (bygget), Firebase
+  Realtime Database Admin, Firebase Authentication Viewer och Firebase
+  Cloud Messaging **API** Admin. Utan dem bygger den inte, eller säger att
+  "authentication credentials … are invalid". Rollen som bara heter
+  Firebase Cloud Messaging Admin räcker inte: FCM svarade
+  `mismatched-credential … cloudmessaging.messages.create denied` och ingen
+  notis gick ut (26 november). Svaret på senaste provnotisen står i
+  `/larmlage/prov`. En molnfunktion, `vakt` i `functions/`, körs varje minut,
   läser `/live` och skickar notiser via FCM. Logiken i `functions/larm.js`
   provas med `node --test larm.test.js` och ska gå igenom före varje
   utläggning. `functions/` är det enda i repot som kräver npm; appen är

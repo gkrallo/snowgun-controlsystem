@@ -160,7 +160,15 @@ emulator med FCM utbytt mot en atrapp. Appens larmsida i
 förhandsvisningen. En riktig notis till en telefon är inte provad, den
 kräver att allt är utlagt.
 
-### Kvar innan det kan läggas ut
+**Utlagt 26 november.** Blaze och budgeten fanns redan, nyckeln är
+inlagd, och funktionen kör sedan 16:20. Standardkontot behövde fyra roller
+(se CLAUDE.md). Hostingen kom inte med första gången och lades ut för sig.
+Första provnotisen stannade hos FCM (`cloudmessaging.messages.create
+denied`) tills kontot fick Firebase Cloud Messaging API Admin. Efter det
+kom provnotisen fram till Kristians Android samma kväll. Svaret på senaste
+provet står i `/larmlage/prov`. Kvar: prova på iPhone.
+
+### Kvar innan det kan läggas ut (gjort)
 
 1. **Blaze** i projektet `snoprognos` och en budgetvarning (Kristian).
 2. **Nyckeln för webbnotiser**: Firebase-konsolen → Projektinställningar →

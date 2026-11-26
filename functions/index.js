@@ -59,12 +59,16 @@ function meddelande(token, s) {
 }
 
 async function skicka(db, till, notiser) {
-  if (!till.length || !notiser.length) return;
+  const svar = [];
+  if (!till.length || !notiser.length) return svar;
   const msgs = [], vem = [];
   for (const s of notiser) for (const t of till) { msgs.push(meddelande(t.token, s)); vem.push(t); }
   // Högst 500 per anrop.
   for (let i = 0; i < msgs.length; i += 500) {
     const r = await admin.messaging().sendEach(msgs.slice(i, i + 500));
+    // Loggas varje gång: utan det går det inte att se om en notis som inte
+    // kom fram stannade hos oss, hos FCM eller i telefonen (26 november).
+    console.log('FCM svarade: ' + r.successCount + ' ok, ' + r.failureCount + ' fel, ' + notiser.map(s => s.titel).join(' / '));
     const bort = {};
     r.responses.forEach((x, j) => {
       if (x.success) return;
@@ -76,8 +80,10 @@ async function skicka(db, till, notiser) {
         bort['notis/' + t.uid + '/' + t.enhet] = null;
       else logger.warn('Notisen gick inte fram', { code, uid: t.uid });
     });
+    svar.push(...r.responses.map(x => x.success ? 'ok' : String(x.error && (x.error.code + ' ' + x.error.message)).slice(0, 300)));
     if (Object.keys(bort).length) await db.ref().update(bort);
   }
+  return svar;
 }
 
 exports.vakt = onSchedule({
@@ -112,8 +118,11 @@ exports.vakt = onSchedule({
   // Provnotis: appens knapp sätter prov på sin egen telefon. Den går bara dit.
   const prov = till.filter(t => Number.isFinite(t.prov));
   for (const t of prov) {
-    await skicka(db, [t], [{ tag: 'prov', titel: 'Provnotis från Snökoll', text: 'Larmen kommer fram till den här telefonen.', tyst: false }]);
+    const svar = await skicka(db, [t], [{ tag: 'prov', titel: 'Provnotis från Snökoll', text: 'Larmen kommer fram till den här telefonen.', tyst: false }]);
     await db.ref('notis/' + t.uid + '/' + t.enhet + '/prov').remove();
+    // Senaste provets svar från FCM, så att man kan se om en provnotis som
+    // inte kom fram stannade hos FCM eller i telefonen. Ingen adress sparas.
+    await db.ref('larmlage/prov').set({ ts: nu, telefon: t.enhet, svar: svar.join(' | ') || 'inget skickat' });
   }
   if (r.skicka.length) logger.info('Skickade', { notiser: r.skicka.map(s => s.titel), telefoner: till.length });
 });
