@@ -28,6 +28,8 @@
   hela säsongen (sedan version 4); förut rensades den efter 48 timmar.
   Sedan version 5 har den också varje hörd enhets luft- och våttemperatur.
   Sedan version 6 skickas brunnen varje enhet står vid.
+  Sedan version 7 skickas flöde och tryck per enhet, och historiken har
+  varje hörd enhets flöde och summan av dem (flodeSum).
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -56,7 +58,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "6"
+$VERSION = "7"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -196,6 +198,35 @@ function RawRow($row) {
   return $o
 }
 
+# Lamporna på skärmen (ringar, kompressor, hydrant ...) ligger i SGC400 som
+# bitmönster i teckenkolumner ("0001110000100011"). De skickas som en kort
+# text med de bitar som är tända, "453:0,1,5;454:0,4" - bit 0 är tecknet
+# längst till höger. Vilken bit som är vilken lampa är inte utrett; texten
+# gör att det kan läsas ut över tid mot skärmbilder (version 7).
+function Bits($row, [string[]]$cols) {
+  $parts = @()
+  foreach ($c in $cols) {
+    $s = V $row $c
+    if (-not $s -or $s -notmatch '^[01]+$') { continue }
+    $on = @()
+    for ($i = 0; $i -lt $s.Length; $i++) { if ($s[$s.Length - 1 - $i] -eq '1') { $on += $i } }
+    if ($on.Count -gt 0) { $parts += ($c + ":" + ($on -join ",")) }
+  }
+  return ($parts -join ";")
+}
+
+# Det äldre kortet har en kolumn per lampa (25-81, heltal) i stället för
+# bitar. Samma slags text: "25,37,42" för ettor, "65=3" för andra värden.
+function Flags($row, [int[]]$cols) {
+  $parts = @()
+  foreach ($c in $cols) {
+    $v = V $row ("" + $c)
+    if ($null -eq $v -or -not (IsNum $v) -or $v -eq 0) { continue }
+    if ($v -eq 1) { $parts += ("" + $c) } else { $parts += ("" + $c + "=" + $v) }
+  }
+  return ($parts -join ",")
+}
+
 # ------------------------------------------------------ bara ändringar
 # Nuläget plattas ut till "sökväg -> värde" (enheter/SGC400-3/tw -> -4.1) och
 # jämförs med det som senast SKICKADES - inte det som senast lästes. Annars
@@ -247,8 +278,8 @@ function Band([string]$path) {
   $f = $path.Substring($path.LastIndexOf("/") + 1)
   if ($f -match '^(t|tw|vattenTemp)$')              { return 0.2 }
   if ($f -eq 'rh')                                  { return 2 }
-  if ($f -match '^(tryck|tryckIn|tryckUt)$')        { return 0.2 }
-  if ($f -match '^(k125|k126|k408|flodeTeori)$')    { return 0.2 }
+  if ($f -match '^(tryck|tryckIn|tryckUt|tryckBor)$') { return 0.2 }
+  if ($f -match '^(k125|k126|k408|flodeTeori|flode)$') { return 0.2 }
   if ($f -eq 'fart')                                { return 0.5 }
   if ($f -eq 'riktning')                            { return 15 }
   return 0
@@ -300,6 +331,13 @@ function SlotOf([datetime]$utc) {
 # punkt är ungefär 90 byte och en säsong blir runt 4 MB - långt under
 # Firebases gratisnivå. Det som kostar är att LÄSA, så appen hämtar bara det
 # senaste dygnet (288 punkter) när den öppnas.
+# Lampornas bitar sparas i historiken bara när de ändrats sedan förra
+# punkten (fältet b, version 7): de ändras sällan, och en text på 40 tecken
+# per enhet och punkt skulle annars göra säsongen ett par gånger större. Det
+# som behövs för att para ihop bitar med skärmen är just ögonblicken då något
+# tänds eller släcks. Efter en omstart skrivs alla en gång till.
+$script:lastBits = @{}
+
 function Build-HistPatch($snap, [datetime]$slot) {
   $p = [ordered]@{}
   $pt = [ordered]@{ ts = @{ ".sv" = "timestamp" } }
@@ -313,23 +351,40 @@ function Build-HistPatch($snap, [datetime]$slot) {
   # som styrsystemet hört de senaste 15 minuterna (samma gräns som appens
   # "hörd"): en tyst enhets värden står still, och sparade var femte minut
   # skulle de se ut som mätningar. Saknas enheten blir det ett hål i kurvan.
-  # Bara t och tw - varje fält till gör säsongen större OCH varje hämtning
-  # av en lång period dyrare. Runt 15 MB per säsong med nio enheter.
+  # Bara t, tw och flode - varje fält till gör säsongen större OCH varje
+  # hämtning av en lång period dyrare. Runt 18 MB per säsong med nio enheter.
+  # flodeSum (version 7) är de hörda enheternas beräknade flöde ihop, så att
+  # det kan läggas bredvid FT01: 26 november var summan 43,9 m3/h och FT01
+  # 19,8. Teoretiskt flöde summeras inte, det står kvar när kanonen står.
   $ref = Newest $snap
   if ($snap["enheter"] -and $ref) {
     $fmt = "yyyy-MM-ddTHH:mm:ss"
     $refT = [datetime]::ParseExact($ref, $fmt, $null)
     $e = [ordered]@{}
+    $sum = 0.0; $nSum = 0
+    $heard = @{}
     foreach ($k in @($snap["enheter"].Keys)) {
       $u = $snap["enheter"][$k]
       if (-not $u["senastHord"]) { continue }
       try { $h = [datetime]::ParseExact("" + $u["senastHord"], $fmt, $null) } catch { continue }
       if ([math]::Abs(($refT - $h).TotalMinutes) -gt 15) { continue }
+      $heard[$k] = $true
       $x = [ordered]@{}
-      foreach ($f in @("t", "tw")) { if ($null -ne $u[$f]) { $x[$f] = $u[$f] } }
+      foreach ($f in @("t", "tw", "flode")) { if ($null -ne $u[$f]) { $x[$f] = $u[$f] } }
+      $b = $null
+      if ($u.Contains("bitar")) { $b = $u["bitar"] } elseif ($u.Contains("flaggor")) { $b = $u["flaggor"] }
+      if ($null -ne $b) {
+        # "0" när allt är släckt: en tom text går inte att spara i Firebase.
+        if ($b -eq "") { $b = "0" }
+        if ($script:lastBits[$k] -ne $b) { $x["b"] = $b; $script:lastBits[$k] = $b }
+      }
       if ($x.Count -gt 0) { $e[$k] = $x }
+      if (IsNum $u["flode"]) { $sum += [double]$u["flode"]; $nSum++ }
     }
     if ($e.Count -gt 0) { $pt["e"] = $e }
+    if ($nSum -gt 0) { $pt["flodeSum"] = [math]::Round($sum, 1) }
+    # En enhet som tystnat glöms, så att dess bitar skrivs igen när den hörs.
+    foreach ($k in @($script:lastBits.Keys)) { if (-not $heard.ContainsKey($k)) { $script:lastBits.Remove($k) } }
   }
   $p[(SlotKey $slot)] = $pt
   return $p
@@ -350,9 +405,10 @@ function Read-Snapshot {
       tryckIn    = V $r "121"   # bar, säker (PT01 0,1)
       vattenTemp = V $r "122"   # grader, säker (TT01 11,8)
       tryckUt    = V $r "123"   # bar, säker (PT02 7,2)
-      # 125 och 126 var båda 0,1 med stillastående anläggning. Den ena är
-      # uppmätt flöde (FT01), den andra oklar. Båda skickas tills vi vet.
-      k125       = V $r "125"   # osäker
+      # 125 är FT01, flödesmätaren i pumphuset (25 november). Den visar
+      # ungefär 45 % av kanonernas summerade flöde (26 november) och skickas
+      # orättad. 126 stod på 0,1 även när pumpen gick och är oklar.
+      k125       = V $r "125"   # säker: FT01, m3/h, troligen fel skalad
       k126       = V $r "126"   # osäker
       maxFlode   = V $r "128"   # m3/h, säker (70)
       uppdaterad = V $r "DateUpd"
@@ -385,12 +441,26 @@ function Read-Snapshot {
       t           = V $r "400"  # säker
       rh          = V $r "401"  # säker
       tw          = V $r "402"  # säker (våttemperatur)
-      flodeTeori  = V $r "411"  # säker: statistikens debit_eau_theorique / 10
-      # Uppmätt flöde och driftläge är inte hittade än - anläggningen stod
-      # still. Kör med -Ra när något går och jämför med skärmen.
-      k408        = V $r "408"  # osäker (8-15, kan vara vattentemp eller tryck)
-      # Troligen läget: 11 OK, 1 fel, 2 stoppad (ett tillfälle, 25 november).
+      # Flöde och tryck (version 7). Alla tre stämde mot skärmen 26 november
+      # för fem kanoner. Det finns ingen flödesgivare i kanonerna: "Theoretic
+      # water flow" är flödet för de öppna ringarna vid börtrycket, och "Real
+      # water flow" räknas ur det uppmätta trycket,
+      #   flode = flodeTeori * roten ur (tryck / tryckBor),
+      # vilket gick ihop på en tiondel för alla fem. Teoretiskt flöde står
+      # kvar när kanonen är stoppad; det beräknade flödet blir 0 utan tryck,
+      # och är därför det som ska summeras.
+      flodeTeori  = V $r "411"  # säker: "Theoretic water flow", m3/h
+      flode       = V $r "406"  # säker: "Real water flow", m3/h (beräknat)
+      tryck       = V $r "403"  # säker: "Water pressure", bar, vid kanonen
+      tryckBor    = V $r "417"  # säker: "Water pressure set point", bar
+      k408        = V $r "408"  # troligen vattentemperaturen vid kanonen
+      # Läget: 6 kör (alla fem som gick 26 november), 11 klar, 2 stoppad,
+      # 1 fel.
       k415        = V $r "415"
+      # Lamporna, som tända bitar (se Bits). Bara när gående och stående
+      # jämförts: 453 bit 0, 1, 12 och 454 bit 4, 8 tändes när kanonerna
+      # gick med ring 1 och 2 öppna (26 november).
+      bitar       = Bits $r @("450", "451", "452", "453", "454", "455", "500", "501", "502", "503", "709")
       senastHord  = V $r "850"  # säker: senaste kontakt med kanonen
       # Brunnen enheten står vid ("Shelter" på skärmen Gun searching).
       # Säker: alla sju stämde mot skärmen 25 november (version 6).
@@ -410,6 +480,17 @@ function Read-Snapshot {
       t          = V $r "2"     # säker
       rh         = V $r "3"     # säker
       tw         = V $r "7"     # säker
+      # Flöde och tryck (version 7), mot skärmen 26 november: 4 = 14,5 bar
+      # (skärmen 14,6), 5 och 10 = 5,8 båda. Det äldre kortet har inget
+      # börtryck, och de två flödena skilde 4,7 mot 5,4 tidigare samma
+      # morgon. Kanonen på adress 2, tyst sedan 2022, har 10 = 15,5 och
+      # 5 = 0 utan tryck - som teoretiskt och beräknat flöde på SGC400.
+      flodeTeori = V $r "10"    # trolig: "Theoretic water flow", m3/h
+      flode      = V $r "5"     # trolig: "Real water flow", m3/h
+      tryck      = V $r "4"     # säker: "Water pressure", bar
+      # Lamporna (se Flags). 26 november, med ring 0 och 2, automatik, fläkt
+      # och kompressor tända på skärmen, var 25, 37, 42, 43, 44 = 1 och 65 = 3.
+      flaggor    = Flags $r (@(25..81) + @(85, 86, 93, 96, 107))
       senastHord = V $r "104"
       brunn      = V $r "108"   # säker: "Shelter", stämde 25 november
       uppdaterad = V $r "DateUpd"
@@ -794,6 +875,44 @@ if ($Sjalvtest) {
   Check "enhet hörd nyss: t och tw sparas" ($e -and $e["SGC400-3"]["tw"] -eq 7.3 -and $e["SGC400-3"]["t"] -eq -1.2)
   Check "enhet hörd nyss: inget mer än t och tw" ($e["SGC400-3"].Count -eq 2)
   Check "tyst enhet sparas inte (blir ett hål)" (-not $e.Contains("SGC400-4"))
+  Check "utan flöde ingen summa" (-not $h["202611151805"].Contains("flodeSum"))
+
+  # Flöde: två hörda kanoner summeras, den tysta och teoretiskt flöde inte.
+  $s["enheter"]["SGC400-3"]["flode"] = 7.3
+  $s["enheter"]["SGC400-3"]["flodeTeori"] = 7.3
+  $s["enheter"]["SGC400-4"]["flode"] = 9.9
+  $s["enheter"]["SGC300-1"] = [ordered]@{ typ = "S ACCESS 300"; tw = -4.3; flode = 5.8; flodeTeori = 5.8; senastHord = "2026-11-15T18:43:10"; uppdaterad = "2026-11-15T18:43:10" }
+  $h = Build-HistPatch $s $slot
+  $pt = $h["202611151805"]
+  Check "hörd enhets flöde sparas" ($pt["e"]["SGC400-3"]["flode"] -eq 7.3 -and $pt["e"]["SGC300-1"]["flode"] -eq 5.8)
+  Check "teoretiskt flöde sparas inte i historiken" (-not $pt["e"]["SGC400-3"].Contains("flodeTeori"))
+  Check "summan är de hörda enheternas flöde" ($pt["flodeSum"] -eq 13.1)
+  # Lamporna: bitmönster och flaggkolumner som de såg ut 26 november.
+  $tb = New-Object System.Data.DataTable
+  foreach ($c in @("453", "454", "455")) { [void]$tb.Columns.Add($c, [string]) }
+  foreach ($c in @("25", "37", "65")) { [void]$tb.Columns.Add($c, [int]) }
+  $row = $tb.NewRow(); $row["453"] = "0001110000100011"; $row["454"] = "0000000111010001"; $row["455"] = "0000000000000000"
+  $row["25"] = 1; $row["37"] = 0; $row["65"] = 3
+  Check "tända bitar räknas från höger" ((Bits $row @("453", "454", "455", "500")) -eq "453:0,1,5,10,11,12;454:0,4,6,7,8")
+  Check "flaggor: ettor som nummer, annat med värde" ((Flags $row @(25, 37, 65, 99)) -eq "25,65=3")
+
+  $script:lastBits = @{}
+  $s["enheter"]["SGC400-3"]["bitar"] = "453:0,1;454:4"
+  $s["enheter"]["SGC300-1"]["flaggor"] = ""
+  $pt = (Build-HistPatch $s $slot)["202611151805"]
+  Check "bitarna sparas första gången" ($pt["e"]["SGC400-3"]["b"] -eq "453:0,1;454:4" -and $pt["e"]["SGC300-1"]["b"] -eq "0")
+  $pt = (Build-HistPatch $s $slot)["202611151805"]
+  Check "oförändrade bitar sparas inte igen" (-not $pt["e"]["SGC400-3"].Contains("b") -and -not $pt["e"]["SGC300-1"].Contains("b"))
+  $s["enheter"]["SGC400-3"]["bitar"] = "453:0,1,2;454:4"
+  $pt = (Build-HistPatch $s $slot)["202611151805"]
+  Check "en ring till: bitarna sparas" ($pt["e"]["SGC400-3"]["b"] -eq "453:0,1,2;454:4")
+  $s["enheter"]["SGC300-1"]["senastHord"] = "2026-11-15T11:00:00"
+  [void](Build-HistPatch $s $slot)
+  $s["enheter"]["SGC300-1"]["senastHord"] = "2026-11-15T18:43:10"
+  $pt = (Build-HistPatch $s $slot)["202611151805"]
+  Check "tyst och hörd igen: bitarna skrivs igen" ($pt["e"]["SGC300-1"]["b"] -eq "0")
+
+  Check "flöde och tryck har dödband" ((Band "enheter/SGC400-3/flode") -eq 0.2 -and (Band "enheter/SGC400-3/tryckBor") -eq 0.2)
 
   if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
   Write-Host ("Självtestet hittade " + $script:bad + " fel."); exit 1
