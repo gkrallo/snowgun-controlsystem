@@ -65,14 +65,17 @@ adressen, inte n°.
 | 400 | lufttemperatur, °C | säker |
 | 401 | luftfuktighet, % | säker |
 | 402 | våttemperatur, °C | säker |
-| 411 | teoretiskt vattenflöde, m³/h (statistikens `debit_eau_theorique` ÷ 10) | säker |
-| **707** | **brunnen enheten står vid** ("Shelter" på skärmen Gun searching) | **säker** — alla sju stämde 25 november: n° 1–7 = 7, 10, 9, 7, 8, 5, 8 |
+| 411 | "Theoretic water flow", m³/h: flödet för de öppna ringarna vid börtrycket (statistikens `debit_eau_theorique` ÷ 10). Står kvar när kanonen står (cirka 4) | säker |
+| **406** | **"Real water flow", m³/h** — räknat, inte mätt: 411 × √(403 ÷ 417). 0 när kanonen står | **säker** (26 november, fem kanoner) |
+| **403** | **"Water pressure", bar**, vid kanonen (10–19,9 när de gick) | **säker** (26 november) |
+| **417** | **"Water pressure set point", bar** (10–21; 21 hos lansarna, som stod) | **säker** (26 november) |
+| **707** | **brunnen enheten står vid** ("Shelter" på skärmen Gun searching) | **säker** — alla sju stämde 25 november: n° 1–7 = 7, 10, 9, 7, 8, 5, 8. 26 november hade n° 2 och 3 bytt (9 och 10) |
 | 408 (= 706) | vattentemperatur vid enheten, °C — 2,5–2,7 hos kanonerna när vattnet ut var 2,8–3,6 | trolig |
-| 415 | läge: 11 för de som var OK, 1 för den som fått fel (adress 4, "fault" 21:09), 2 för den som stoppats (adress 8, "stopped" 21:08) | trolig, ett tillfälle |
-| 416 | 50 för OK, 42 för felet, 1 för den stoppade — felkod eller steg? | **osäker** |
-| 413 | 19 för n° 2, annars 0 | **osäker** |
-| 702, 703 | −2,4/−1,9, −4/−3,5, −3/−2,5 (lansarna), −2/−1,5 — start- och stoppgräns i våttemperatur per enhet? Skillnaden är alltid 0,5 | **osäker** |
-| 417 | 11–14 för kanonerna, 21 för lansarna | **osäker** |
+| 415 | läge: **6 kör** (alla fem som gick 26 november), 11 för de som var OK men inte gick, 1 för den som fått fel (adress 4, "fault" 21:09), 2 för den som stoppats (adress 8, "stopped" 21:08) | trolig, flera tillfällen |
+| 416 | 50 för OK, 42 för felet, 1 för den stoppade, 20 för alla som gick — felkod eller steg? | **osäker** |
+| 413 | 19 för alla som gick 26 november, annars 0 | **osäker** |
+| 702, 703 | start- och stoppgräns i våttemperatur per enhet: n° 1, 6, 7 −2/−1,5 som skärmens Starting/Stopping temperature, n° 2, 3 −2,4/−1,9, lansarna −3/−2,5 | trolig (skärmen visade −2/−1,5 för en kanon) |
+| 450–455, 500–503, 709 | lamporna på skärmen som bitmönster, se *Lamporna* nedan | delvis |
 | 852 | 9–20 för kanonerna, 50 för lansarna | **osäker** |
 | 801, 802 | typ och modell | säker |
 | 850 | senaste kontakt med kanonen | säker |
@@ -83,8 +86,68 @@ Kvällen 25 november försvann adress 4, 8, 9 och 5 en i taget 21:12–21:17.
 En enhet som försvinner behåller sina sista värden i tabellen, också läget i
 415.
 
-Uppmätt flöde (`debit_eau_reel`) och tryck (`pression_eau`) var noll och går
-inte att peka ut förrän något går.
+### Flödet i kanonerna (26 november 2026)
+
+Kanonerna har ingen flödesgivare. Båda flödena på skärmen är räknade:
+teoretiskt för de öppna ringarna vid börtrycket, och "real" rättat med
+trycket kanonen mäter. Läsningen 08:40 mot formeln
+406 = 411 × √(403 ÷ 417):
+
+| Kanon (adress) | Brunn | 411 | 406 | 403 | 417 | Formeln |
+|---|---|---|---|---|---|---|
+| 3 | 7 | 7,3 | 7,3 | 10 | 10 | 7,30 |
+| 4 | 9 | 6,6 | 6,5 | 16,8 | 17 | 6,56 |
+| 5 | 10 | 7,6 | 7,7 | 11,1 | 11 | 7,63 |
+| 8 | 5 | 7,3 | 7,1 | 19,9 | 21 | 7,11 |
+| 9 | 8 | 7,6 | 9,5 | 16,8 | 10,8 | 9,48 |
+
+### Lamporna (ringar, hydrant, kompressor …)
+
+Skärmen visar för varje kanon Ring 1–4, Hydrant OK, Water valve open/closed,
+Pressostat, Compressor ON, Automatic, General fault, Gun started, Power ON,
+Fan ON, Rotation och Ready to start (temp OK). Ringarna styr hur mycket
+vatten, och därmed snö, kanonen gör.
+
+I SGC400 ligger de som bitmönster i teckenkolumnerna 450–455, 500–503 och
+709. Bryggan 7 skickar de tända bitarna som `bitar`, till exempel
+`453:0,1,5;454:0,4` — bit 0 är tecknet längst till höger. Historiken sparar
+dem (`b`) bara när de ändras, så att varje gång en ring öppnas eller en lampa
+tänds får en tid som kan jämföras med skärmen.
+
+Tända bitar, stående kväll 25 november och gående morgon 26 november
+(skärmen: ring 1 och 2, automatik, gun started, power, fläkt, kompressor,
+hydrant OK och ready to start tända på alla som gick):
+
+| Läge | 453 | 454 | 455 |
+|---|---|---|---|
+| OK, står (415 = 11) | 5, 6, 10 | 0, 6 | 2 |
+| fel (1) / stoppad (2) | 5, 6, 8, 10 | 0, 6, 7 | 2 |
+| kör (6), alla fem | 0, 1, 5, 10, 12 (+ 8, 9 eller 11 olika) | 0, 4, 6, 7, 8 | 2 |
+| lans, tyst sedan oktober | – | 0, 6 | – |
+
+Tänds bara vid körning: 453 bit 0, 1, 12 och 454 bit 4, 8. **Ring 1 och 2
+är troligen 453 bit 0 och 1**, och ring 3 och 4 då bit 2 och 3 — det senare
+bara en gissning ur mönstret, ingen har sett dem. Resten är inte parat.
+Appen visar ringarna som tolkade och övriga som råa bitar.
+
+Det äldre kortet har en kolumn per lampa (25–81). Bryggan skickar dem som
+`flaggor`, till exempel `25,37,42,43,44,65=3`. Gående 26 november, med
+skärmens Ring 0, Ring 2, Automatic, Fan ON och Compressor ON tända, var
+25, 37, 42, 43 och 44 = 1, 65 = 3 och 107 = 2 — fem ettor för fem lampor,
+men inte vilken som är vilken.
+
+För att para resten behövs skärmbilder av Visualisation i andra lägen, med
+klockslag: en stoppad kanon, en med fel, en lans som går, och när ring 3
+eller 4 öppnas. Med bryggan 7 på styrdatorn behövs ingen `-Ra` — bitarna och
+tiden finns i historiken.
+
+**FT01 mot kanonerna:** de sex som gick (fem ovan och adress 1 med 5,8)
+gav 43,9 m³/h ihop; FT01 visade 19,8, alltså 45 %. Klockan 06:12 var
+kvoten 46 % med teoretiskt flöde. Det stämmer med att mätaren visar ungefär
+hälften. Kanonernas siffra hänger på dysornas tabellvärden, men den är
+oberoende av FT01 — ligger kvoten stadigt kring 45 % talar det för ett
+skalningsfel. Bryggan 7 sparar summan (`flodeSum`) i historiken, så kvoten
+kan följas över en hel natt. Måttbandet vid dammen avgör vilken som stämmer.
 
 ## Fläktkanoner på äldre styrkort — `[SGC300_Com]`
 
@@ -93,6 +156,12 @@ Två rader. n° 1 lever. n° 2 har inte hörts sedan 19 oktober 2022.
 | Kolumn | Betydelse | Säkerhet |
 |---|---|---|
 | 2, 3, 7 | lufttemperatur, fukt, våttemperatur | säker |
+| **4** | **"Water pressure", bar** (14,5; skärmen 14,6) | **säker** (26 november) |
+| **10** | **"Theoretic water flow", m³/h** | trolig — 5,8 som 5; n° 2, tyst sedan 2022, har 15,5 där och 0 i 5 utan tryck, som 411/406 på SGC400 |
+| **5** | **"Real water flow", m³/h** | trolig (samma skäl). Skärmen visade 4,7 teoretiskt och 5,4 real tidigare samma morgon, så de är inte alltid lika |
+| 9 | startgräns, °C (−2 som skärmen) | trolig |
+| 14 | "Flow max limit", m³/h (24,1; skärmen 24) | trolig |
+| 21 | 3,7–3,8 både stående och gående — inte flödet | **osäker** |
 | 88 | n° (= adress på det här kortet: n° 1 har adress 1, n° 2 adress 2) | säker |
 | 104 | senaste kontakt | säker |
 | **108** | **brunnen** ("Shelter"): n° 1 = 6, n° 2 = 7 | **säker** (25 november) |
@@ -106,6 +175,50 @@ ska strunta i den.
 1001–1009 är kanonernas egna givare. Kolumn 4, 5, 6 = temperatur, fukt,
 våttemperatur. `Wind_Com` kolumn 4 = fart, 5 = riktning — används inte i
 appen, stationens vindmätare är inte tillförlitlig.
+
+Det finns ingen annan givare för luften i tabellen; pumphusets ligger
+troligen i `Cooling tower_Com` (se Pumphuset nedan).
+
+### Stationens temperaturgivare visar för varmt (25 november 2026)
+
+Snögruppen har fått höra att väderstationen mäter fel, utan att någon vet
+varför, och låter därför en kanon vid brunn 7 räkna fram våttemperaturen i
+stället. Jämfört med kanon 3 (SGC400 n° 1), som står vid samma brunn, var
+tionde minut 20:50–22:30:
+
+| Klockan | Stationen t / våt | Kanon 3 t / våt |
+|---|---|---|
+| 21:10 | 1,3 / −1,0 | −0,1 / −1,8 |
+| 21:40 | 0,0 / −1,8 | −0,5 / −1,9 |
+| 22:00 | 1,3 / −0,9 | −0,3 / −1,8 |
+| 22:30 | 0,2 / −1,7 | −0,3 / −1,7 |
+
+- **Temperaturen ligger 0,3–1,7 grader för högt och hoppar**, medan kanonen
+  ligger still. Det är ingen fast offset, så en rättning i styrsystemet
+  skulle bara stämma ibland.
+- **Fukten i luften stämmer.** Ångtrycket ur temperatur och relativ fukt
+  (Buck 1996) var 4,53 hPa på stationen (0,8 °C, 70 %) och 4,58–4,60 hPa på
+  kanon 3 och 5 (−0,3 °C, 77 %; 0,0 °C, 75 %), daggpunkten −4,0 mot −3,8.
+  Fuktgivaren mäter alltså rätt mängd vatten; den relativa fukten blir låg
+  bara för att den räknas mot en för hög temperatur.
+- **Tolkning (inte bekräftad):** givaren sitter i luft som är varmare än
+  omgivningen — ett strålskydd som inte ventileras, värme från ett skåp, hus
+  eller brunnen, eller egenuppvärmning. Det var nästan vindstilla (0,1–0,2
+  m/s), då ett sådant fel blir störst och mest ojämnt. Kontrollera var och
+  hur den sitter, och jämför en blåsig natt: krymper skillnaden i vind är
+  det uppvärmning.
+- **Följd:** stationens våttemperatur blir upp till 0,8 grader för varm,
+  alltså för försiktig. Appens översikt visar stationens värden; enheterna
+  vid brunn 7 är bättre så länge felet finns.
+
+Morgonen 26 november, med alla kanoner igång, visade stationen −2,8 °C och
+kanonerna −3,9 till −4,4 — fortfarande 1,1–1,6 grader för varmt. Fukten gick
+då inte att jämföra: kanonernas egna fanor höjer luftfuktigheten vid deras
+givare (87–92 %).
+
+Bara en kväll och en morgon att jämföra med. Historiken har sedan bryggan 5
+både stationens och de hörda enheternas t och tw, så jämförelsen kan göras
+om över längre tid och i fler väder.
 
 ## Larm och händelser — `Live_event_SQL`
 
@@ -122,10 +235,9 @@ brunnar, styrsystemet har tjugofyra.
 
 ## Ännu inte hittat
 
-- Uppmätt flöde per kanon och i pumphuset.
-- Driftläge per kanon (stoppad, väntar, startar, går, fel).
-- Dyssteg på lansarna.
-- Vilken brunn varje kanon står vid.
+- Vilken bit som är vilken lampa, utom ring 1 och 2 (troligen), se
+  *Lamporna*. Dyssteg på lansarna.
+- Läget på det äldre kortet (appen räknar det som "kör" när vatten går).
 - Vad `Set up installation` kolumn 11 (= 900) betyder; statistiken kallar den
   `debit_eau_total`, men den var 900 med allt avstängt.
 
@@ -173,7 +285,18 @@ november): bubblingen kyler ner vattnet snabbare. Temperaturen bredvid (3 °C
 på bilden) är en givare på containern, alltså pumphuset — torr
 utetemperatur, och det den styr på. Kompressorn ska starta vid +3 °C eller
 kallare. Automatiken var avstängd 16 november och skulle slås på dagen
-efter. Varken givaren eller kompressorns läge är hittade bland kolumnerna.
+efter. Varken givaren eller kompressorns läge är säkert hittade bland
+kolumnerna.
+
+Troligast är `Cooling tower_Com` (en rad, `0` = 11): kyltornet är i
+Sufags system det som kyler vattnet, alltså här luftningen. Tabellen har
+bara tre decimalkolumner, och sonden 15 november 18:43 såg 76 = 0, 77 = 0,
+78 = 3. 78 kan vara temperaturen (stationen visade 2,9 samtidigt) eller
+startgränsen +3 °C — samma siffra, så det går inte att skilja på en enda
+läsning. Det finns ingen plats för både fukt och våttemperatur vid sidan om,
+och en givare som bara styr en kompressor behöver ingen fukt: **pumphusets
+givare mäter med stor sannolikhet bara torr temperatur.** Bryggan läser inte
+tabellen; den behöver en läsning när temperaturen inte är 3 grader.
 
 Vad det betyder för datan:
 
@@ -186,7 +309,9 @@ Vad det betyder för datan:
 - **FT01 är `dep12/k125`, i m³/h.** Utpekad 25 november: när pumparna
   startade steg `k125` från 0,1 till 6–12 och stämde med skärmens 8,6, medan
   `k126` stod kvar på 0,1. Snögruppen upplever att mätaren visar ungefär
-  hälften av verkligt flöde, kanske ett skalningsfel sedan den byttes. Appen
+  hälften av verkligt flöde, kanske ett skalningsfel sedan den byttes —
+  26 november visade den 45 % av kanonernas räknade flöde (se Flödet i
+  kanonerna ovan). Appen
   visar värdet orättat. Rätt faktor tas fram mot dammen: mät med måttbandet
   före och efter en lång körning och jämför med FT01 summerat över körningen
   ur historiken. Uttaget i dammen räknas inte på FT01 förrän dess.

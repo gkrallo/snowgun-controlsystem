@@ -486,9 +486,22 @@ function applyLive(v){
       namn:(lans?'Lans ':'Kanon ')+adr, modell:e.typ||'',
       state:(ref&&heard&&Math.abs(ref-heard)<CONTACT_MS)?'conn':'nocon', heard,
       t:e.t, rh:e.rh, tw:e.tw, fmax:Number.isFinite(e.flodeTeori)?e.flodeTeori:null,
-      // Brunnen ("Shelter") från bryggans version 6. Läget är kolumn 415,
-      // tolkat ur ett enda tillfälle: 11 OK, 1 fel, 2 stoppad.
-      brunn:Number.isFinite(e.brunn)?e.brunn:null, lage:Number.isFinite(e.k415)?e.k415:null,
+      // Flöde och tryck från bryggans version 7. Kanonerna har ingen
+      // flödesgivare: q är styrsystemets "Real water flow", räknat ur
+      // trycket vid kanonen (teoretiskt × √(tryck/börtryck)), och 0 när den
+      // står. Det läggs i ett eget fält och inte i eau, som dammens modell
+      // räknar uttaget på — det ska inte ändras utan att någon bestämt det.
+      q:Number.isFinite(e.flode)?e.flode:null, tryck:Number.isFinite(e.tryck)?e.tryck:null,
+      tryckBor:Number.isFinite(e.tryckBor)&&e.tryckBor>0?e.tryckBor:null,
+      // Lamporna som tända bitar ("453:0,1;454:4") eller flaggkolumner
+      // ("25,37,65=3") på det äldre kortet. Se LAMPOR.
+      bits:typeof e.bitar==='string'?e.bitar:typeof e.flaggor==='string'?e.flaggor:null,
+      // Brunnen ("Shelter") från bryggans version 6. Läget är kolumn 415:
+      // 6 kör (alla fem som gick 26 november), 2 stoppad, 1 fel.
+      // Det äldre kortet har ingen lägeskolumn. Där räknas den som körande
+      // när vatten går: flödet räknas ur uppmätt tryck och är 0 när den står.
+      brunn:Number.isFinite(e.brunn)?e.brunn:null,
+      lage:Number.isFinite(e.k415)?e.k415:(old&&e.flode>0?6:null),
       // Finns inte i datan än. null och inte 0: noll vore ett påstående.
       eau:null, air:null, steg:null, stryp:0});
   }
@@ -529,7 +542,7 @@ let histRange=24, histLive={}, histOld={}, histOldRange=null, histOldAt=0, histT
 // på den och inte på ts, som kommer några sekunder efter slaget och annars
 // kan lägga två punkter i samma fack och lämna ett hål bredvid.
 const keyMs=k=>Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8),+k.slice(8,10),+k.slice(10,12));
-const HIST_F=['t','tw','tryckUt','k125','k126'];
+const HIST_F=['t','tw','tryckUt','k125','k126','flodeSum'];
 let histUnitF=new Set();
 function rebuildHist(){
   histUnitF=new Set();
@@ -785,7 +798,34 @@ function chip(st){const[c,l]=STATE[st]||['s-off',esc(st)];return `<span class="c
 // som försvinner behåller sitt sista läge i tabellen, och "Fel" på en
 // urkopplad kanon vore lika fel som "Hörs". 11 betyder troligen OK och visas
 // som "Hörs" — vi vet inte om enheten kör.
-const LAGE={1:['s-alarm','Fel'],2:['s-off','Stoppad']};
+const LAGE={1:['s-alarm','Fel'],2:['s-off','Stoppad'],6:['s-run','Kör']};
+/* Lamporna på styrsystemets skärm (bryggan 7). I SGC400 ligger de som bitar
+   i kolumn 450–455, 500–503 och 709; bryggan skickar de tända som
+   "453:0,1,5;454:0,4". Vilken bit som är vilken lampa läses ut genom att
+   jämföra med skärmbilder, och står här först när det är gjort. Hittills
+   bara ringarna: när kanonerna gick 26 november med ring 1 och 2 öppna var
+   453 bit 0 och 1 tända och släckta när de stod. Ring 3 och 4 som bit 2 och
+   3 är en gissning från mönstret — aldrig sett. sure:false visas som tolkat. */
+const LAMPOR={
+  SGC400:[{n:'Ring 1',b:'453:0',sure:false},{n:'Ring 2',b:'453:1',sure:false},
+          {n:'Ring 3',b:'453:2',sure:false,guess:true},{n:'Ring 4',b:'453:3',sure:false,guess:true}],
+  SGC300:[]
+};
+function bitSet(s){const o=new Set();if(!s||s==='0')return o;
+  if(/:/.test(s)){for(const g of s.split(';')){const[c,l]=g.split(':');(l||'').split(',').forEach(b=>b!==''&&o.add(c+':'+b));}}
+  else s.split(',').forEach(x=>x&&o.add(x.split('=')[0]));
+  return o;}
+function lampPanel(c){
+  if(c.bits==null)return missing('Lamporna (ringar, hydrant, kompressor …) kommer när bryggan på styrdatorn är version 7.');
+  const card=c.old?'SGC300':'SGC400', map=c.typ==='lans'?[]:LAMPOR[card], on=bitSet(c.bits), live=c.state==='conn'&&!bridgeOld();
+  const rings=map.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${map.map(l=>{const lit=on.has(l.b);
+      return `<span class="chip ${lit&&live?'s-run':'s-off'}" title="${l.guess?'Gissning: aldrig sett tänd':'Tolkat ur bit '+l.b}"><span class="d"></span>${l.n}${l.guess?' ?':''}</span>`}).join('')}</div>
+    <p class="muted small" style="margin:10px 0 0;line-height:1.6">Ring 1 och 2 är tolkade ur hur bitarna tändes när kanonerna gick 26 november; ring 3 och 4 (frågetecken) är en gissning som ingen sett än.</p>`
+    :`<p class="muted small" style="margin:10px 0 0">${c.typ==='lans'?'Lansarnas dyssteg':'Det äldre kortets ringar'} är inte utpekade än.</p>`;
+  return `<div class="card${live?'':' old'}" style="margin-top:14px"><h3>${icon('sliders','#7dd3fc',15)} Ringar och lampor</h3>${rings}
+    <p class="muted small" style="margin:12px 0 0;line-height:1.6">Övriga lampor — hydrant, vattenventil, kompressor, fläkt, automatik, fel — finns i styrsystemet men är inte parade med skärmen än. Tända bitar just nu:</p>
+    <div style="font-family:ui-monospace,Consolas,monospace;font-size:.78rem;color:var(--muted2);margin-top:6px;word-break:break-all">${esc(c.bits==='0'||c.bits===''?'inga':c.bits)}</div></div>`;
+}
 function uchip(c){
   if(real&&c.state==='conn'&&!bridgeOld()&&LAGE[c.lage]){const[k,l]=LAGE[c.lage];
     return `<span class="chip ${k}" title="Tolkat ur styrsystemets kolumn 415"><span class="d"></span>${l}</span>`;}
@@ -960,7 +1000,7 @@ function vOverviewR(){
   return topbar('Driftövervakning','Översikt')+`<div class="view">${alarmBanner()}
   <div class="grid g-kpi">
     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} Med kontakt</h3><div class="val">${con}<small> / ${cannons.length} enheter</small></div><div class="foot">Om de kör går inte att läsa ur datan än</div></div>
-    <div class="card kpi${bridgeOld()?' old':''}${HC}"${histAttr('tryckUt','Tryck efter högtryckspumpen (PT02)','bar')}><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">${bridgeOld()?agoHTML(lastData):'efter högtryckspumpen · flöde '+num(p2.k125)+' m³/h (FT01)'}</div></div>
+    <div class="card kpi${bridgeOld()?' old':''}${HC}"${histAttr('tryckUt','Tryck efter högtryckspumpen (PT02)','bar')}><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">${bridgeOld()?agoHTML(lastData):'efter högtryckspumpen · FT01 '+num(p2.k125)+' m³/h'+(cannons.some(c=>Number.isFinite(c.q)&&c.state==='conn')?' · kanonerna '+num(sum(cannons.filter(c=>c.state==='conn'&&Number.isFinite(c.q)),c=>c.q))+' m³/h':'')}</div></div>
     <div class="card kpi${bridgeOld()?' old':''}${HC}"${histAttr('tw','Våttemperatur vid väderstationen','°C')}><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null||bridgeOld()?'':cold?'up':'warn'}">${bridgeOld()?agoHTML(lastData):cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx&&!bridgeOld()?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
     <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">Egen beräkning — nivån mäts inte</div></div>
   </div>
@@ -1077,9 +1117,13 @@ function pumpSVGtall(p1,p2,L,LO,HI,pump){
 }
 
 function vWaterR(){
-  const con=running().filter(c=>Number.isFinite(c.fmax)), tot=+sum(con,c=>c.fmax).toFixed(1);
+  // Flödet nu (bryggan 7). Teoretiskt flöde står kvar när kanonen står och
+  // summeras därför inte; det beräknade är 0 utan tryck.
+  const con=running().filter(c=>Number.isFinite(c.q)), tot=+sum(con,c=>c.q).toFixed(1);
   const pct=Math.round(tot/PUMP_MAX*100), ps=pumpState(tot), hot=ps==='over'||ps==='at', near=ps!=='ok';
   const p2=pumps&&pumps.dep12||{};
+  // FT01 mot kanonerna: bara meningsfullt när det faktiskt går vatten.
+  const ft=Number.isFinite(p2.k125)?p2.k125:null, kvot=ft!=null&&tot>=3&&!bridgeOld()?ft/tot:null;
   return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
   <div class="card${bridgeOld()?' old':''}"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset ${bridgeOld()?agoHTML(lastData):''}</h3>
     ${pumps?pumpSVG():'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
@@ -1087,25 +1131,30 @@ function vWaterR(){
   </div>
   ${missing('<b>Flödesmätaren FT01</b> är styrsystemets kolumn 125. Den steg när pumparna startade 25 november och följde avläsningen på skärmen, medan kolumn 126 stod still. <b>Mätaren misstänks visa ungefär hälften</b> av det verkliga flödet, kanske ett skalningsfel sedan den byttes. Värdet visas som mätaren säger, utan rättning, och dammen räknar inte på det förrän det är kontrollerat mot måttbandet. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
 
-  <div class="section-title">Teoretiskt flöde — enheter med kontakt</div>
-  <div class="card">
-    ${con.length?con.map(c=>`<div class="flow-row">
-        <div class="fname">${c.typ==='kanon'?icon('fan','#7dd3fc',18):icon('lance','#7dd3fc',18)} ${esc(c.namn)}</div>
-        <div class="flow-track"><div class="flow-fill" style="width:${Math.max(4,Math.min(100,Math.round(c.fmax/PUMP_MAX*100)))}%"></div></div>
-        <div class="flow-val">${num(c.fmax)} <small>m³/h</small></div>
+  <div class="section-title">Vatten nu — enheter med kontakt</div>
+  <div class="card${bridgeOld()?' old':''}">
+    ${con.length?con.map(c=>`<div class="flow-row"${histAttr(c.key+'.flode','Vatten till '+c.namn,'m³/h')} style="cursor:pointer">
+        <div class="fname">${c.typ==='kanon'?icon('fan','#7dd3fc',18):icon('lance','#7dd3fc',18)} ${esc(c.namn)}${c.brunn?' <small class="muted">brunn '+c.brunn+'</small>':''}</div>
+        <div class="flow-track"><div class="flow-fill" style="width:${c.q>0?Math.max(4,Math.min(100,Math.round(c.q/PUMP_MAX*100))):0}%"></div></div>
+        <div class="flow-val">${num(c.q)} <small>m³/h</small></div>
       </div>`).join('')+`<div class="flow-row" style="margin-top:4px;border-top:2px solid var(--border-hi);padding-top:11px">
         <div class="fname">${icon('drop','#22d3ee',18)} <b>Summa</b></div>
         <div class="flow-track"><div class="flow-fill ${near?'amber':''}" style="width:${Math.min(100,pct)}%"></div></div>
         <div class="flow-val"><b>${num(tot)}</b> <small>m³/h</small></div>
       </div>
-      <p class="muted small" style="margin:12px 0 0;line-height:1.6">${hot?'<b style="color:var(--alarm)">Mer än pumparna orkar.</b> Kör alla dessa för fullt samtidigt går uttaget över '+PUMP_TARGET+' m³/h.':near?'<b style="color:var(--limit)">Nära målet '+PUMP_TARGET+' m³/h</b> om alla kör för fullt.':'Ryms inom pumparnas '+PUMP_TARGET+' m³/h även om alla kör för fullt.'}</p>`
-      :'<p class="muted small" style="margin:0">Ingen enhet har kontakt just nu.</p>'}
+      <div class="flow-row"${histAttr('k125',FT01_T,'m³/h')} style="cursor:pointer">
+        <div class="fname">${icon('gauge','#7dd3fc',18)} FT01 i pumphuset</div>
+        <div class="flow-track"><div class="flow-fill" style="width:${ft>0?Math.min(100,Math.round(ft/PUMP_MAX*100)):0}%;opacity:.6"></div></div>
+        <div class="flow-val">${num(ft)} <small>m³/h</small></div>
+      </div>
+      <p class="muted small" style="margin:12px 0 0;line-height:1.6">${kvot!=null?'<b style="color:var(--text)">FT01 visar '+Math.round(kvot*100)+' % av kanonernas summa.</b> ':''}${hot?'<b style="color:var(--alarm)">Över pumparnas mål '+PUMP_TARGET+' m³/h.</b>':near?'<b style="color:var(--limit)">Nära målet '+PUMP_TARGET+' m³/h.</b>':''}</p>`
+      :'<p class="muted small" style="margin:0">'+(running().length?'Flödet per enhet kommer när bryggan på styrdatorn är version 7.':'Ingen enhet har kontakt just nu.')+'</p>'}
   </div>
-  ${missing('Teoretiskt flöde är styrsystemets egen siffra för vad enheten <b>skulle</b> dra för fullt vid den temperatur den mäter — inte vad den drar just nu.')}
+  ${missing('<b>Kanonernas vatten är räknat, inte mätt</b> — de har ingen flödesgivare. Styrsystemet tar flödet för de öppna ringarna vid börtrycket och rättar det med trycket vid kanonen ("Real water flow" på skärmen). Det stämmer bara så bra som dysornas tabellvärden, men det är oberoende av FT01. 26 november, med sex kanoner igång, var summan 43,9 m³/h och FT01 19,8 — 45 %. Ligger kvoten stadigt där talar det för ett skalningsfel i FT01 snarare än ett fel som varierar. Måttbandet vid dammen avgör vilken som stämmer.')}
 
   <div class="card" style="margin-top:14px"><h3>${icon('drop','#7dd3fc',15)} Flöde ut (FT01)</h3>${histSeg()}
     ${histPts.length>1?'<div class="chartbox"><canvas id="cFlow"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
-    <p class="muted small" style="margin:10px 0 0">Som mätaren visar — den misstänks visa ungefär hälften.</p>
+    <p class="muted small" style="margin:10px 0 0">Som mätaren visar — den misstänks visa ungefär hälften. Den streckade linjen är kanonernas räknade flöde ihop (från bryggans version 7).</p>
   </div>
   <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck efter högtryckspumpen (PT02)</h3>${histSeg()}
     ${histPts.length>1?'<div class="chartbox"><canvas id="cWater"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
@@ -1121,13 +1170,14 @@ function vUnitR(){
     `<button class="linkbtn" onclick="go('${backTo}')">← Tillbaka</button>`)+`<div class="view">
     <div class="grid g-kpi">
       <div class="card kpi${O}"><h3>Status</h3><div style="margin-top:10px">${uchip(c)}</div><div class="foot" style="margin-top:9px">${c.brunn?'Brunn '+c.brunn+' · ':''}${esc(c.modell)} · senast hörd ${dm(c.heard)}<br><span style="color:var(--muted2)">adress ${c.adr} · n° ${c.nr} på ${c.old?'det äldre kortet':'SGC400'}</span></div></div>
-      <div class="card kpi${O}"><h3>Flöde vid full drift</h3><div class="val">${num(c.fmax)}<small> m³/h</small></div><div class="foot">styrsystemets siffra vid enhetens temperatur — inte vad den drar nu</div></div>
+      <div class="card kpi${O}${HC}"${histAttr(c.key+'.flode','Vatten till '+c.namn,'m³/h')}><h3>Vatten nu</h3><div class="val">${num(c.q)}<small> m³/h</small></div><div class="foot">${old?agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard)):'tryck '+num(c.tryck)+' bar'+(c.tryckBor?' (bör '+num(c.tryckBor)+')':'')+' · teoretiskt '+num(c.fmax)}</div></div>
       <div class="card kpi${O}${HC}"${histAttr(c.key+'.t','Luft vid '+c.namn,'°C')}><h3>Luft vid enheten</h3><div class="val">${num(c.t)}<small> °C</small></div><div class="foot">${old?agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard)):num(c.rh,0)+' % luftfuktighet'}</div></div>
       <div class="card kpi${O}${HC}"${histAttr(c.key+'.tw','Våttemp vid '+c.namn,'°C')}><h3>Våttemp vid enheten</h3><div class="val">${num(c.tw)}<small> °C</small></div>${old?'<div class="foot">'+agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard))+'</div>':''}</div>
     </div>
     ${c.state==='conn'?'':missing('<b>Ingen kontakt.</b> Värdena ovan är de sista styrsystemet fick innan kontakten bröts, och säger inget om hur det är nu.')}
-    ${LAGE[c.lage]&&c.state==='conn'?missing('<b>Läget "'+LAGE[c.lage][1]+'"</b> är tolkat ur styrsystemets kolumn 415, som hittills bara setts vid ett tillfälle (25 november). Jämför gärna med skärmen i pumphuset.'):''}
-    ${missing('Flöde, om enheten kör och dyssteg finns inte bland de värden vi hittat i styrsystemet än. Tryck på luft eller våttemperatur för att se kurvan.')}
+    ${lampPanel(c)}
+    ${LAGE[c.lage]&&c.state==='conn'?missing(c.old?'<b>"Kör"</b> betyder här bara att vatten går: det äldre kortet har ingen kolumn för läget.':'<b>Läget "'+LAGE[c.lage][1]+'"</b> är tolkat ur styrsystemets kolumn 415 (6 kör, 2 stoppad, 1 fel), som setts vid några tillfällen 25–26 november. Jämför gärna med skärmen i pumphuset.'):''}
+    ${missing('<b>Vattnet är räknat, inte mätt.</b> Kanonerna har ingen flödesgivare. Styrsystemet räknar flödet för de öppna ringarna vid börtrycket (teoretiskt) och rättar det med trycket den mäter vid kanonen: dubbelt tryck ger ungefär 1,4 gånger flödet. Det är "Real water flow" på skärmen. Vilka ringar som är öppna finns inte bland de värden vi hittat än. Tryck på ett värde för att se kurvan.')}
   </div>`;
 }
 
@@ -1141,7 +1191,7 @@ function unitCard(c){
       ${uchip(c)}
     </div>
     <div class="metric-row">
-      <div class="metric"><div class="m-l">Vid full drift</div><div class="m-v">${num(c.fmax)} <small>m³/h</small></div></div>
+      <div class="metric${HC}"${histAttr(c.key+'.flode','Vatten till '+c.namn,'m³/h')}><div class="m-l">Vatten</div><div class="m-v">${num(c.q)} <small>m³/h</small></div></div>
       <div class="metric${HC}"${histAttr(c.key+'.t','Luft vid '+c.namn,'°C')}><div class="m-l">Luft</div><div class="m-v">${num(c.t)}<small>°C</small></div></div>
       <div class="metric${HC}"${histAttr(c.key+'.tw','Våttemp vid '+c.namn,'°C')}><div class="m-l">Våttemp</div><div class="m-v">${num(c.tw)}<small>°C</small></div></div>
     </div>
@@ -2135,7 +2185,11 @@ function drawCharts(){
     if(current==='overview')chart('cTw',ts,[series(col('tw'),'Våttemp','#38bdf8'),
       flat(ts.length,FTHRESH,'Startgräns','#fbbf2499')],chOpts(ts,'°C',histTick(ts)));
     if(current==='water'){chart('cWater',ts,[series(col('tryckUt'),'Tryck ut','#22d3ee')],chOpts(ts,'bar',histTick(ts)));
-      chart('cFlow',ts,[series(col('k125'),'Flöde FT01','#38bdf8')],chOpts(ts,'m³/h',histTick(ts),{beginAtZero:true}));}
+      // Kanonernas summa streckad och utan fyllning: den är räknad, inte mätt,
+      // och ska gå att läsa ovanpå FT01.
+      chart('cFlow',ts,[series(col('k125'),'Flöde FT01','#38bdf8'),
+        Object.assign(series(col('flodeSum'),'Kanonerna ihop','#a78bfa'),{fill:false,borderDash:[5,4],spanGaps:false})],
+        chOpts(ts,'m³/h',histTick(ts),{beginAtZero:true}));}
     return;
   }
   if(current==='overview'){

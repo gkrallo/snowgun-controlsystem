@@ -32,8 +32,8 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
-- **Bryggan** (`bridge/brygga.ps1`, version 5 på styrdatorn, version 6
-  byggd 25 november men inte utlagd) går på styrdatorn som en
+- **Bryggan** (`bridge/brygga.ps1`, version 6 på styrdatorn, version 7
+  byggd 26 november men inte utlagd) går på styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
   inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
@@ -52,18 +52,19 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   medelvärden, högst 600 punkter. Valet sparas medvetet inte till nästa
   gång appen öppnas. Från bryggans version 5 har varje punkt också `e`:
   luft och våttemperatur för de enheter styrsystemet hört de senaste 15
-  minuterna (runt 15 MB per säsong). Lägg inte till fler fält per enhet
+  minuterna; från version 7 också deras flöde, och punkten har `flodeSum`
+  (runt 18 MB per säsong). Lägg inte till fler fält per enhet
   utan att räkna på vad en hämtning av säsongen då kostar.
 - **Gamla värden får aldrig se live ut.** Ett kort vars enhet är tyst, eller
   allt när bryggan tystnat, får klassen `old`: streckad kant, nedtonade
   siffror och en klocka med åldern (`agoHTML`). Gult och rött är för larm,
-  inte för gammal data. Chippen säger "Hörs"/"Tyst" — vi vet inte om en
-  enhet kör, och "Kontakt" i blått lästes som att den gjorde det. Värden med
+  inte för gammal data. Chippen säger "Hörs"/"Tyst" när läget inte är känt
+  — "Kontakt" i blått lästes som att enheten körde — och "Kör" bara när
+  läget säger det och enheten hörs just nu. Värden med
   historik går att trycka på (`histAttr`, `openHist`).
 - **Appen** loggar in med Google, visar riktig data och går att installera på
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
-  siffror: uppmätt flöde, driftläge, dyssteg, strypning och vilken brunn en
-  enhet står vid. Körfönstret är fortfarande ett exempel (märkt så), och
+  siffror: öppna ringar, dyssteg och strypning. Körfönstret är fortfarande ett exempel (märkt så), och
   dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönet
   och snorkeln är inmätta mot vattenytan (24 november): 100 % är snorkeln,
   3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Måttbandet läses
@@ -77,12 +78,28 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   startade. Mätaren misstänks visa ungefär hälften. Appen visar den orättad
   och märkt så; **räkna inte dammens uttag på den** förrän faktorn
   kontrollerats mot måttbandet (se `docs/kolumnmappning.md`).
+- **Kanonernas flöde är räknat, inte mätt** (bryggan 7): "Real water flow"
+  = teoretiskt × √(tryck ÷ börtryck), 0 när kanonen står. Det summeras och
+  läggs bredvid FT01 (45 % av summan 26 november). Teoretiskt flöde står
+  kvar när kanonen står och får aldrig summeras. Flödet ligger i `q`, inte
+  i `eau` — dammens modell räknar uttaget på `eau`, och att byta källa för
+  uttaget är ett beslut för Kristian, inte en bieffekt.
+- **Lamporna** (ringar 1–4, hydrant, kompressor, fläkt …) skickas från
+  bryggan 7 som tända bitar och sparas i historiken bara när de ändras.
+  Bara ring 1 och 2 är (troligen) parade; appen visar ringarna som tolkade
+  och resten som råa bitar. Lägg in en lampa i `LAMPOR` först när den
+  jämförts med skärmen, aldrig ur en gissning utan märkning.
+- **Väderstationen vid brunn 7 visar för varmt**, 0,3–1,7 grader och
+  ojämnt, medan fukten i luften stämmer (jämfört med kanon 3 vid samma
+  brunn 25 november). Troligen uppvärmd givare, inte en offset — lägg
+  ingen fast rättning på den. Detaljer i `docs/kolumnmappning.md`.
 - **Enheterna heter efter Modbus-adressen** ("Kanon 4", "Lans 6"), som
   styrsystemets skärm visar och snögruppen säger. Adress = n° + 2 på SGC400,
   = n° på det äldre kortet. Brunnen ("Shelter") skickas från bryggans
-  version 6 och placerar enheterna på kartan. Läget (kolumn 415: 1 fel,
-  2 stoppad, 11 OK) är tolkat ur ett tillfälle och visas bara när enheten
-  hörs — en urkopplad enhet behåller sitt sista läge. **Kanonen på adress 2
+  version 6 och placerar enheterna på kartan. Läget (kolumn 415: 6 kör,
+  1 fel, 2 stoppad, 11 OK) visas bara när enheten hörs — en urkopplad enhet
+  behåller sitt sista läge. Det äldre kortet saknar läget och räknas som
+  körande när vatten går. **Kanonen på adress 2
   finns inte längre** men står kvar i styrsystemets databas med flit; appen
   hoppar över den och dess gamla larm.
 - **Inte gjort:** svar från leverantören och läs-only-kontot; faktorn för
