@@ -101,6 +101,23 @@ trycket kanonen mäter. Läsningen 08:40 mot formeln
 | 8 | 5 | 7,3 | 7,1 | 19,9 | 21 | 7,11 |
 | 9 | 8 | 7,6 | 9,5 | 16,8 | 10,8 | 9,48 |
 
+### Snömängden är vattnet × 2,2
+
+Ingen kanon mäter eller rapporterar snö. Styrsystemets skärm ("Flows m³/h:
+Water 41, Snow 90,2" 26 november) och statistiken (`bilan_exploitation2`,
+provberäkningen för Råda 27 december 2023: 33,97 → 74,73, 224,58 → 494,08,
+283,22 → 623,08 m³) ger alla exakt 2,20. Det motsvarar snö på ungefär
+455 kg/m³ utan svinn, oavsett väder och snökvalitet; i verkligheten kanske
+1,7–2,6. "Medium thickness of the snow" är samma volym delad med spårets
+yta. "Water" på skärmen är kanonernas summerade flöde (41 mot bryggans
+40,7), inte FT01 (18,6).
+
+Bryggan 8 summerar vattnet per enhet sedan den kom till brunnen
+(`vattenBrunn`, nollas när brunnen byts) och för säsongen från 1 augusti
+(`vattenSasong`). Appen multiplicerar med `SNO_FAKTOR`. Den egna faktorn
+kan tas fram när snöytan mätts med pucken: snödjup × yta mot vattnet för
+samma körningar.
+
 ### Lamporna (ringar, hydrant, kompressor …)
 
 Skärmen visar för varje kanon Ring 1–4, Hydrant OK, Water valve open/closed,

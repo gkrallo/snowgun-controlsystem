@@ -496,6 +496,9 @@ function applyLive(v){
       // Lamporna som tända bitar ("453:0,1;454:4") eller flaggkolumner
       // ("25,37,65=3") på det äldre kortet. Se LAMPOR.
       bits:typeof e.bitar==='string'?e.bitar:typeof e.flaggor==='string'?e.flaggor:null,
+      // Vattnet sedan enheten kom till brunnen och för säsongen (bryggan 8).
+      vb:Number.isFinite(e.vattenBrunn)?e.vattenBrunn:null, vs:Number.isFinite(e.vattenSasong)?e.vattenSasong:null,
+      brunnSedan:parseT(e.brunnSedan)||null,
       // Brunnen ("Shelter") från bryggans version 6. Läget är kolumn 415:
       // 6 kör (alla fem som gick 26 november), 2 stoppad, 1 fel.
       // Det äldre kortet har ingen lägeskolumn. Där räknas den som körande
@@ -563,7 +566,9 @@ function rebuildHist(){
     for(const f of HIST_F)add(f,p[f]);
     // Enheternas värden (bryggan 5) ligger under e, och plattas ut till
     // "SGC400-3.tw" — samma namn som historikrutan frågar efter.
-    if(p.e)for(const [u,o] of Object.entries(p.e))if(o)for(const [f,v] of Object.entries(o))add(u+'.'+f,v);
+    if(p.e)for(const [u,o] of Object.entries(p.e))if(o)for(const [f,v] of Object.entries(o)){add(u+'.'+f,v);
+      // Snön vid brunnen räknas ur vattnet (vb), så att faktorn bara står på ett ställe.
+      if(f==='vb')add(u+'.sno',sno(v));}
     for(const f in a.c)if(!HIST_F.includes(f))histUnitF.add(f);
   }
   // Tomma fack blir hål i kurvan — där har bryggan inte hörts. Tomt i början
@@ -799,6 +804,13 @@ function chip(st){const[c,l]=STATE[st]||['s-off',esc(st)];return `<span class="c
 // urkopplad kanon vore lika fel som "Hörs". 11 betyder troligen OK och visas
 // som "Hörs" — vi vet inte om enheten kör.
 const LAGE={1:['s-alarm','Fel'],2:['s-off','Stoppad'],6:['s-run','Kör']};
+/* Snömängd = vatten × 2,2, som styrsystemet räknar ("Flows m³/h: Water 41,
+   Snow 90,2", och statistiken för Råda 2023 med 2,20 överallt). Det motsvarar
+   snö på ungefär 455 kg/m³ utan svinn, oavsett väder och snökvalitet — i
+   verkligheten kanske 1,7–2,6. Bryggan summerar bara vattnet, så faktorn
+   kan bytas här när snöytan mätts med pucken och den egna kvoten är känd. */
+const SNO_FAKTOR=2.2;
+const sno=v=>Number.isFinite(v)?v*SNO_FAKTOR:null;
 /* Lamporna på styrsystemets skärm (bryggan 7). I SGC400 ligger de som bitar
    i kolumn 450–455, 500–503 och 709; bryggan skickar de tända som
    "453:0,1,5;454:0,4". Vilken bit som är vilken lampa läses ut genom att
@@ -815,6 +827,17 @@ function bitSet(s){const o=new Set();if(!s||s==='0')return o;
   if(/:/.test(s)){for(const g of s.split(';')){const[c,l]=g.split(':');(l||'').split(',').forEach(b=>b!==''&&o.add(c+':'+b));}}
   else s.split(',').forEach(x=>x&&o.add(x.split('=')[0]));
   return o;}
+function snoPanel(c){
+  if(c.vb==null)return missing('Snömängden per kanon kommer när bryggan på styrdatorn är version 8.');
+  const t=c.brunn?'brunn '+c.brunn:'brunnen';
+  return `<div class="grid g-2" style="margin-top:14px">
+    <div class="card kpi${HC}"${histAttr(c.key+'.sno','Snö vid '+t+' (vatten × '+num(SNO_FAKTOR)+')','m³')}><h3>❄ Snö vid ${t}</h3><div class="val">${num(sno(c.vb),0)}<small> m³</small></div>
+      <div class="foot">${num(c.vb,1)} m³ vatten${c.brunnSedan?' sedan '+dm(c.brunnSedan):''}</div></div>
+    <div class="card kpi"><h3>❄ Snö i säsongen</h3><div class="val">${num(sno(c.vs),0)}<small> m³</small></div>
+      <div class="foot">${num(c.vs,0)} m³ vatten, alla brunnar</div></div>
+  </div>
+  <p class="muted small" style="margin:8px 2px 0;line-height:1.6">Snö = vatten × ${num(SNO_FAKTOR)}, som styrsystemet räknar — ingen kanon mäter snö. Räkneverket vid brunnen börjar om när enheten kopplas till en annan brunn. Bryggan räknar från version 8; tidigare nätter finns inte med. Tryck på snön vid brunnen för kurvan.</p>`;
+}
 function lampPanel(c){
   if(c.bits==null)return missing('Lamporna (ringar, hydrant, kompressor …) kommer när bryggan på styrdatorn är version 7.');
   const card=c.old?'SGC300':'SGC400', map=c.typ==='lans'?[]:LAMPOR[card], on=bitSet(c.bits), live=c.state==='conn'&&!bridgeOld();
@@ -1147,7 +1170,7 @@ function vWaterR(){
         <div class="flow-track"><div class="flow-fill" style="width:${ft>0?Math.min(100,Math.round(ft/PUMP_MAX*100)):0}%;opacity:.6"></div></div>
         <div class="flow-val">${num(ft)} <small>m³/h</small></div>
       </div>
-      <p class="muted small" style="margin:12px 0 0;line-height:1.6">${kvot!=null?'<b style="color:var(--text)">FT01 visar '+Math.round(kvot*100)+' % av kanonernas summa.</b> ':''}${hot?'<b style="color:var(--alarm)">Över pumparnas mål '+PUMP_TARGET+' m³/h.</b>':near?'<b style="color:var(--limit)">Nära målet '+PUMP_TARGET+' m³/h.</b>':''}</p>`
+      <p class="muted small" style="margin:12px 0 0;line-height:1.6">❄ Ger ungefär <b style="color:var(--text)">${num(sno(tot),0)} m³ snö i timmen</b> (vatten × ${num(SNO_FAKTOR)})${cannons.some(c=>c.vs!=null)?' · '+num(sno(sum(cannons.filter(c=>c.vs!=null),c=>c.vs)),0)+' m³ i säsongen, alla enheter':''}.<br>${kvot!=null?'<b style="color:var(--text)">FT01 visar '+Math.round(kvot*100)+' % av kanonernas summa.</b> ':''}${hot?'<b style="color:var(--alarm)">Över pumparnas mål '+PUMP_TARGET+' m³/h.</b>':near?'<b style="color:var(--limit)">Nära målet '+PUMP_TARGET+' m³/h.</b>':''}</p>`
       :'<p class="muted small" style="margin:0">'+(running().length?'Flödet per enhet kommer när bryggan på styrdatorn är version 7.':'Ingen enhet har kontakt just nu.')+'</p>'}
   </div>
   ${missing('<b>Kanonernas vatten är räknat, inte mätt</b> — de har ingen flödesgivare. Styrsystemet tar flödet för de öppna ringarna vid börtrycket och rättar det med trycket vid kanonen ("Real water flow" på skärmen). Det stämmer bara så bra som dysornas tabellvärden, men det är oberoende av FT01. 26 november, med sex kanoner igång, var summan 43,9 m³/h och FT01 19,8 — 45 %. Ligger kvoten stadigt där talar det för ett skalningsfel i FT01 snarare än ett fel som varierar. Måttbandet vid dammen avgör vilken som stämmer.')}
@@ -1175,6 +1198,7 @@ function vUnitR(){
       <div class="card kpi${O}${HC}"${histAttr(c.key+'.tw','Våttemp vid '+c.namn,'°C')}><h3>Våttemp vid enheten</h3><div class="val">${num(c.tw)}<small> °C</small></div>${old?'<div class="foot">'+agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard))+'</div>':''}</div>
     </div>
     ${c.state==='conn'?'':missing('<b>Ingen kontakt.</b> Värdena ovan är de sista styrsystemet fick innan kontakten bröts, och säger inget om hur det är nu.')}
+    ${snoPanel(c)}
     ${lampPanel(c)}
     ${LAGE[c.lage]&&c.state==='conn'?missing(c.old?'<b>"Kör"</b> betyder här bara att vatten går: det äldre kortet har ingen kolumn för läget.':'<b>Läget "'+LAGE[c.lage][1]+'"</b> är tolkat ur styrsystemets kolumn 415 (6 kör, 2 stoppad, 1 fel), som setts vid några tillfällen 25–26 november. Jämför gärna med skärmen i pumphuset.'):''}
     ${missing('<b>Vattnet är räknat, inte mätt.</b> Kanonerna har ingen flödesgivare. Styrsystemet räknar flödet för de öppna ringarna vid börtrycket (teoretiskt) och rättar det med trycket den mäter vid kanonen: dubbelt tryck ger ungefär 1,4 gånger flödet. Det är "Real water flow" på skärmen. Vilka ringar som är öppna finns inte bland de värden vi hittat än. Tryck på ett värde för att se kurvan.')}
@@ -1195,6 +1219,7 @@ function unitCard(c){
       <div class="metric${HC}"${histAttr(c.key+'.t','Luft vid '+c.namn,'°C')}><div class="m-l">Luft</div><div class="m-v">${num(c.t)}<small>°C</small></div></div>
       <div class="metric${HC}"${histAttr(c.key+'.tw','Våttemp vid '+c.namn,'°C')}><div class="m-l">Våttemp</div><div class="m-v">${num(c.tw)}<small>°C</small></div></div>
     </div>
+    ${c.vb!=null?`<div class="foot${HC}"${histAttr(c.key+'.sno','Snö vid '+(c.brunn?'brunn '+c.brunn:c.namn)+' (vatten × '+num(SNO_FAKTOR)+')','m³')} style="font-size:.78rem;margin-top:9px">❄ <b style="color:var(--text)">${num(sno(c.vb),0)} m³</b> snö vid ${c.brunn?'brunn '+c.brunn:'brunnen'} · ${num(sno(c.vs),0)} m³ i säsongen</div>`:''}
     <div class="foot" style="font-size:.73rem;margin-top:9px;color:var(--muted2);display:flex;align-items:center;gap:6px">${old
       ?agoHTML(bridgeOld()?lastData:c.heard,'Senast hörd '+dm(c.heard))+'<span>· sista värdena</span>'
       :'<span class="livedot"></span> Hörd '+ago(c.heard)}</div>
