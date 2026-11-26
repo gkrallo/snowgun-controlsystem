@@ -1,6 +1,7 @@
-# Förslag: pushlarm till telefonen
+# Pushlarm till telefonen
 
-26 november 2026. Ett förslag, inget byggt. Bygger på det vi har: appen
+26 november 2026. Förslaget nedan, och sedan samma dag **byggt men inte
+utlagt** — se "Byggt 26 november" längst ner. Bygger på det vi har: appen
 Snökoll som installerad webbapp på Firebase Hosting, Firebase Realtime
 Database och bryggan som bara läser styrsystemet.
 
@@ -111,3 +112,64 @@ anläggning på sommaren inte larmar.
 
 Det gör appen enklare: ett reglage "Larm på den här telefonen" och
 kvittering, inga val per larm och inga tider.
+
+## Byggt 26 november
+
+Steg 2–6 i ordningen ovan, utom nära stoppgränsen och pumptrycket. Inget
+är utlagt.
+
+**En funktion i stället för två.** `functions/index.js` har bara "vakt",
+som körs varje minut. Larmet "Bryggan är tyst" måste komma just när
+bryggan inte skriver, och då händer inget som kan starta en funktion. En
+minut räcker för de andra larmen också, och det blir bara en sak att
+förstå.
+
+**Logiken** ligger för sig i `functions/larm.js`, utan Firebase, och provas
+med `node --test larm.test.js` i `functions/` (14 prov). Gränserna står i
+`GRANS` överst:
+
+| Larm | Gräns |
+|---|---|
+| Bryggan är tyst | `meta/ts` äldre än 10 min |
+| Bryggan når inte styrsystemet | `sqlOk` falskt i 3 min |
+| Kanon har stannat / står i fel / har stoppats | körde (läge 6, eller flöde på SGC300) inom 30 min och har inte kört på 3 min |
+| Kanon hörs inte | samma, men styrsystemet har inte hört den på 5 min |
+| Larm i styrsystemet | ett nytt id i `live/larm` (bara notis, inget att kvittera) |
+
+- Stannar flera samtidigt blir det **en** notis ("3 larm").
+- När ett larm går över kommer en **tyst** notis som byter ut larmet på
+  telefonen ("Kanon 5 kör igen").
+- Ett okvitterat larm **påminner en gång** efter en timme.
+- **Jag tar det** i appen kvitterar för alla och ger en tyst notis "Kristian
+  tar det". Bara den första kvitteringen gäller (reglerna).
+- Ett kanonlarm som står kvar i **12 timmar** tas bort (kanonen flyttad
+  eller avstängd efter passet), och larmar inte igen förrän den kört.
+- Medan bryggan är tyst bedöms inget annat: gamla värden får inte se nya ut.
+
+**Mottagare** är den som slagit på larmen i appen (`/notis/<uid>/<telefon>`)
+och fortfarande står under `/members` med bekräftad adress. En död adress
+(appen borttagen, notiser avslagna) tas bort när FCM säger det.
+
+**Appen**: överst under Larm finns "Larm till den här telefonen" med Slå på,
+Stäng av och Skicka en provnotis. Pushlarmen står överst i larmlistan med
+knappen Jag tar det. Service workern (`sw.js`, nu `snokoll-v4`) visar
+notisen och öppnar appen på `#larm`.
+
+**Provat**: logiken i `larm.test.js`, och hela funktionen mot Firebases
+emulator med FCM utbytt mot en atrapp. Appens larmsida i
+förhandsvisningen. En riktig notis till en telefon är inte provad, den
+kräver att allt är utlagt.
+
+### Kvar innan det kan läggas ut
+
+1. **Blaze** i projektet `snoprognos` och en budgetvarning (Kristian).
+2. **Nyckeln för webbnotiser**: Firebase-konsolen → Projektinställningar →
+   Cloud Messaging → Web Push certificates → Generate key pair. Den
+   offentliga nyckeln (lång rad som börjar med B) skrivs in som
+   `window.notisNyckel` i `app/index.html`. Den är offentlig och får stå i
+   koden. Utan den säger appen att larmen inte är påslagna.
+3. Lägg ut: `firebase deploy --only database,hosting,functions`. Första
+   gången slår Firebase på Cloud Functions, Cloud Build, Artifact Registry
+   och Cloud Scheduler i projektet. Svara ja på frågan om att rensa gamla
+   byggen (annars växer lagringen sakta).
+4. Slå på larmen i appen och skicka en provnotis, på Android och iPhone.

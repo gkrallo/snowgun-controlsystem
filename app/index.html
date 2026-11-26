@@ -521,10 +521,78 @@ function applyLive(v){
   if(metaLive&&metaLive.skrivkonto)alarms.push({id:'avsteg',sev:'info',
     title:'Bryggan går med styrsystemets skrivande konto',
     meta:'Tillfälligt avsteg tills läs-only-kontot finns. Bryggan läser bara.',ack:acked.has('avsteg')});
-  if(metaLive&&metaLive.sqlOk===false)alarms.unshift({id:'sqlnere',sev:'crit',
+  // Har pushlarmet för samma sak gått ut står det i stället (pushAlarms).
+  if(metaLive&&metaLive.sqlOk===false&&!larmlage.sql)alarms.unshift({id:'sqlnere',sev:'crit',
     title:'Bryggan når inte styrsystemets databas',
     meta:'Värdena i appen är de senast lästa.',ack:false});
+  alarms.unshift(...pushAlarms());
   liveRefresh();
+}
+
+/* ---------- pushlarm ----------
+   Larmen räknas fram i molnet (functions/larm.js) och skickas som notiser
+   till alla i snögruppen som slagit på dem. Det som pågår står i
+   /larmlage/aktiva och visas överst under Larm. Kvittering här är gemensam,
+   till skillnad från styrsystemets larm: alla får en tyst notis om vem som
+   tar det. Ingenting här styr anläggningen. */
+let larmlage={};
+const klo=ms=>Number.isFinite(ms)?hhmm(new Date(ms)):'okänt';
+function pushAlarms(){
+  return Object.entries(larmlage).filter(([,a])=>a&&a.titel).map(([id,a])=>({id:'push-'+id, pid:id, push:true, sev:'crit',
+    title:a.titel,
+    meta:(a.text?a.text+' ':'')+'Sedan '+klo(a.sedan)+(a.kvitt?' · '+(a.kvitt.namn||'Någon')+' tar det ('+klo(a.kvitt.ts)+')':' · skickat till telefonerna'),
+    ack:!!a.kvitt}));
+}
+function applyLarmlage(v){
+  if(!real)return;
+  larmlage=v||{};
+  alarms=alarms.filter(a=>!a.push&&!(a.id==='sqlnere'&&larmlage.sql));
+  alarms.unshift(...pushAlarms());
+  liveRefresh();
+}
+// Telefonens läge för notiser. pa = adressen ligger i /notis för den här
+// telefonen. VAPID-nyckeln står i inloggningsskriptet (window.notisNyckel).
+let notisSt={pa:false, laddad:false, arbetar:false, msg:'', err:false};
+function applyNotis(pa){notisSt.pa=!!pa;notisSt.laddad=true;if(current==='alarms')render();}
+function notisHinder(){
+  if(!('Notification' in window)||!('serviceWorker' in navigator)||!('PushManager' in window)){
+    // iPhone visar bara notiser för en app som lagts på hemskärmen.
+    if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&!navigator.standalone)
+      return 'På iPhone kommer larmen bara till appen på hemskärmen: tryck Dela → Lägg till på hemskärmen, öppna Snökoll därifrån och slå på larmen där. Det kräver iOS 16.4 eller senare.';
+    return 'Den här webbläsaren kan inte ta emot notiser. Prova Chrome, eller appen från hemskärmen.';
+  }
+  if(!window.notisNyckel)return 'Larmen är inte påslagna i Firebase än — nyckeln för webbnotiser saknas.';
+  if(Notification.permission==='denied')return 'Notiser är avstängda för Snökoll i telefonens eller webbläsarens inställningar. Slå på dem där först.';
+  return '';
+}
+async function notisKlick(vad){
+  if(notisSt.arbetar||!window.notisGor)return;
+  notisSt.arbetar=true;notisSt.msg='';notisSt.err=false;render();
+  try{
+    await window.notisGor(vad);
+    notisSt.msg=vad==='pa'?'Larmen är påslagna på den här telefonen.':vad==='av'?'Larmen är avstängda på den här telefonen.':'Provnotisen är beställd. Den kommer inom någon minut.';
+  }catch(e){
+    const c=String(e&&e.message||e);
+    notisSt.err=true;
+    notisSt.msg=c==='nekad'?'Telefonen sa nej till notiser. Slå på dem för Snökoll i inställningarna och försök igen.'
+      :c==='stod'?'Den här webbläsaren kan inte ta emot notiser.'
+      :'Det gick inte: '+c;
+  }
+  notisSt.arbetar=false;render();
+}
+function vNotis(){
+  if(!real)return '';
+  const hinder=notisHinder(), pa=notisSt.pa&&!hinder;
+  const b=(vad,txt,fram)=>`<button class="linkbtn${fram?' fram':''}" style="flex:0 0 auto" ${notisSt.arbetar?'disabled':''} onclick="notisKlick('${vad}')">${txt}</button>`;
+  return `<div class="card" style="margin-bottom:16px"><h3>${icon('bell','#7dd3fc',15)} Larm till den här telefonen</h3>
+    <div class="row" style="margin-top:10px">
+      ${pa?'<span class="chip s-run"><span class="d"></span>Påslagna</span>':'<span class="chip s-off"><span class="d"></span>Avstängda</span>'}
+      ${hinder?'':pa?b('prov','Skicka en provnotis')+b('av','Stäng av'):notisSt.laddad?b('pa','Slå på larmen',true):''}
+    </div>
+    ${hinder?`<p class="muted small" style="margin:10px 0 0;line-height:1.55">${esc(hinder)}</p>`:''}
+    ${notisSt.msg?`<p class="small" style="margin:10px 0 0;color:${notisSt.err?'var(--alarm)':'var(--muted)'}">${esc(notisSt.msg)}</p>`:''}
+    <p class="muted small" style="margin:10px 0 0;line-height:1.55">Alla i snögruppen får samma larm, dygnet runt: en kanon som stannar, står i fel eller tystnar, bryggan som tystnar, och nya larm i styrsystemet. Vill du ha tyst på natten, använd telefonens Stör ej. Larmen är ett komplement — de styr ingenting, och anläggningens egna skydd gäller som förut.</p>
+  </div>`;
 }
 function applyHist(h){
   if(!real)return;
@@ -864,7 +932,8 @@ function activeAlarms(){return alarms.filter(a=>!a.ack)}
 /* ============================================================
    ROUTER
    ============================================================ */
-let current='overview', charts={};
+// En notis öppnar appen på #larm (functions/index.js).
+let current=location.hash==='#larm'?'alarms':'overview', charts={};
 function go(id){current=id;safeRender();if(window.innerWidth<=860)window.scrollTo(0,0)}
 function buildNav(){
   const a=activeAlarms().length;
@@ -2108,6 +2177,7 @@ function vAlarms(){
   const sorted=[...alarms].sort((a,b)=>(a.ack-b.ack)||order[a.sev]-order[b.sev]);
   const sevIco={crit:['a-crit','bell'],warn:['a-warn','bolt'],info:['a-info','clock']};
   return topbar('Driftövervakning','Larm',`<button class="linkbtn" onclick="ackAll()">Kvittera alla lokalt</button>`)+`<div class="view">
+   ${vNotis()}
    <div class="grid g-kpi" style="margin-bottom:16px">
      <div class="card kpi"><h3>Kritiska</h3><div class="val down">${alarms.filter(a=>a.sev==='crit'&&!a.ack).length}</div></div>
      <div class="card kpi"><h3>Varningar</h3><div class="val warn">${alarms.filter(a=>a.sev==='warn'&&!a.ack).length}</div></div>
@@ -2116,14 +2186,14 @@ function vAlarms(){
    <div class="card">${sorted.length?'':'<p class="muted small" style="margin:0">Inga aktiva larm.</p>'}${sorted.map(a=>{const[c,i]=sevIco[a.sev]||sevIco.info;return `<div class="alarm-item ${a.ack?'ack':''}">
       <div class="alarm-ico ${c}">${icon(i,'currentColor',18)}</div>
       <div class="a-body"><div class="a-title">${esc(a.title)}</div><div class="a-meta">${esc(a.meta)}</div></div>
-      ${a.ack?'<span class="chip s-off"><span class="d"></span>Kvitterad</span>':`<button class="linkbtn" onclick="ackOne('${esc(a.id)}')">Kvittera</button>`}
+      ${a.ack?'<span class="chip s-off"><span class="d"></span>Kvitterad</span>':`<button class="linkbtn" style="flex:0 0 auto" onclick="ackOne('${esc(a.id)}')">${a.push?'Jag tar det':'Kvittera'}</button>`}
     </div>`}).join('')}</div>
    ${real?`<div class="section-title">Senaste händelser i styrsystemet</div>
    <div class="card">${events.length?events.map(e=>`<div class="alarm-item">
       <div class="a-body"><div class="a-title">${esc(e.text)}</div><div class="a-meta">${dm(parseT(e.tid))} · ${esc(e.maskin)} ${esc(e.namn)}</div></div>
     </div>`).join(''):'<p class="muted small" style="margin:0">Inga händelser.</p>'}</div>
    ${missing('Texterna kommer direkt ur styrsystemet, därför på engelska. Hur allvarligt ett larm är står inte i datan, så alla visas som varningar.')}`:''}
-   <div class="note" style="margin-top:14px">Kvittering sker <b>lokalt i appen</b> (döljer larmet för den som tittar) — styrsystemet påverkas inte, eftersom appen bara läser. Faktisk återställning görs i anläggningen.</div>
+   <div class="note" style="margin-top:14px">Styrsystemets larm kvitteras <b>lokalt i appen</b> (döljer larmet för den som tittar). Pushlarmen kvitteras med <b>Jag tar det</b>, som syns för alla och skickar en tyst notis om vem som tar det. Styrsystemet påverkas inte av någondera, eftersom appen bara läser. Faktisk återställning görs i anläggningen.</div>
   </div>`;
 }
 
@@ -2334,8 +2404,12 @@ function safeRender(soft){
       `<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>Något i datan gick inte att visa.</b> <span class="muted small">Siffrorna kan vara gamla. Prova att ladda om sidan.</span></div></div>`;
   }
 }
-function ackOne(id){const a=alarms.find(x=>String(x.id)===String(id));if(a){a.ack=true;if(real){acked.add(String(a.id));saveAck();}}render()}
-function ackAll(){alarms.forEach(a=>{a.ack=true;if(real)acked.add(String(a.id));});if(real)saveAck();render()}
+function ackOne(id){const a=alarms.find(x=>String(x.id)===String(id));
+  // Pushlarm kvitteras för alla, i databasen. Listan uppdateras när det
+  // kommer tillbaka därifrån, inte här.
+  if(a&&a.push){if(window.kvittera)window.kvittera(a.pid).catch(e=>{notisSt.msg='Kvitteringen gick inte: '+(e&&e.message||e);notisSt.err=true;render();});return;}
+  if(a){a.ack=true;if(real){acked.add(String(a.id));saveAck();}}render()}
+function ackAll(){alarms.forEach(a=>{if(a.push)return;a.ack=true;if(real)acked.add(String(a.id));});if(real)saveAck();render()}
 
 /* gentle live simulation */
 let lastTick=Date.now();
@@ -2376,7 +2450,8 @@ function clearApp(){
   if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;
     histLive={};histOld={};histOldRange=null;histRange=24;histTok++;histLoading=false;histErr='';histInfo='';closeHist();
     dammData={avlas:{},kalib:{}};dammErr='';damSync();
-    calForm={cm:'',ts:'',edit:null,msg:'',err:false};mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,sparar:false};loggAlla=false;}
+    calForm={cm:'',ts:'',edit:null,msg:'',err:false};mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,sparar:false};loggAlla=false;
+    larmlage={};notisSt={pa:false,laddad:false,arbetar:false,msg:'',err:false};}
   isAdmin=false;myKey='';members=null;memMsg='';memForm={email:'',name:'',role:'viewer'};
   if(current==='members')current='overview';
 }
@@ -2391,6 +2466,8 @@ function clearApp(){
   const secure=location.protocol==='https:'||location.hostname==='localhost';
   if(!('serviceWorker' in navigator)||!secure)return;
   navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  // Ett tryck på en larmnotis när appen redan är öppen (sw.js).
+  navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.vy==='alarms')go('alarms');});
   let etag=null, last=0;
   async function check(){
     if(document.hidden||Date.now()-last<10*60000)return;
@@ -2440,8 +2517,8 @@ function gate(state, html, err) {
 // används därför den; överallt annars Firebases egen adress.
 const AUTH_HOST = location.hostname === 'snow.pettersson.app' ? 'snow.pettersson.app' : 'snoprognos.firebaseapp.com';
 let fb = null;
+const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
 try {
-  const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
   const [app, auth, dbm] = await Promise.all([
     import(V + 'firebase-app.js'), import(V + 'firebase-auth.js'), import(V + 'firebase-database.js')]);
   // Nyckeln är offentlig av design och får stå här. Skyddet är reglerna.
@@ -2450,9 +2527,11 @@ try {
     authDomain: AUTH_HOST,
     databaseURL: 'https://snoprognos-default-rtdb.europe-west1.firebasedatabase.app',
     projectId: 'snoprognos',
+    // Behövs för notiserna (Cloud Messaging). Projektets nummer.
+    messagingSenderId: '726097160825',
     appId: '1:726097160825:web:ce47e8aeb011d958b082a8'
   });
-  fb = { auth: auth.getAuth(a), db: dbm.getDatabase(a), authm: auth, dbm };
+  fb = { app: a, auth: auth.getAuth(a), db: dbm.getDatabase(a), authm: auth, dbm };
 } catch (e) {
   gate('wait', 'Kunde inte nå inloggningen. Kontrollera nätet och ladda om sidan.', true);
 }
@@ -2463,7 +2542,10 @@ const MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 // inget om varför.
 const INAPP = /FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\/|; wv\)/i.test(navigator.userAgent);
 let stopMember = null, stopMeta = null, stopHist = null, stopMembers = null, stopDamm = null, stopVatten = null, curRoll = 'Snögruppen';
+let stopLarm = null, stopNotis = null;
 function stopData() {
+  if (stopLarm) { stopLarm(); stopLarm = null; }
+  if (stopNotis) { stopNotis(); stopNotis = null; }
   if (stopVatten) { stopVatten(); stopVatten = null; }
   if (stopMeta) { stopMeta(); stopMeta = null; }
   if (stopHist) { stopHist(); stopHist = null; }
@@ -2494,6 +2576,79 @@ window.dammMe = () => {
   const u = fb && fb.auth.currentUser;
   return u ? { uid: u.uid, namn: String(u.displayName || u.email || '').slice(0, 80) } : null;
 };
+/* Notiser (pushlarm). Telefonens adress hos Firebase Cloud Messaging sparas
+   under /notis/<uid>/<telefon>, och molnfunktionen skickar till alla som
+   står där och fortfarande är medlemmar. "telefon" är ett slumpat id som
+   sparas i telefonen, så att samma person kan ha larm på flera telefoner.
+
+   Nyckeln är den offentliga halvan av projektets nyckel för webbnotiser
+   (Firebase → Projektinställningar → Cloud Messaging → Web Push
+   certificates). Den är offentlig av design och får stå här. Tom = larmen
+   är inte påslagna, och appen säger det. */
+window.notisNyckel = 'BFezUgRDC0UKkxRTljSfQk1vXRnyfBcVvkDgaX1mVk2SGRk_sk0X0jkvg1G2tJXaCNOEo-HsKEvPt_FeiNjTbD4';
+let msgMod = null, msging = null;
+async function messaging() {
+  if (msging) return msging;
+  msgMod = await import(V + 'firebase-messaging.js');
+  if (!(await msgMod.isSupported())) return null;
+  msging = msgMod.getMessaging(fb.app);
+  return msging;
+}
+function telefonId() {
+  let id = '';
+  try { id = localStorage.getItem('snokollTelefon') || ''; } catch (e) { }
+  if (!/^[a-z0-9]{8,40}$/.test(id)) {
+    id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => (b % 36).toString(36)).join('');
+    try { localStorage.setItem('snokollTelefon', id); } catch (e) { }
+  }
+  return id;
+}
+const notisRef = () => fb.dbm.ref(fb.db, 'notis/' + fb.auth.currentUser.uid + '/' + telefonId());
+async function notisAdress() {
+  const m = await messaging();
+  if (!m) throw new Error('stod');
+  const reg = await navigator.serviceWorker.ready;
+  return msgMod.getToken(m, { vapidKey: window.notisNyckel, serviceWorkerRegistration: reg });
+}
+async function notisSpara() {
+  const token = await notisAdress();
+  const u = fb.auth.currentUser;
+  await fb.dbm.set(notisRef(), { token, ts: Date.now(), namn: String(u.displayName || u.email || '').slice(0, 80), ua: navigator.userAgent.slice(0, 200) });
+}
+window.notisGor = async vad => {
+  if (!fb || !fb.auth.currentUser) throw new Error('Inte inloggad');
+  if (vad === 'pa') {
+    // Frågan om lov måste komma direkt på trycket, annars visar iPhone den inte.
+    const svar = await Notification.requestPermission();
+    if (svar !== 'granted') throw new Error('nekad');
+    await notisSpara();
+  } else if (vad === 'av') {
+    await fb.dbm.remove(notisRef());
+    try { const m = await messaging(); if (m) await msgMod.deleteToken(m); } catch (e) { }
+  } else if (vad === 'prov') {
+    await fb.dbm.set(fb.dbm.child(notisRef(), 'prov'), Date.now());
+  }
+};
+// Gemensam kvittering: reglerna släpper bara igenom den första, och bara
+// med ens eget uid.
+window.kvittera = id => {
+  const u = fb && fb.auth.currentUser;
+  if (!u) return Promise.reject(new Error('Inte inloggad'));
+  return fb.dbm.set(fb.dbm.ref(fb.db, 'larmlage/aktiva/' + id + '/kvitt'),
+    { uid: u.uid, namn: String(u.displayName || u.email || '').slice(0, 80), ts: Date.now() });
+};
+// Adressen kan bytas av webbläsaren. Var gång appen öppnas med larmen på
+// hämtas den igen och sparas om den ändrats, och tiden visar att telefonen
+// lever.
+let notisKollad = false;
+function notisFornya(v) {
+  if (notisKollad || !v || !window.notisNyckel || !('Notification' in window) || Notification.permission !== 'granted') return;
+  notisKollad = true;
+  notisAdress().then(token => {
+    if (token !== v.token || Date.now() - (v.ts || 0) > 7 * 864e5) return notisSpara();
+  }).catch(() => { });
+}
+
 // Skrivningen prövas av databasens regler: bara en administratör kommer igenom.
 window.memberWrite = (key, data) => {
   const r = fb.dbm.ref(fb.db, 'members/' + key);
@@ -2608,6 +2763,12 @@ if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
     // säsong, så hela grenen.
     stopVatten = fb.dbm.onValue(fb.dbm.ref(fb.db, 'vattenTimme'),
       s6 => window.applyVattenTimme(s6.val()), () => window.applyVattenTimme(null, true));
+    // Pushlarm som pågår, och om den här telefonen har larmen på.
+    stopLarm = fb.dbm.onValue(fb.dbm.ref(fb.db, 'larmlage/aktiva'),
+      s7 => window.applyLarmlage(s7.val()), () => window.applyLarmlage(null));
+    notisKollad = false;
+    stopNotis = fb.dbm.onValue(notisRef(),
+      s8 => { window.applyNotis(s8.exists()); notisFornya(s8.val()); }, () => window.applyNotis(false));
   }, () => noAccess());   // nekad läsning = inte medlem (eller obekräftad adress)
 });
 </script>

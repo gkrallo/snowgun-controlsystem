@@ -17,6 +17,37 @@
       "$h": { ".validate": "$h.matches(/^20[0-9]{8}$/) && newData.isNumber() && newData.val() >= 0 && newData.val() < 1000" }
     },
 
+    "notis": {
+      "$uid": {
+        ".read":  "auth != null && auth.uid === $uid && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        ".write": "auth != null && auth.uid === $uid && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        "$enhet": {
+          ".validate": "$enhet.matches(/^[a-z0-9]{8,40}$/) && newData.hasChildren(['token', 'ts'])",
+          "token": { ".validate": "newData.isString() && newData.val().length > 20 && newData.val().length <= 4096" },
+          "ts":    { ".validate": "newData.isNumber() && newData.val() < now + 600000" },
+          "namn":  { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "ua":    { ".validate": "newData.isString() && newData.val().length <= 200" },
+          "prov":  { ".validate": "newData.isNumber() && newData.val() < now + 600000" },
+          "$annat": { ".validate": false }
+        }
+      }
+    },
+    "larmlage": {
+      ".read": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+      "aktiva": {
+        "$id": {
+          "kvitt": {
+            ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && data.parent().exists() && !data.exists()",
+            ".validate": "newData.hasChildren(['uid', 'namn', 'ts']) && newData.child('uid').val() === auth.uid",
+            "uid":  { ".validate": "newData.isString()" },
+            "namn": { ".validate": "newData.isString() && newData.val().length <= 80" },
+            "ts":   { ".validate": "newData.isNumber() && newData.val() > now - 600000 && newData.val() < now + 600000" },
+            "$annat": { ".validate": false }
+          }
+        }
+      }
+    },
+
     "damm": {
       ".read": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
       "avlas": {

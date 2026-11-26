@@ -89,8 +89,13 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   timmens början i UTC); appen drar summan sedan senaste måttbandsmätningen
   (`damDrawnSince`), och nuvarande uttag är summan av `q`. Siffrorna är
   kanonernas beräknade flöde — måttbandet avgör om de stämmer.
-- **Pushlarm** är ett förslag (`docs/forslag-pushlarm.md`), inget byggt.
-  Kräver Blaze, vilket är Kristians beslut.
+- **Pushlarm** är byggda men inte utlagda (`docs/forslag-pushlarm.md`, "Byggt
+  26 november"). En molnfunktion, `vakt` i `functions/`, körs varje minut,
+  läser `/live` och skickar notiser via FCM. Logiken i `functions/larm.js`
+  provas med `node --test larm.test.js` och ska gå igenom före varje
+  utläggning. `functions/` är det enda i repot som kräver npm; appen är
+  fortfarande en fil utan bygge. Kräver Blaze (Kristians beslut) och
+  nyckeln för webbnotiser i `window.notisNyckel`. Larmen styr ingenting.
 - **Snömängden är vatten × 2,2**, som styrsystemet räknar — ingen kanon
   mäter snö. Bryggan 8 summerar bara vattnet, per enhet sedan den kom till
   brunnen (nollas vid byte av brunn, sågtand) och per säsong från 1 augusti,

@@ -34,3 +34,7 @@ bridge/uttag_*.txt
 # Firebase-verktygets egna filer
 .firebase/
 firebase-debug.log
+
+# Molnfunktionernas paket (npm install i functions/)
+functions/node_modules/
+database-debug.log
