@@ -4,10 +4,25 @@
 till en fil (torrläge) eller till Firebase. Den läser bara. Den kan inte
 starta, stoppa eller ändra något i anläggningen.
 
-**Läget 26 november 2026:** version 8 är byggd och provad med självtestet,
-men inte lagd på styrdatorn än — se *Uppdatera bryggan* nedan. Version 7 går
-där sedan 26 november 09:07 med `GSS_Login` enligt avsteget nedan, som
-schemalagd uppgift. En läsning tar 25–70 ms, också med alla kanoner igång.
+**Läget 26 november 2026:** version 10 går på styrdatorn sedan 12:15 med
+`GSS_Login` enligt avsteget nedan, som schemalagd uppgift. `-Bakat` är gjord
+11:53 och `-BakatBrunn` 12:14: statistikraderna kommer var tionde minut (en
+föll bort på kvartsgränsen), journalen går tillbaka till 30 oktober 08:45
+och gav 82 inkopplingar. SGC400-3 var senast inkopplad vid en annan brunn
+än 10 och räknas vid brunnen från 09:53.
+
+- Version 10 rättar brunnsdelen av bakåträkningen (`-BakatBrunn`, en gång).
+  Version 9 frågade journalen efter `message LIKE 'Appeared%'` och fick noll
+  rader, så alla kanoner räknades som vid sin brunn sedan 1 augusti.
+  Säsongen var rätt och rörs inte. Se *Räkna bakåt*.
+  Version 9 tappade också stämpeln `bakat` ur `brygga-state.json` vid
+  första sparningen efteråt; version 10 behåller den, och bygger upp den ur
+  rapporten `bakat_<tid>.txt` när den saknas. `-Bakat` vägrar också om en
+  sådan rapport finns.
+  Stoppa bryggan med `-TaBort` **och** processen: `-TaBort` tar bara bort
+  uppgiften, och en brygga som går hindrar bakåträkningen.
+- Version 9 kan fylla på räkneverken med vattnet från före version 8, ur
+  styrsystemets statistik (`-Bakat`, en gång). Se *Räkna bakåt*. En läsning tar 25–70 ms, också med alla kanoner igång.
 Inte provat: en omstart av datorn.
 
 - Version 8 räknar vattnet per enhet sedan den kom till brunnen
@@ -53,7 +68,41 @@ datorn och det kontot, och följer inte med i zipfilen.
 
        powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -Visa
 
-   Loggen ska ha en rad `Bryggan startar (version 8, ...)`.
+   Loggen ska ha en rad `Bryggan startar (version 10, ...)`.
+
+## Räkna bakåt (`-Bakat`, en gång)
+
+Bryggan 8 började räkna vattnet per kanon 26 november 09:53. `-Bakat`
+lägger till det som gjordes innan, ur styrsystemets egen statistik:
+
+- **Säsongen:** `stat_piste_canon_SGC400` och `_SGC300` i
+  halvmånadsdatabaserna har varje kanons "Real water flow" (× 10). Raderna
+  kommer inte med jämna mellanrum, så varje rad vägs med tiden till nästa
+  (`LEAD` i databasen), högst 15 minuter. Bara rader med flöde hämtas.
+- **Vid brunnen:** journalens `Appeared … ( adr = 8) to 5` säger när en
+  kanon kopplades in vid en brunn. Den första i en obruten följd vid samma
+  brunn är när den kom dit. Ingen inkoppling under säsongen: sedan 1 augusti.
+  Senast inkopplad vid en annan brunn: okänt, och inget läggs till.
+
+Bryggan måste vara stoppad, och det görs bara en gång (`brygga-state.json`
+får en stämpel `bakat`; den gamla filen sparas som `.fore-bakat`). En
+rapport hamnar i `bakat_<tid>.txt`. Historikens sågtand (`vb`) fylls inte i
+bakåt — kurvan börjar när bryggan 8 startade.
+
+Kör, i bryggans mapp, mellan steg 3 och 4 under *Uppdatera bryggan*:
+
+    powershell -ExecutionPolicy Bypass -File .\brygga.ps1 -Bakat -SqlUser GSS_Login
+
+**Gjort 26 november 11:53:** 249 rader, 283 m³ före 09:53 för alla kanoner
+tillsammans, men 0 inkopplingar i journalen. Rättas med `-BakatBrunn`
+(version 10): samma statistikrader (vägrar om antalet inte är detsamma som
+vid `-Bakat`), journalen med `LIKE '%Appeared%'`, och för varje kanon som
+står kvar vid samma brunn dras säsongens tillägg av och tillägget sedan
+ankomsten läggs till. Rapporten (`bakatbrunn_<tid>.txt`) visar också hur
+tätt statistikraderna kommer och hur många som föll bort på kvartsgränsen,
+och hur långt bakåt journalen går.
+
+    powershell -ExecutionPolicy Bypass -File .\brygga.ps1 -BakatBrunn -SqlUser GSS_Login
 
 Raden `Klart på … ms` efter `-EnGang` räknar med tiden det tar att skriva
 lösenordet (10 656 ms första gången). Den riktiga lästiden står som `lasMs`

@@ -16,6 +16,8 @@
     Torrläge, tills Ctrl+C:   .\brygga.ps1
     Med alla råkolumner:      .\brygga.ps1 -EnGang -Ra
     Uttag per dygn (dammen):  .\brygga.ps1 -Uttag -Fran 2026-10-25
+    Vattnet före version 8:   .\brygga.ps1 -Bakat   (en gång, bryggan stoppad)
+    Rätta brunnsdelen:        .\brygga.ps1 -BakatBrunn   (en gång, efter -Bakat)
     Spara lösenord (DPAPI):   .\brygga.ps1 -SparaLosen sql      (eller: moln)
     Skicka till Firebase:     .\brygga.ps1 -Skicka
     Prova ändringslogiken:    .\brygga.ps1 -Sjalvtest   (ingen databas behövs)
@@ -32,6 +34,10 @@
   varje hörd enhets flöde och summan av dem (flodeSum).
   Sedan version 8 räknas vattnet per enhet sedan den kom till brunnen och
   för säsongen (snömängden = vatten x 2,2 räknas i appen).
+  Version 9 kan fylla på räkneverken bakåt ur styrsystemets statistik
+  (-Bakat, en gång). Version 10 rättar brunnsdelen av det (-BakatBrunn):
+  journalfrågan i version 9 hittade inga inkopplingar, så alla kanoner
+  räknades som vid sin brunn sedan 1 augusti.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -46,6 +52,8 @@ param(
   [switch]$Ra,
   [switch]$Skicka,
   [switch]$Uttag,
+  [switch]$Bakat,
+  [switch]$BakatBrunn,
   [string]$Fran = "",
   [string]$SparaLosen = "",
   [switch]$Sjalvtest,
@@ -60,7 +68,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "8"
+$VERSION = "10"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -116,7 +124,7 @@ if ($AvstegSkrivkonto -and -not $avsteg) {
   Write-Host "-AvstegSkrivkonto gäller bara tillsammans med -SqlUser GSS_Login."
   exit 1
 }
-if ($writerAccount -and -not ($EnGang -or $Uttag -or $avsteg)) {
+if ($writerAccount -and -not ($EnGang -or $Uttag -or $Bakat -or $BakatBrunn -or $avsteg)) {
   Write-Host ("Kontot " + $SqlUser + " kan skriva i styrsystemets databaser.")
   Write-Host "Det får bara användas för en enstaka läsning: lägg till -EnGang."
   Write-Host "För drift behövs läs-only-kontot (probe\skapa-lasonly-konto.sql),"
@@ -369,7 +377,9 @@ function Add-Water($snap, [datetime]$now) {
     $u = $snap["enheter"][$k]
     $a = $script:acc[$k]
     if ($null -eq $a) {
-      $a = @{ brunn = $u["brunn"]; sedan = $now.ToString($fmt); brunnM3 = 0.0; sasong = $season; sasongM3 = 0.0; last = $null }
+      # fran = när bryggan började räkna enheten. -Bakat fyller på med
+      # styrsystemets statistik för tiden före, och bara före.
+      $a = @{ brunn = $u["brunn"]; sedan = $now.ToString($fmt); fran = $now.ToString($fmt); brunnM3 = 0.0; sasong = $season; sasongM3 = 0.0; last = $null }
       $script:acc[$k] = $a
     }
     if ($null -ne $u["brunn"] -and $a["brunn"] -ne $u["brunn"]) {
@@ -403,7 +413,7 @@ function Acc-ToState {
   $o = [ordered]@{}
   foreach ($k in ($script:acc.Keys | Sort-Object)) {
     $a = $script:acc[$k]
-    $o[$k] = [ordered]@{ brunn = $a["brunn"]; sedan = $a["sedan"]; brunnM3 = [math]::Round([double]$a["brunnM3"], 4); sasong = $a["sasong"]; sasongM3 = [math]::Round([double]$a["sasongM3"], 4) }
+    $o[$k] = [ordered]@{ brunn = $a["brunn"]; sedan = $a["sedan"]; fran = $a["fran"]; brunnM3 = [math]::Round([double]$a["brunnM3"], 4); sasong = $a["sasong"]; sasongM3 = [math]::Round([double]$a["sasongM3"], 4) }
   }
   return $o
 }
@@ -412,8 +422,79 @@ function Acc-FromState($obj) {
   if ($null -eq $obj) { return }
   foreach ($p in $obj.PSObject.Properties) {
     $v = $p.Value
-    $script:acc[$p.Name] = @{ brunn = $v.brunn; sedan = "" + $v.sedan; brunnM3 = [double]$v.brunnM3; sasong = "" + $v.sasong; sasongM3 = [double]$v.sasongM3; last = $null }
+    # Version 8 sparade inte "fran". Den började räkna alla enheter samtidigt
+    # och ingen hann byta brunn, så "sedan" är samma tid.
+    $fr = "" + $v.fran; if (-not $fr) { $fr = "" + $v.sedan }
+    $script:acc[$p.Name] = @{ brunn = $v.brunn; sedan = "" + $v.sedan; fran = $fr; brunnM3 = [double]$v.brunnM3; sasong = "" + $v.sasong; sasongM3 = [double]$v.sasongM3; last = $null }
   }
+}
+
+# ---------------------------------------------- räkna bakåt (-Bakat, version 9)
+# Vattnet innan bryggan började räkna, ur styrsystemets egen statistik:
+# stat_piste_canon_SGC400/SGC300 har varje kanons "Real water flow" var tionde
+# minut (debit_eau_reel x 10), hela säsongen. Brunnen tas ur journalens
+# "Appeared S ACCESS 300 ( adr = 8) to 5": adress 8 kopplades in vid brunn 5.
+# Den rena räkningen ligger här, utan databas, så att självtestet kan prova den.
+
+# Adressen i journalen till bryggans namn: SGC400 har adress = n + 2, det
+# äldre kortet adress = n (bara 1 och 2).
+function KeyOfAdr([int]$adr) {
+  if ($adr -le 2) { return ("SGC300-" + $adr) }
+  return ("SGC400-" + ($adr - 2))
+}
+
+# Händelserna (tid, text) till inkopplingar: adress, brunn, tid.
+function Parse-Appeared($events) {
+  $out = @()
+  foreach ($ev in $events) {
+    if ("" + $ev.text -match 'Appeared.*adr\s*=\s*(\d+)\s*\)\s*to\s+(\d+)') {
+      $out += [pscustomobject]@{ key = (KeyOfAdr ([int]$matches[1])); brunn = [int]$matches[2]; tid = [datetime]$ev.tid }
+    }
+  }
+  return ($out | Sort-Object tid)
+}
+
+# När kom enheten till brunnen den står vid nu? Den sammanhängande följden av
+# inkopplingar vid samma brunn bakåt från "fore": den första av dem. En
+# inkoppling vid samma brunn igen (efter strömavbrott) börjar inte om.
+# Ingen inkoppling alls under säsongen: den har stått där sedan säsongens
+# början. Senaste inkopplingen till en ANNAN brunn: okänt, $null.
+function Arrival($appeared, [string]$key, $brunn, [datetime]$fore, [datetime]$seasonStart) {
+  $mine = @($appeared | Where-Object { $_.key -eq $key -and $_.tid -lt $fore } | Sort-Object tid)
+  if ($mine.Count -eq 0) { return $seasonStart }
+  if ($mine[-1].brunn -ne $brunn) { return $null }
+  $a = $mine[-1].tid
+  for ($i = $mine.Count - 2; $i -ge 0; $i--) {
+    if ($mine[$i].brunn -ne $brunn) { break }
+    $a = $mine[$i].tid
+  }
+  return $a
+}
+
+# Raderna (key, tid, debit = m3/h x 10, nxt = nästa rads tid) till tillägg
+# per enhet. En rad gäller fram till nästa, högst 15 minuter (längre glapp är
+# ett avbrott i statistiken, och då räknas inget - hellre för lite). Saknas
+# nästa rad (sista raden i en halvmånadsdatabas) räknas raden inte.
+function Backfill-Compute($acc, $rows, $appeared, [datetime]$seasonStart) {
+  $res = [ordered]@{}
+  $fmt = "yyyy-MM-ddTHH:mm:ss"
+  foreach ($k in ($acc.Keys | Sort-Object)) {
+    $a = $acc[$k]
+    $fran = [datetime]::ParseExact($a["fran"], $fmt, $null)
+    $arr = Arrival $appeared $k $a["brunn"] $fran $seasonStart
+    $sas = 0.0; $br = 0.0
+    foreach ($r in $rows) {
+      if ($r.key -ne $k -or $r.tid -ge $fran -or $r.tid -lt $seasonStart -or $null -eq $r.nxt) { continue }
+      $end = $r.nxt; if ($end -gt $fran) { $end = $fran }
+      $h = ($end - $r.tid).TotalHours
+      if ($h -le 0 -or $h -gt 0.25) { continue }
+      $m3 = [double]$r.debit / 10 * $h
+      $sas += $m3
+      if ($null -ne $arr -and $r.tid -ge $arr) { $br += $m3 }
+    }
+    $res[$k] = [pscustomobject]@{ sasong = $sas; brunn = $br; ankomst = $arr }
+  }
+  return $res
 }
 
 # Lampornas bitar sparas i historiken bara när de ändrats sedan förra
@@ -647,6 +728,223 @@ if ($Uttag) {
     Write-Host ""
     Write-Host ("Sparat i " + $f)
   } finally { Close-Sql }
+  exit 0
+}
+
+# ------------------------------------------ vattnet före version 8 (-Bakat)
+# Engångskörning. Fyller på räkneverken i brygga-state.json med styrsystemets
+# statistik för tiden innan bryggan började räkna. Bryggan måste vara
+# stoppad (den skriver annars över filen var femte minut), och det görs bara
+# en gång: filen får en stämpel "bakat" och en andra körning vägrar.
+# Läser bara rader med flöde, inom säsongen, ur halvmånadsdatabaserna.
+
+# Statistikraderna och journalens inkopplingar, för -Bakat och -BakatBrunn.
+function Bakat-Fetch([datetime]$seasonStart, [datetime]$until, $log) {
+  $mois = @("janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre")
+  $rows = New-Object System.Collections.Generic.List[object]
+  $events = @()
+  try {
+    Open-Sql
+    $dbs = @((Read-Sql "SELECT [name] FROM sys.databases WHERE [name] LIKE 'Live_stat_%SQL'").Rows | ForEach-Object { "" + $_["name"] })
+    # Halvmånad för halvmånad: 1 = dag 1-15, 2 = resten.
+    $d = $seasonStart
+    while ($d -lt $until) {
+      $half = $(if ($d.Day -le 15) { 1 } else { 2 })
+      $db = "Live_stat_" + $mois[$d.Month - 1] + $half + "SQL"
+      if ($dbs -contains $db) {
+        foreach ($t in @(@{ tab = "stat_piste_canon_SGC400"; pre = "SGC400-" }, @{ tab = "stat_piste_canon_SGC300"; pre = "SGC300-" })) {
+          # Raderna kommer inte med jämna mellanrum (ungefär varje minut på det
+          # äldre kortet, var 2-3 minut på SGC400), så varje rad vägs med tiden
+          # till nästa rad för samma kanon. LEAD räknar fram den i databasen,
+          # och bara raderna med flöde skickas hit.
+          $q = "SELECT [num_canon],[date],[debit_eau_reel],[nxt] FROM (SELECT [num_canon],[date],[debit_eau_reel],LEAD([date]) OVER (PARTITION BY [num_canon] ORDER BY [date]) AS [nxt] FROM [" + $db + "].[dbo].[" + $t.tab + "] WITH (NOLOCK) WHERE [date] >= @from AND [date] < @to) AS x WHERE [debit_eau_reel] > 0"
+          $dt = Read-Sql $q @{ from = $seasonStart; to = $until }
+          foreach ($r in $dt.Rows) {
+            $nx = $null; if (-not ($r["nxt"] -is [System.DBNull])) { $nx = [datetime]$r["nxt"] }
+            $rows.Add([pscustomobject]@{ key = $t.pre + $r["num_canon"]; tid = [datetime]$r["date"]; debit = [double]$r["debit_eau_reel"]; nxt = $nx })
+          }
+          $log.Add(("{0} {1}: {2} rader med flöde" -f $db, $t.tab, $dt.Rows.Count))
+        }
+      }
+      if ($half -eq 1) { $d = Get-Date -Year $d.Year -Month $d.Month -Day 16 -Hour 0 -Minute 0 -Second 0 } else { $d = (Get-Date -Year $d.Year -Month $d.Month -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(1) }
+    }
+    # Version 9 frågade efter [message] LIKE 'Appeared%' och fick noll rader,
+    # fast journalen hade "Appeared  S ACCESS 300 ( adr = 8)    to  5" samma
+    # natt. Bryggan trimmar texterna innan de visas, så troligen börjar de med
+    # blanksteg i databasen. Därför '%Appeared%', och texten tolkas sedan här.
+    # Hur många rader journalen har och hur långt bakåt den går skrivs ut, så
+    # att det syns om journalen själv är kortare än säsongen.
+    $jn = Read-Sql "SELECT COUNT(*) AS [n], MIN([date]) AS [forst] FROM [Live_event_SQL].[dbo].[Journal] WITH (NOLOCK) WHERE [date] >= @from" @{ from = $seasonStart }
+    if ($jn.Rows.Count -gt 0) {
+      $fo = $jn.Rows[0]["forst"]; $fos = $(if ($fo -is [System.DBNull]) { "-" } else { ([datetime]$fo).ToString("yyyy-MM-dd HH:mm") })
+      $log.Add(("Journal: {0} rader sedan {1}, den första {2}" -f $jn.Rows[0]["n"], $seasonStart.ToString("yyyy-MM-dd"), $fos))
+    }
+    $ev = Read-Sql "SELECT [date],[message] FROM [Live_event_SQL].[dbo].[Journal] WITH (NOLOCK) WHERE [date] >= @from AND [message] LIKE '%Appeared%'" @{ from = $seasonStart }
+    $events = @($ev.Rows | ForEach-Object { [pscustomobject]@{ tid = [datetime]$_["date"]; text = ("" + $_["message"]).Trim() } })
+    $log.Add(("Journal: {0} inkopplingar sedan {1}" -f $events.Count, $seasonStart.ToString("yyyy-MM-dd")))
+  } finally { Close-Sql }
+  return @{ rows = $rows; events = $events }
+}
+
+# Brunnsdelen rättad i efterhand (-BakatBrunn, version 10). Version 9 hittade
+# inga inkopplingar och lade därför hela säsongen på brunnen, med "sedan"
+# 1 augusti. Säsongen var rätt och rörs inte. För varje enhet som fortfarande
+# står vid samma brunn (sedan är kvar på säsongens början) dras det felaktiga
+# av: det som lades till var säsongens tillägg, rätt är tillägget sedan
+# ankomsten. Statistiken före "till" ändras inte i efterhand, så samma rader
+# ger samma säsongstillägg som då. En enhet som bytt brunn sedan dess har
+# redan börjat om och lämnas.
+function BakatBrunn-Adjust($acc, $res, [string]$seasonStartS) {
+  $fmt = "yyyy-MM-ddTHH:mm:ss"
+  $out = [ordered]@{}
+  foreach ($k in $res.Keys) {
+    $a = $acc[$k]; $r = $res[$k]
+    if ($null -eq $a -or $a["sedan"] -ne $seasonStartS) { $out[$k] = "lämnad (ny brunn sedan -Bakat)"; continue }
+    if ($null -ne $r.ankomst) {
+      $a["brunnM3"] = [math]::Max(0.0, [double]$a["brunnM3"] - ($r.sasong - $r.brunn))
+      $a["sedan"] = $r.ankomst.ToString($fmt)
+      if ($r.ankomst -eq [datetime]::ParseExact($seasonStartS, $fmt, $null)) { $out[$k] = "oförändrad (ingen inkoppling i säsongen)" }
+      else { $out[$k] = ("kom dit {0}, {1:N1} m3 vid brunnen före" -f $r.ankomst.ToString("yyyy-MM-dd HH:mm"), $r.brunn) }
+    } else {
+      $a["brunnM3"] = [math]::Max(0.0, [double]$a["brunnM3"] - $r.sasong)
+      $a["sedan"] = $a["fran"]
+      $out[$k] = "okänt när den kom (senast inkopplad vid en annan brunn) - räknas från " + $a["fran"]
+    }
+  }
+  return $out
+}
+
+# Stämpeln "bakat" i brygga-state.json. Bryggan version 9 skrev bara
+# lastSlot och vatten när den sparade var femte minut, så stämpeln försvann
+# första gången bryggan gick efter -Bakat (26 november). Saknas den, byggs
+# den upp ur rapporten bakat_<tid>.txt som ligger kvar i mappen: tiden ur
+# namnet, raderna ur raderna "N rader med flöde", säsongens början ur tiden,
+# och "till" som bryggans start (fran), som -Bakat själv räknade den.
+function Bakat-Stamp($st, [string]$dir, $acc) {
+  if ($st.bakat) { return $st.bakat }
+  $rep = @(Get-ChildItem -Path $dir -Filter "bakat_*.txt" -ErrorAction SilentlyContinue | Sort-Object Name)
+  if ($rep.Count -eq 0) { return $null }
+  $fmt = "yyyy-MM-ddTHH:mm:ss"
+  $f = $rep[0]
+  $t = [datetime]::ParseExact(($f.BaseName -replace '^bakat_', ''), "yyyyMMdd-HHmmss", $null)
+  $n = 0
+  foreach ($l in (Get-Content $f.FullName -Encoding UTF8)) { if ($l -match ':\s*(\d+) rader med fl') { $n += [int]$matches[1] } }
+  $y = $t.Year; if ($t.Month -lt 8) { $y-- }
+  $ss = Get-Date -Year $y -Month 8 -Day 1 -Hour 0 -Minute 0 -Second 0
+  $till = ($acc.Values | ForEach-Object { [datetime]::ParseExact($_["fran"], $fmt, $null) } | Measure-Object -Maximum).Maximum
+  return [pscustomobject]@{ tid = $t.ToString($fmt); fran = $ss.ToString($fmt); till = $till.ToString($fmt); rader = $n; urRapport = $f.Name }
+}
+
+if ($BakatBrunn) {
+  $created = $false
+  $mx = New-Object System.Threading.Mutex($true, "snogrupp-brygga", [ref]$created)
+  if (-not $created) {
+    Write-Host "Bryggan går. Stoppa den först: .\installera-autostart.ps1 -TaBort, och sedan processen (se LAS-MIG-FORST.txt)."
+    exit 1
+  }
+  if (-not (Test-Path $stateFile)) { Write-Host ("Hittar inte " + $stateFile); exit 1 }
+  $st = Get-Content $stateFile -Raw | ConvertFrom-Json
+  Acc-FromState $st.vatten
+  $stamp = Bakat-Stamp $st $here $script:acc
+  if (-not $stamp) { Write-Host "Bakåträkningen (-Bakat) är inte gjord. Kör den i stället."; exit 1 }
+  if ($stamp.brunn) { Write-Host ("Brunnsdelen är redan rättad " + $stamp.brunn.tid + "."); exit 1 }
+  if (@(Get-ChildItem -Path $here -Filter "bakatbrunn_*.txt" -ErrorAction SilentlyContinue).Count -gt 0) { Write-Host "Brunnsdelen är redan rättad (det finns en rapport bakatbrunn_...txt)."; exit 1 }
+  $st | Add-Member -NotePropertyName bakat -NotePropertyValue $stamp -Force
+  if ($stamp.urRapport) { Write-Host ("Stämpeln saknades i filen; tagen ur " + $stamp.urRapport + ": " + $stamp.rader + " rader, till " + $stamp.till + ".") }
+  $fmt = "yyyy-MM-ddTHH:mm:ss"
+  $now = Get-Date
+  $seasonStart = [datetime]::ParseExact($st.bakat.fran, $fmt, $null)
+  $until = [datetime]::ParseExact($st.bakat.till, $fmt, $null)
+  $log = New-Object System.Collections.Generic.List[string]
+  $f0 = Bakat-Fetch $seasonStart $until $log
+  if ($f0.rows.Count -ne [int]$st.bakat.rader) {
+    # Andra rader än vid -Bakat betyder att avdraget inte blir detsamma som
+    # det som lades till. Hellre stanna än gissa.
+    $log | ForEach-Object { Write-Host $_ }
+    Write-Host ("Statistiken gav {0} rader nu men {1} vid -Bakat. Inget ändrat - skicka detta till Claude." -f $f0.rows.Count, $st.bakat.rader)
+    exit 1
+  }
+  if ($f0.events.Count -eq 0) {
+    $log | ForEach-Object { Write-Host $_ }
+    Write-Host "Journalen gav inga inkopplingar nu heller. Inget ändrat - skicka detta till Claude."
+    exit 1
+  }
+  # Ankomsten räknas mot "fran" som den var vid -Bakat, inte mot "sedan".
+  $res = Backfill-Compute $script:acc $f0.rows (Parse-Appeared $f0.events) $seasonStart
+  $out = BakatBrunn-Adjust $script:acc $res $st.bakat.fran
+  # Hur tätt raderna kommer, och hur många som föll bort för att glappet till
+  # nästa var över en kvart. Är det många, räknade -Bakat för lite.
+  $log.Add("")
+  $log.Add("enhet | rader med flöde | median till nästa (min) | bortfallna (glapp över 15 min)")
+  foreach ($g in ($f0.rows | Where-Object { $null -ne $_.nxt } | Group-Object key | Sort-Object Name)) {
+    $mins = @($g.Group | ForEach-Object { ($_.nxt - $_.tid).TotalMinutes } | Sort-Object)
+    $med = $mins[[int][math]::Floor($mins.Count / 2)]
+    $bort = @($mins | Where-Object { $_ -gt 15 }).Count
+    $log.Add(("{0} | {1} | {2:N1} | {3}" -f $g.Name, $mins.Count, $med, $bort))
+  }
+  $log.Add("")
+  $log.Add("enhet | brunn | vid brunnen nu (m3) | vad som hände")
+  foreach ($k in $out.Keys) { $log.Add(("{0} | {1} | {2:N1} | {3}" -f $k, $script:acc[$k]["brunn"], [double]$script:acc[$k]["brunnM3"], $out[$k])) }
+  $bk = [ordered]@{ tid = $st.bakat.tid; fran = $st.bakat.fran; till = $st.bakat.till; rader = $st.bakat.rader; brunn = [ordered]@{ tid = $now.ToString($fmt); inkopplingar = $f0.events.Count } }
+  $o = [ordered]@{ lastSlot = $st.lastSlot; vatten = (Acc-ToState); bakat = $bk }
+  Copy-Item $stateFile ($stateFile + ".fore-bakatbrunn") -Force
+  (ConvertTo-Json -InputObject $o -Depth 5 -Compress) | Set-Content -Path $stateFile -Encoding ASCII
+  $f = Join-Path $here ("bakatbrunn_" + $now.ToString("yyyyMMdd-HHmmss") + ".txt")
+  $log | Set-Content -Path $f -Encoding UTF8
+  $log | ForEach-Object { Write-Host $_ }
+  Write-Host ""
+  Write-Host ("Klart. Den gamla filen ligger kvar som " + (Split-Path -Leaf $stateFile) + ".fore-bakatbrunn.")
+  Write-Host ("Rapporten ligger i " + $f + ". Starta bryggan igen med autostarten.")
+  exit 0
+}
+
+if ($Bakat) {
+  $created = $false
+  $mx = New-Object System.Threading.Mutex($true, "snogrupp-brygga", [ref]$created)
+  if (-not $created) {
+    Write-Host "Bryggan går. Stoppa den först: .\installera-autostart.ps1 -TaBort"
+    exit 1
+  }
+  if (-not (Test-Path $stateFile)) { Write-Host ("Hittar inte " + $stateFile + " - har bryggan version 8 gått?"); exit 1 }
+  $st = Get-Content $stateFile -Raw | ConvertFrom-Json
+  if ($st.bakat) { Write-Host ("Redan gjort " + $st.bakat.tid + ". Görs bara en gång, så att inget räknas dubbelt."); exit 1 }
+  # Version 9 tappade stämpeln vid nästa sparning, så rapporten är det säkra
+  # tecknet på att bakåträkningen redan är gjord.
+  $rep = @(Get-ChildItem -Path $here -Filter "bakat_*.txt" -ErrorAction SilentlyContinue)
+  if ($rep.Count -gt 0) { Write-Host ("Redan gjort (" + $rep[0].Name + "). Görs bara en gång, så att inget räknas dubbelt."); exit 1 }
+  if (-not $st.vatten) { Write-Host "Inga räkneverk i tillståndsfilen - låt bryggan version 8 eller senare gå en stund först."; exit 1 }
+  Acc-FromState $st.vatten
+  $fmt = "yyyy-MM-ddTHH:mm:ss"
+  $now = Get-Date
+  $y = $now.Year; if ($now.Month -lt 8) { $y-- }
+  $seasonStart = Get-Date -Year $y -Month 8 -Day 1 -Hour 0 -Minute 0 -Second 0
+  $until = ($script:acc.Values | ForEach-Object { [datetime]::ParseExact($_["fran"], $fmt, $null) } | Measure-Object -Maximum).Maximum
+  $log = New-Object System.Collections.Generic.List[string]
+  $f0 = Bakat-Fetch $seasonStart $until $log
+  $rows = $f0.rows; $events = $f0.events
+
+  $res = Backfill-Compute $script:acc $rows (Parse-Appeared $events) $seasonStart
+  $log.Add("")
+  $log.Add("enhet | brunn | kom dit | vatten vid brunnen före | vatten i säsongen före (m3)")
+  foreach ($k in $res.Keys) {
+    $a = $script:acc[$k]; $r = $res[$k]
+    $a["sasongM3"] = [double]$a["sasongM3"] + $r.sasong
+    if ($null -ne $r.ankomst) {
+      $a["brunnM3"] = [double]$a["brunnM3"] + $r.brunn
+      if ($r.ankomst -lt [datetime]::ParseExact($a["sedan"], $fmt, $null)) { $a["sedan"] = $r.ankomst.ToString($fmt) }
+      $ank = $r.ankomst.ToString("yyyy-MM-dd HH:mm")
+    } else { $ank = "okänt (senast inkopplad vid en annan brunn) - inget tillagt" }
+    $log.Add(("{0} | {1} | {2} | {3:N1} | {4:N1}" -f $k, $a["brunn"], $ank, $r.brunn, $r.sasong))
+  }
+  $o = [ordered]@{ lastSlot = $st.lastSlot; vatten = (Acc-ToState); bakat = [ordered]@{ tid = $now.ToString($fmt); fran = $seasonStart.ToString($fmt); till = $until.ToString($fmt); rader = $rows.Count } }
+  Copy-Item $stateFile ($stateFile + ".fore-bakat") -Force
+  (ConvertTo-Json -InputObject $o -Depth 5 -Compress) | Set-Content -Path $stateFile -Encoding ASCII
+  $f = Join-Path $here ("bakat_" + $now.ToString("yyyyMMdd-HHmmss") + ".txt")
+  $log | Set-Content -Path $f -Encoding UTF8
+  $log | ForEach-Object { Write-Host $_ }
+  Write-Host ""
+  Write-Host ("Klart. Räkneverken är påfyllda; den gamla filen ligger kvar som " + (Split-Path -Leaf $stateFile) + ".fore-bakat.")
+  Write-Host ("Rapporten ligger i " + $f + ". Starta bryggan igen med autostarten.")
   exit 0
 }
 
@@ -1025,6 +1323,69 @@ if ($Sjalvtest) {
   $s = W 7 8 "2027-08-02T10:00:00" $t2; $s["enheter"]["SGC400-1"]["vattenBrunn"] = 12.34
   Check "historiken får vattnet vid brunnen" ((Build-HistPatch $s $slot)["202611151805"]["e"]["SGC400-1"]["vb"] -eq 12.3)
 
+  # Räkna bakåt.
+  $ss = Get-Date "2026-08-01 00:00:00"
+  $ev = @(
+    [pscustomobject]@{ tid = (Get-Date "2026-11-20 18:00"); text = "Appeared  S ACCESS 300 ( adr = 8)    to  4" },
+    [pscustomobject]@{ tid = (Get-Date "2026-11-25 20:00"); text = "Appeared  S ACCESS 300 ( adr = 8)    to  5" },
+    [pscustomobject]@{ tid = (Get-Date "2026-11-26 04:42"); text = "Appeared  S ACCESS 300 ( adr = 8)    to  5" },
+    [pscustomobject]@{ tid = (Get-Date "2026-11-26 04:00"); text = "Appeared  S ACCESS 300 ( adr = 4)    to  9" },
+    [pscustomobject]@{ tid = (Get-Date "2026-11-26 03:00"); text = "Disappeared S ACCESS 300 (adr = 4) from 10" })
+  $ap = Parse-Appeared $ev
+  Check "journalens inkopplingar läses, med rätt enhet" ($ap.Count -eq 4 -and ($ap | Where-Object { $_.key -eq "SGC400-6" }).Count -eq 3 -and ($ap | Where-Object { $_.key -eq "SGC400-2" }).brunn -eq 9)
+  Check "adress 1 är det äldre kortet" ((KeyOfAdr 1) -eq "SGC300-1" -and (KeyOfAdr 3) -eq "SGC400-1")
+  $fore = Get-Date "2026-11-26 09:53:31"
+  Check "kom till brunnen: första i följden vid samma brunn" ((Arrival $ap "SGC400-6" 5 $fore $ss) -eq (Get-Date "2026-11-25 20:00"))
+  Check "ingen inkoppling i säsongen: sedan säsongens början" ((Arrival $ap "SGC400-1" 7 $fore $ss) -eq $ss)
+  Check "senast inkopplad vid en annan brunn: okänt" ($null -eq (Arrival $ap "SGC400-6" 7 $fore $ss))
+  $acc2 = @{ "SGC400-6" = @{ brunn = 5; sedan = "2026-11-26T09:53:31"; fran = "2026-11-26T09:53:31"; brunnM3 = 1.0; sasongM3 = 1.0 } }
+  $rows = @(
+    # Vid brunn 4: 7 m3/h i 60 min (sex rader med tio minuters mellanrum).
+    0..5 | ForEach-Object { [pscustomobject]@{ key = "SGC400-6"; tid = (Get-Date "2026-11-21 02:00").AddMinutes(10 * $_); debit = 70; nxt = (Get-Date "2026-11-21 02:00").AddMinutes(10 * $_ + 10) } }
+    # Vid brunn 5: 6 m3/h i 30 min, rader var tredje minut.
+    0..9 | ForEach-Object { [pscustomobject]@{ key = "SGC400-6"; tid = (Get-Date "2026-11-26 05:00").AddMinutes(3 * $_); debit = 60; nxt = (Get-Date "2026-11-26 05:00").AddMinutes(3 * $_ + 3) } }
+    # Glapp på en timme i statistiken: räknas inte.
+    [pscustomobject]@{ key = "SGC400-6"; tid = (Get-Date "2026-11-26 06:00"); debit = 60; nxt = (Get-Date "2026-11-26 07:00") }
+    # Efter att bryggan började räkna: räknas inte (det gör bryggan själv).
+    [pscustomobject]@{ key = "SGC400-6"; tid = (Get-Date "2026-11-26 09:50"); debit = 60; nxt = (Get-Date "2026-11-26 10:00") }
+    # Sista raden i en databas, utan nästa: räknas inte.
+    [pscustomobject]@{ key = "SGC400-6"; tid = (Get-Date "2026-11-15 23:58"); debit = 60; nxt = $null })
+  $res = Backfill-Compute $acc2 $rows $ap $ss
+  $r6 = $res["SGC400-6"]
+  # Raden 09:50 gäller till bryggans start 09:53:31: 6 m3/h i 3,52 min.
+  $sista = 6.0 * ((Get-Date "2026-11-26 09:53:31") - (Get-Date "2026-11-26 09:50")).TotalHours
+  Check "säsongen: båda brunnarna, inte glappet eller tiden efter start" ([math]::Abs($r6.sasong - (7.0 + 3.0 + $sista)) -lt 0.001)
+  Check "brunnen: bara sedan den kom dit" ([math]::Abs($r6.brunn - (3.0 + $sista)) -lt 0.001)
+
+  # Rätta brunnsdelen (-BakatBrunn): så som version 9 lämnade det, utan
+  # inkopplingar - hela säsongen på brunnen och sedan 1 augusti - plus 0,5 m3
+  # som bryggan räknat efter bakåträkningen.
+  $ssS = "2026-08-01T00:00:00"
+  $fel = 1.0 + $r6.sasong + 0.5
+  $acc3 = @{
+    "SGC400-6" = @{ brunn = 5; sedan = $ssS; fran = "2026-11-26T09:53:31"; brunnM3 = $fel; sasongM3 = $fel }
+    "SGC400-7" = @{ brunn = 7; sedan = $ssS; fran = "2026-11-26T09:53:31"; brunnM3 = $fel; sasongM3 = $fel }
+    "SGC400-1" = @{ brunn = 3; sedan = "2026-11-26T14:00:00"; fran = "2026-11-26T14:00:00"; brunnM3 = 0.2; sasongM3 = $fel } }
+  $res3 = [ordered]@{
+    "SGC400-6" = $r6
+    "SGC400-7" = [pscustomobject]@{ sasong = $r6.sasong; brunn = 0.0; ankomst = $null }
+    "SGC400-1" = [pscustomobject]@{ sasong = 5.0; brunn = 5.0; ankomst = $ss } }
+  $null = BakatBrunn-Adjust $acc3 $res3 $ssS
+  Check "rättad brunn: bara tiden sedan ankomsten, plus det räknade efteråt" ([math]::Abs($acc3["SGC400-6"]["brunnM3"] - (1.0 + $r6.brunn + 0.5)) -lt 0.001 -and $acc3["SGC400-6"]["sedan"] -eq "2026-11-25T20:00:00")
+  Check "rättad brunn: säsongen rörs inte" ($acc3["SGC400-6"]["sasongM3"] -eq $fel)
+  Check "rättad brunn: okänd ankomst räknas från bryggans start" ([math]::Abs($acc3["SGC400-7"]["brunnM3"] - 1.5) -lt 0.001 -and $acc3["SGC400-7"]["sedan"] -eq "2026-11-26T09:53:31")
+  Check "rättad brunn: enhet som bytt brunn sedan dess lämnas" ($acc3["SGC400-1"]["brunnM3"] -eq 0.2 -and $acc3["SGC400-1"]["sedan"] -eq "2026-11-26T14:00:00")
+  # Stämpeln ur rapporten, när version 9 tappat den ur tillståndsfilen.
+  $td = Join-Path ([IO.Path]::GetTempPath()) ("brygga-test-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory $td | Out-Null
+  try {
+    @("Live_stat_octobre2SQL stat_piste_canon_SGC400: 40 rader med flöde", "Live_stat_novembre2SQL stat_piste_canon_SGC400: 171 rader med flöde", "Live_stat_novembre2SQL stat_piste_canon_SGC300: 38 rader med flöde", "Journal: 0 inkopplingar sedan 2026-08-01") | Set-Content -Path (Join-Path $td "bakat_20261126-115303.txt") -Encoding UTF8
+    $stp = Bakat-Stamp ([pscustomobject]@{ lastSlot = "x" }) $td $acc3
+    Check "stämpeln byggs upp ur rapporten" ($stp.rader -eq 249 -and $stp.tid -eq "2026-11-26T11:53:03" -and $stp.fran -eq "2026-08-01T00:00:00" -and $stp.till -eq "2026-11-26T14:00:00")
+    Check "finns stämpeln i filen används den" ((Bakat-Stamp ([pscustomobject]@{ bakat = [pscustomobject]@{ rader = 7 } }) $td $acc3).rader -eq 7)
+  } finally { Remove-Item $td -Recurse -Force }
+  Check "inkoppling med blanksteg först läses" ((Parse-Appeared @([pscustomobject]@{ tid = (Get-Date "2026-11-26 04:42"); text = ("   Appeared  S ACCESS 300 ( adr = 9)    to  1").Trim() })).key -eq "SGC400-7")
+
   Check "flöde och tryck har dödband" ((Band "enheter/SGC400-3/flode") -eq 0.2 -and (Band "enheter/SGC400-3/tryckBor") -eq 0.2)
 
   if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
@@ -1058,14 +1419,17 @@ if (Test-Path $stateFile) {
     $st = Get-Content $stateFile -Raw | ConvertFrom-Json
     $lastSlot = [datetime]::SpecifyKind([datetime]::ParseExact($st.lastSlot, "yyyyMMddHHmm", $null), [DateTimeKind]::Utc)
     Acc-FromState $st.vatten
+    $script:bakatStamp = $st.bakat
   } catch { $lastSlot = $null }
 }
 # Räkneverken sparas var femte minut med historikpunkten, och bara när
 # bryggan skickar - en -EnGang i torrläge bredvid den riktiga får inte
-# skriva över dem.
+# skriva över dem. Stämpeln "bakat" följer med oförändrad; version 9 lät
+# den falla bort, och då vet varken -Bakat eller -BakatBrunn vad som gjorts.
 function Save-State {
   if (-not $Skicka) { return }
   $o = [ordered]@{ lastSlot = (SlotKey $lastSlot); vatten = (Acc-ToState) }
+  if ($script:bakatStamp) { $o["bakat"] = $script:bakatStamp }
   (ConvertTo-Json -InputObject $o -Depth 5 -Compress) | Set-Content -Path $stateFile -Encoding ASCII
 }
 
