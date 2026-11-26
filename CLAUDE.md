@@ -82,8 +82,15 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   = teoretiskt × √(tryck ÷ börtryck), 0 när kanonen står. Det summeras och
   läggs bredvid FT01 (45 % av summan 26 november). Teoretiskt flöde står
   kvar när kanonen står och får aldrig summeras. Flödet ligger i `q`, inte
-  i `eau` — dammens modell räknar uttaget på `eau`, och att byta källa för
-  uttaget är ett beslut för Kristian, inte en bieffekt.
+  i `eau` (som bara är ?demo).
+- **Dammens uttag dödräknas ur kanonerna** (Kristians beslut 26 november,
+  eftersom FT01 troligen inte går att lita på). Bryggan 11 räknar varje
+  timmes vatten ur styrsystemets statistik till `/vattenTimme` (nyckel =
+  timmens början i UTC); appen drar summan sedan senaste måttbandsmätningen
+  (`damDrawnSince`), och nuvarande uttag är summan av `q`. Siffrorna är
+  kanonernas beräknade flöde — måttbandet avgör om de stämmer.
+- **Pushlarm** är ett förslag (`docs/forslag-pushlarm.md`), inget byggt.
+  Kräver Blaze, vilket är Kristians beslut.
 - **Snömängden är vatten × 2,2**, som styrsystemet räknar — ingen kanon
   mäter snö. Bryggan 8 summerar bara vattnet, per enhet sedan den kom till
   brunnen (nollas vid byte av brunn, sågtand) och per säsong från 1 augusti,

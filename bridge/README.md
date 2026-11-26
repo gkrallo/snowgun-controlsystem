@@ -11,6 +11,14 @@ föll bort på kvartsgränsen), journalen går tillbaka till 30 oktober 08:45
 och gav 82 inkopplingar. SGC400-3 var senast inkopplad vid en annan brunn
 än 10 och räknas vid brunnen från 09:53.
 
+- Version 11 räknar kanonernas vatten timme för timme ur styrsystemets
+  statistik och skickar det till `/vattenTimme` (nyckel = timmens början i
+  UTC, värde m³), för dammens uttag. Första starten räknar hela säsongen,
+  sedan var tionde minut från den första timme som kan ha fått nya rader
+  (en timme räknas klar 25 minuter efter att den slutat). Läget sparas som
+  `timmeFran` i `brygga-state.json`. Ett avbrott tas igen av sig självt,
+  eftersom statistiken finns kvar. Kräver att databasreglerna med
+  `vattenTimme` är utlagda; annars loggar bryggan felet och går vidare.
 - Version 10 rättar brunnsdelen av bakåträkningen (`-BakatBrunn`, en gång).
   Version 9 frågade journalen efter `message LIKE 'Appeared%'` och fick noll
   rader, så alla kanoner räknades som vid sin brunn sedan 1 augusti.

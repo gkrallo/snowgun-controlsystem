@@ -38,6 +38,8 @@
   (-Bakat, en gång). Version 10 rättar brunnsdelen av det (-BakatBrunn):
   journalfrågan i version 9 hittade inga inkopplingar, så alla kanoner
   räknades som vid sin brunn sedan 1 augusti.
+  Version 11 räknar kanonernas vatten timme för timme ur statistiken och
+  skickar det till /vattenTimme, så att appen kan räkna dammens uttag.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -68,7 +70,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "10"
+$VERSION = "11"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -738,36 +740,80 @@ if ($Uttag) {
 # en gång: filen får en stämpel "bakat" och en andra körning vägrar.
 # Läser bara rader med flöde, inom säsongen, ur halvmånadsdatabaserna.
 
-# Statistikraderna och journalens inkopplingar, för -Bakat och -BakatBrunn.
-function Bakat-Fetch([datetime]$seasonStart, [datetime]$until, $log) {
+# Statistikraderna med flöde mellan $from och $to, över de halvmånads-
+# databaser tiden spänner över. Anslutningen ska vara öppen. Används av
+# -Bakat, -BakatBrunn och timvattnet.
+function Stat-Rows([datetime]$from, [datetime]$to, $log) {
   $mois = @("janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre")
   $rows = New-Object System.Collections.Generic.List[object]
+  $dbs = @((Read-Sql "SELECT [name] FROM sys.databases WHERE [name] LIKE 'Live_stat_%SQL'").Rows | ForEach-Object { "" + $_["name"] })
+  # Halvmånad för halvmånad: 1 = dag 1-15, 2 = resten.
+  $d = $from
+  while ($d -lt $to) {
+    $half = $(if ($d.Day -le 15) { 1 } else { 2 })
+    $db = "Live_stat_" + $mois[$d.Month - 1] + $half + "SQL"
+    if ($dbs -contains $db) {
+      foreach ($t in @(@{ tab = "stat_piste_canon_SGC400"; pre = "SGC400-" }, @{ tab = "stat_piste_canon_SGC300"; pre = "SGC300-" })) {
+        # Raderna vägs med tiden till nästa rad för samma kanon (en rad var
+        # tionde minut, visade -BakatBrunn 26 november). LEAD räknar fram den
+        # i databasen, och bara raderna med flöde skickas hit.
+        $q = "SELECT [num_canon],[date],[debit_eau_reel],[nxt] FROM (SELECT [num_canon],[date],[debit_eau_reel],LEAD([date]) OVER (PARTITION BY [num_canon] ORDER BY [date]) AS [nxt] FROM [" + $db + "].[dbo].[" + $t.tab + "] WITH (NOLOCK) WHERE [date] >= @from AND [date] < @to) AS x WHERE [debit_eau_reel] > 0"
+        $dt = Read-Sql $q @{ from = $from; to = $to }
+        foreach ($r in $dt.Rows) {
+          $nx = $null; if (-not ($r["nxt"] -is [System.DBNull])) { $nx = [datetime]$r["nxt"] }
+          $rows.Add([pscustomobject]@{ key = $t.pre + $r["num_canon"]; tid = [datetime]$r["date"]; debit = [double]$r["debit_eau_reel"]; nxt = $nx })
+        }
+        if ($log) { $log.Add(("{0} {1}: {2} rader med flöde" -f $db, $t.tab, $dt.Rows.Count)) }
+      }
+    }
+    if ($half -eq 1) { $d = Get-Date -Year $d.Year -Month $d.Month -Day 16 -Hour 0 -Minute 0 -Second 0 } else { $d = (Get-Date -Year $d.Year -Month $d.Month -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(1) }
+  }
+  return ,$rows
+}
+
+# ------------------------------------------- timvattnet (version 11, dammen)
+# Allt vatten kanonerna tagit, timme för timme, till /vattenTimme i molnet:
+# { "2026112603": 35.21, ... }, nyckeln är timmens början i UTC som
+# historiken. Appen drar det från dammen sedan senaste måttbandsmätningen.
+# Räknas ur styrsystemets statistik, inte ur bryggans egna läsningar: då
+# går det att räkna om i efterhand, och en timme när bryggan inte gick kommer
+# med ändå. Vid första starten räknas hela säsongen; sedan, var tionde
+# minut, från den första timme som kan ha fått nya rader. En timme räknas
+# klar först 25 minuter efter att den slutat - raderna kommer var tionde
+# minut, och en rad gäller till nästa, så sista raden i timmen behöver nästa
+# rad för att räknas. Marginalen tar en sen rad eller två.
+function Hour-Totals($rows, [datetime]$from, [datetime]$to) {
+  $h = @{}
+  foreach ($r in $rows) {
+    if ($null -eq $r.nxt) { continue }
+    $a = $r.tid; $b = $r.nxt
+    if (($b - $a).TotalHours -le 0 -or ($b - $a).TotalHours -gt 0.25) { continue }
+    if ($a -lt $from) { $a = $from }
+    if ($b -gt $to) { $b = $to }
+    while ($a -lt $b) {
+      $hs = New-Object datetime($a.Year, $a.Month, $a.Day, $a.Hour, 0, 0, $a.Kind)
+      $he = $hs.AddHours(1); $e = $b; if ($he -lt $e) { $e = $he }
+      $k = $hs.ToUniversalTime().ToString("yyyyMMddHH")
+      $h[$k] = [double]$h[$k] + [double]$r.debit / 10 * ($e - $a).TotalHours
+      $a = $e
+    }
+  }
+  return $h
+}
+
+# Från vilken timme ska nästa runda räkna? Den första som inte är klar:
+# timmen som slutade för mindre än 25 minuter sedan, eller den pågående.
+function Hour-OpenFrom([datetime]$now) {
+  $t = $now.AddMinutes(-25)
+  return (New-Object datetime($t.Year, $t.Month, $t.Day, $t.Hour, 0, 0, $t.Kind))
+}
+
+# Statistikraderna och journalens inkopplingar, för -Bakat och -BakatBrunn.
+function Bakat-Fetch([datetime]$seasonStart, [datetime]$until, $log) {
   $events = @()
   try {
     Open-Sql
-    $dbs = @((Read-Sql "SELECT [name] FROM sys.databases WHERE [name] LIKE 'Live_stat_%SQL'").Rows | ForEach-Object { "" + $_["name"] })
-    # Halvmånad för halvmånad: 1 = dag 1-15, 2 = resten.
-    $d = $seasonStart
-    while ($d -lt $until) {
-      $half = $(if ($d.Day -le 15) { 1 } else { 2 })
-      $db = "Live_stat_" + $mois[$d.Month - 1] + $half + "SQL"
-      if ($dbs -contains $db) {
-        foreach ($t in @(@{ tab = "stat_piste_canon_SGC400"; pre = "SGC400-" }, @{ tab = "stat_piste_canon_SGC300"; pre = "SGC300-" })) {
-          # Raderna kommer inte med jämna mellanrum (ungefär varje minut på det
-          # äldre kortet, var 2-3 minut på SGC400), så varje rad vägs med tiden
-          # till nästa rad för samma kanon. LEAD räknar fram den i databasen,
-          # och bara raderna med flöde skickas hit.
-          $q = "SELECT [num_canon],[date],[debit_eau_reel],[nxt] FROM (SELECT [num_canon],[date],[debit_eau_reel],LEAD([date]) OVER (PARTITION BY [num_canon] ORDER BY [date]) AS [nxt] FROM [" + $db + "].[dbo].[" + $t.tab + "] WITH (NOLOCK) WHERE [date] >= @from AND [date] < @to) AS x WHERE [debit_eau_reel] > 0"
-          $dt = Read-Sql $q @{ from = $seasonStart; to = $until }
-          foreach ($r in $dt.Rows) {
-            $nx = $null; if (-not ($r["nxt"] -is [System.DBNull])) { $nx = [datetime]$r["nxt"] }
-            $rows.Add([pscustomobject]@{ key = $t.pre + $r["num_canon"]; tid = [datetime]$r["date"]; debit = [double]$r["debit_eau_reel"]; nxt = $nx })
-          }
-          $log.Add(("{0} {1}: {2} rader med flöde" -f $db, $t.tab, $dt.Rows.Count))
-        }
-      }
-      if ($half -eq 1) { $d = Get-Date -Year $d.Year -Month $d.Month -Day 16 -Hour 0 -Minute 0 -Second 0 } else { $d = (Get-Date -Year $d.Year -Month $d.Month -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(1) }
-    }
+    $rows = Stat-Rows $seasonStart $until $log
     # Version 9 frågade efter [message] LIKE 'Appeared%' och fick noll rader,
     # fast journalen hade "Appeared  S ACCESS 300 ( adr = 8)    to  5" samma
     # natt. Bryggan trimmar texterna innan de visas, så troligen börjar de med
@@ -1384,6 +1430,26 @@ if ($Sjalvtest) {
     Check "stämpeln byggs upp ur rapporten" ($stp.rader -eq 249 -and $stp.tid -eq "2026-11-26T11:53:03" -and $stp.fran -eq "2026-08-01T00:00:00" -and $stp.till -eq "2026-11-26T14:00:00")
     Check "finns stämpeln i filen används den" ((Bakat-Stamp ([pscustomobject]@{ bakat = [pscustomobject]@{ rader = 7 } }) $td $acc3).rader -eq 7)
   } finally { Remove-Item $td -Recurse -Force }
+  # Timvattnet. Statistikens tider är lokal tid utan zon; nyckeln är UTC.
+  $loc = { param($s) [datetime]::SpecifyKind((Get-Date $s), [DateTimeKind]::Unspecified) }
+  $tr = @(
+    # 6 m3/h i tio minuter över ett timskifte: 5 min i varje timme.
+    [pscustomobject]@{ key = "SGC400-1"; tid = (& $loc "2026-11-26 03:55"); debit = 60; nxt = (& $loc "2026-11-26 04:05") }
+    # Två kanoner i samma timme.
+    [pscustomobject]@{ key = "SGC400-1"; tid = (& $loc "2026-11-26 04:05"); debit = 60; nxt = (& $loc "2026-11-26 04:15") }
+    [pscustomobject]@{ key = "SGC400-2"; tid = (& $loc "2026-11-26 04:10"); debit = 30; nxt = (& $loc "2026-11-26 04:20") }
+    # Glapp över en kvart och sista raden utan nästa: räknas inte.
+    [pscustomobject]@{ key = "SGC400-1"; tid = (& $loc "2026-11-26 04:15"); debit = 60; nxt = (& $loc "2026-11-26 05:15") }
+    [pscustomobject]@{ key = "SGC400-1"; tid = (& $loc "2026-11-26 05:15"); debit = 60; nxt = $null })
+  $ht = Hour-Totals $tr (& $loc "2026-11-26 00:00") (& $loc "2026-11-26 06:00")
+  $k3 = (& $loc "2026-11-26 03:00").ToUniversalTime().ToString("yyyyMMddHH")
+  $k4 = (& $loc "2026-11-26 04:00").ToUniversalTime().ToString("yyyyMMddHH")
+  Check "timvattnet: en rad över timskiftet delas" ([math]::Abs($ht[$k3] - 0.5) -lt 0.001)
+  Check "timvattnet: timmen summerar alla kanoner, inte glapp eller sista raden" ([math]::Abs($ht[$k4] - (0.5 + 1.0 + 0.5)) -lt 0.001 -and $ht.Count -eq 2)
+  Check "timvattnet: nyckeln är UTC som historiken" ($k4 -eq "2026112603")
+  $ht2 = Hour-Totals $tr (& $loc "2026-11-26 04:00") (& $loc "2026-11-26 06:00")
+  Check "timvattnet: klipps vid början" (-not $ht2.ContainsKey($k3) -and [math]::Abs($ht2[$k4] - 2.0) -lt 0.001)
+  Check "timmen 03 är öppen till 04:25" ((Hour-OpenFrom (Get-Date "2026-11-26 04:24")) -eq (Get-Date "2026-11-26 03:00") -and (Hour-OpenFrom (Get-Date "2026-11-26 04:26")) -eq (Get-Date "2026-11-26 04:00"))
   Check "inkoppling med blanksteg först läses" ((Parse-Appeared @([pscustomobject]@{ tid = (Get-Date "2026-11-26 04:42"); text = ("   Appeared  S ACCESS 300 ( adr = 9)    to  1").Trim() })).key -eq "SGC400-7")
 
   Check "flöde och tryck har dödband" ((Band "enheter/SGC400-3/flode") -eq 0.2 -and (Band "enheter/SGC400-3/tryckBor") -eq 0.2)
@@ -1420,7 +1486,34 @@ if (Test-Path $stateFile) {
     $lastSlot = [datetime]::SpecifyKind([datetime]::ParseExact($st.lastSlot, "yyyyMMddHHmm", $null), [DateTimeKind]::Utc)
     Acc-FromState $st.vatten
     $script:bakatStamp = $st.bakat
+    if ($st.timmeFran) { $script:timmeFran = [datetime]::ParseExact($st.timmeFran, "yyyy-MM-ddTHH:mm:ss", $null) }
   } catch { $lastSlot = $null }
+}
+$script:timmeNasta = [datetime]::MinValue
+
+# Timvattnet, se Hour-Totals. Fel här får aldrig stoppa resten av bryggan:
+# nästa runda börjar från samma timme och tar igen det.
+function Update-HourWater([datetime]$now) {
+  if ($now -lt $script:timmeNasta) { return }
+  $script:timmeNasta = $now.AddMinutes(10)
+  $open = Hour-OpenFrom $now
+  $from = $script:timmeFran
+  if ($null -eq $from) {
+    $y = $now.Year; if ($now.Month -lt 8) { $y-- }
+    $from = Get-Date -Year $y -Month 8 -Day 1 -Hour 0 -Minute 0 -Second 0
+  }
+  if ($open -lt $from) { $from = $open }
+  # Raderna en kvart före, så att en rad som börjar före timmen och gäller
+  # in i den kommer med (Hour-Totals klipper vid $from).
+  $rows = Stat-Rows ($from.AddMinutes(-15)) $now $null
+  $h = Hour-Totals $rows $from $now
+  $body = [ordered]@{}
+  foreach ($k in ($h.Keys | Sort-Object)) { if ($h[$k] -ge 0.005) { $body[$k] = [math]::Round($h[$k], 2) } }
+  if ($body.Count -gt 0) { Send-Cloud "Patch" "vattenTimme" $body }
+  $first = ($null -eq $script:timmeFran)
+  $script:timmeFran = $open
+  Save-State
+  if ($first) { Log ("Timvattnet: hela säsongen räknad, " + $body.Count + " timmar med vatten, sedan " + $from.ToString("yyyy-MM-dd")) }
 }
 # Räkneverken sparas var femte minut med historikpunkten, och bara när
 # bryggan skickar - en -EnGang i torrläge bredvid den riktiga får inte
@@ -1430,6 +1523,7 @@ function Save-State {
   if (-not $Skicka) { return }
   $o = [ordered]@{ lastSlot = (SlotKey $lastSlot); vatten = (Acc-ToState) }
   if ($script:bakatStamp) { $o["bakat"] = $script:bakatStamp }
+  if ($script:timmeFran) { $o["timmeFran"] = $script:timmeFran.ToString("yyyy-MM-ddTHH:mm:ss") }
   (ConvertTo-Json -InputObject $o -Depth 5 -Compress) | Set-Content -Path $stateFile -Encoding ASCII
 }
 
@@ -1485,6 +1579,7 @@ while ($true) {
         $lastSlot = $slot
         Save-State
       }
+      try { Update-HourWater $now } catch { Log ("Timvattnet: " + $_.Exception.Message) }
     }
     if ($EnGang) { Log ("Klart på " + $ms + " ms. Resultatet ligger i " + $outFile) }
   } catch {
