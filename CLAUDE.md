@@ -254,6 +254,13 @@ servern om sidan ändrats när den kommer fram på skärmen. `VERSION` i
 `app/sw.js` höjs bara när `sw.js` eller ikonerna ändras. **Byts en ikon måste
 filen byta namn** — under samma namn kommer den gamla bilden tillbaka.
 
+**Startsidan `/` måste ha `no-cache`** i `firebase.json`, inte bara
+`**/*.html`. Den installerade appen startar på `./`, som Hosting annars
+ger en timmes cache. 26 november startade appen på gammal kod efter en
+utläggning (larmkortet saknades) och visade den nya först när man drog
+ner sidan. Uppdateringskollen räddar inte det: dess första fråga sparar
+bara serverns nuvarande etag och jämför först nästa gång.
+
 Prova lokalt på `http://localhost:8000` (porten står i API-nyckelns lista).
 Ingen kan logga in åt användaren i förhandsvisningen; vyerna provas genom
 att mata in data med `applyLive(...)` i konsolen. `?demo` i adressen visar
