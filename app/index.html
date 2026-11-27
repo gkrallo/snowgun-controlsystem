@@ -2159,7 +2159,15 @@ function initMap(){
   L.circleMarker([sn.lat,sn.lon],{radius:5,color:'#38bdf8',weight:2,fillColor:'#38bdf8',fillOpacity:.9})
    .addTo(mapInst).bindPopup(`<b>Snorkeln</b> · dammens bräddavlopp, 100 %<br>`+
      `${Math.round(overSnorkel('SN'))} cm under krönet här, inmätt ${KANT.datum}`);
-  const fit=()=>{if(mapInst){mapInst.invalidateSize();mapInst.fitBounds(line.getBounds(),{padding:[18,18]});}};
+  // Kartan fyller det som är kvar av skärmen ovanför menyraden, så att hela
+  // spåret syns utan att man rullar. Med en fast höjd hamnade södra änden
+  // under menyraden på en liten telefon, och kartan zoomades in för att
+  // rymma det som inte syntes.
+  const fitH=()=>{const nav=document.getElementById('botnav'), nh=nav&&nav.offsetHeight||0;
+    const h=Math.round(window.innerHeight-(el.getBoundingClientRect().top+window.scrollY)-nh-10);
+    el.style.height=Math.max(320,Math.min(h,900))+'px';};
+  fitH();
+  const fit=()=>{if(mapInst){fitH();mapInst.invalidateSize();mapInst.fitBounds(line.getBounds(),{padding:[12,12]});}};
   fit();
   // containern kan sakna sin höjd när kartan skapas (vyn fejdas in) — passa in igen
   // när layouten satt sig, annars hamnar zoomen på världsnivå.
@@ -2171,8 +2179,10 @@ function initMap(){
       fillColor:st?'#0e2a3d':'#1a2a42',fillOpacity:.95})
      .addTo(mapInst).bindPopup(st?`<b>Brunn ${w.no}</b><br>Styrsystemets väderstation`:`Brunn ${w.no}${w.spare?' · reserv':''}`);
   });
-  // Utzoomat får etiketterna inte plats (se .zlow).
-  const zl=()=>{if(mapInst)mapInst.getContainer().classList.toggle('zlow',mapInst.getZoom()<15.5);};
+  // Längre ut än att hela spåret syns får etiketterna inte plats (se .zlow).
+  // Gränsen låg förut på 15,5, och då syntes de inte på Kristians telefon
+  // utan att zooma in.
+  const zl=()=>{if(mapInst)mapInst.getContainer().classList.toggle('zlow',mapInst.getZoom()<14.5);};
   mapInst.on('zoomend',()=>{zl();drawMapUnits();}); zl();
   mapMk={}; drawMapUnits();
 }
@@ -2187,12 +2197,12 @@ let mapMk={};
    i nord-sydlig led med 60 m mellan brunnarna, och etiketten står på den
    sida av brunnen som vetter bort från spårlinjen (räknas ut). Norr om 12
    ligger brunnarna i vändslingorna tätt åt alla håll, så där är sidan vald
-   för hand: 13-16 ligger på rad i öst-västlig led och får etiketten ovanför
-   eller under, 17 och 18 står 33 m isär i nord-sydlig led. Prövat med en
+   för hand: över eller under ikonen, eftersom 13-16 ligger på rad i
+   öst-västlig led. placeLabels flyttar den om den ändå krockar. Prövat med en
    enhet vid varje brunn. */
 // 7 och 8 står mitt för dammen, där pumphusets etikett sitter öster om
 // spåret, och får därför sin etikett åt väster.
-const MSIDA={7:'w',8:'w',13:'w',14:'s',15:'n',16:'s',17:'s',18:'e',19:'n'};
+const MSIDA={7:'w',8:'w',13:'n',14:'s',15:'n',16:'s',17:'s',18:'n',19:'n'};
 function msida(w){
   if(MSIDA[w.no])return MSIDA[w.no];
   let best=null,d=1e9;
@@ -2222,10 +2232,15 @@ function mapPick(list){
   const v=c=>{const m=mapUnitState(c);return (m.kor?8:0)+(m.live?4:0)+(m.borta||m.fel?2:0);};
   return list.slice().sort((a,b)=>v(b)-v(a)||((b.heard||0)-(a.heard||0)))[0];
 }
-function unitLabel(c,m,side){
+// Brunn 1-12 får etiketten på en rad (temperatur och flöde efter varandra):
+// där står brunnarna 60 m isär i nord-sydlig led, och en låg etikett ryms
+// mellan dem även när hela spåret syns. Från 13 ligger brunnarna på rad i
+// öst-västlig led, och där är en smal etikett i två rader över eller under
+// ikonen bättre (Kristian 27 november).
+function unitLabel(c,m,side,rad){
   const tw=m.live?num(c.tw):'–', q=m.live?num(m.q):'–';
   const twc=m.live&&Number.isFinite(c.tw)?(c.tw<=FTHRESH?'#7dd3fc':'#fbbf24'):'#9fb0c7';
-  return `<div class="mlab ${side}${m.live?'':' dim'}"><span style="color:${twc}">${tw}°</span>${m.borta?' <span style="color:#fbbf24">⚠</span>':''}<br>${q} <small>m³/h</small></div>`;
+  return `<div class="mlab ${side}${m.live?'':' dim'}"><span style="color:${twc}">${tw}°</span>${m.borta?' <span style="color:#fbbf24">⚠</span>':''}${rad?' ':'<br>'}${q} <small>m³/h</small></div>`;
 }
 function drawMapUnits(){
   // Larmraden och larmknappens siffra följer med, eftersom vyn inte ritas om.
@@ -2238,7 +2253,7 @@ function drawMapUnits(){
   for(const [no,list] of Object.entries(byWell)){
     const w=WELLS.find(x=>x.no===+no), c=mapPick(list), m=mapUnitState(c), side=msida(w);
     const andra=list.filter(x=>x!==c);
-    const html=sd=>`<div class="mk"><div class="umark${m.borta?' vanish':''}" style="background:${m.col}${m.live?'':';opacity:.6;border-style:dashed'}">${esc(c.id)}</div>${unitLabel(c,m,sd)}</div>`;
+    const html=sd=>`<div class="mk"><div class="umark${m.borta?' vanish':''}" style="background:${m.col}${m.live?'':';opacity:.6;border-style:dashed'}">${esc(c.id)}</div>${unitLabel(c,m,sd,+no<=12)}</div>`;
     const pop=`<b>${esc(c.namn)}</b> · ${esc(m.txt)}<br>Brunn ${w.no}${c.modell?' · '+esc(c.modell):''}<br>`+
       `Våttemp ${m.live?num(c.tw):'–'} °C · flöde ${m.live?num(m.q):'–'} m³/h`+
       (real?`<br>${m.live?'Hörd nyss':'Hörd '+ago(c.heard)}`:'')+
