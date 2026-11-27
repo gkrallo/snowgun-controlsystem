@@ -72,7 +72,7 @@ function Redact([string]$s) {
 }
 
 Log "============================================================"
-Log " Läs-only-sond mot styrdatorn (version 2)"
+Log " Läs-only-sond mot styrdatorn (version 3)"
 Log " Tid:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Log " Dator:  $env:COMPUTERNAME   Användare: $env:USERNAME"
 Log "============================================================"
@@ -717,6 +717,35 @@ WHERE i.index_id > 0 AND i.is_disabled = 0 AND i.is_hypothetical = 0
     }
    } catch { Log "      (fel i den här tabellen, går vidare: $($_.Exception.Message))" }
   }
+  Save-Report
+}
+
+# =================== 7. Sufags egna kolumnbeskrivningar =====================
+# (27 november 2026) Sufag har skrivit en beskrivning på många kolumner -
+# "Bit 3 = hydrant OK", "Word 23 : Open rings" - och SQL Server sparar den
+# som MS_Description tillsammans med EXAKT tabell och kolumnnummer.
+# Säkerhetskopian i zip-filen visade texterna men inte vilken kolumn de hör
+# till. Det här är facit för lamporna och ringarna, i stället för att räkna
+# eller gissa. Liten systemtabell, ingen datatabell läses.
+foreach ($db in $dbNames) {
+  Head "7. KOLUMNBESKRIVNINGAR i $db"
+  try { $conn.ChangeDatabase($db) }
+  catch { Log "   Kommer inte åt databasen: $($_.Exception.Message)"; continue }
+  try {
+    $dt = Invoke-Read @"
+SELECT t.name AS tabell, c.column_id AS nr, c.name AS kol, CAST(ep.value AS nvarchar(400)) AS text
+FROM sys.extended_properties ep
+JOIN sys.tables t       ON t.object_id = ep.major_id
+LEFT JOIN sys.columns c ON c.object_id = ep.major_id AND c.column_id = ep.minor_id
+WHERE ep.class = 1 AND ep.name = 'MS_Description'
+ORDER BY t.name, ep.minor_id
+"@
+    Log ("   " + $dt.Rows.Count + " beskrivningar (tabell | kolumnens nr | kolumnens namn | text):")
+    foreach ($r in $dt.Rows) {
+      $txt = Redact (("" + $r["text"]) -replace "[\r\n\t]+", " ")
+      Log ("   " + $r["tabell"] + " | " + $r["nr"] + " | " + $r["kol"] + " | " + $txt)
+    }
+  } catch { Log "   FEL: $($_.Exception.Message)" }
   Save-Report
 }
 

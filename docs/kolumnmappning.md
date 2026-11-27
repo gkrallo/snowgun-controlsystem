@@ -161,6 +161,41 @@ skärmens Ring 0, Ring 2, Automatic, Fan ON och Compressor ON tända, var
 25, 37, 42, 43 och 44 = 1, 65 = 3 och 107 = 2 — fem ettor för fem lampor,
 men inte vilken som är vilken.
 
+**Sufags egna beskrivningar (27 november, ur zip-filen).** Säkerhetskopian
+`GSSystem/BdD/Live_Snowstar.dat` i `GSSystem.zip` bär Sufags beskrivning av
+många kolumner (SQL Servers `MS_Description`), men inte vilken kolumn varje
+text hör till. Texterna i `Live_Language.neige` 171–186 är samma lampor i
+samma ordning, och de är skärmens etiketter (GSSystem hämtar `neige` 165–299
+till kanonbilden). För det äldre kortet, en kolumn per bit och åtta per
+byte:
+
+| Byte | Bit 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Man – Auto | General fault | Pressostat | Hydrant OK | Gun started | Power ON | ? | fri |
+| 2 | Hydrant open | Hydrant closed | 0 rings open | 1 ring open | 2 rings open | 3 rings open | 4 rings open | fri |
+| 3 | fri | Compressor ON | Fan ON | Ready to start (temp OK) | General fault (strob) | … | … | … |
+
+Lägger man byte 1 på kolumn 25 blir 25 = Auto, 37 = 2 rings open, 42 =
+Compressor ON, 43 = Fan ON och 44 = Ready to start — fyra av de fem lamporna
+26 november, och den femte var en kanon i kall luft. **Trolig, inte
+bekräftad**: att byte 1 börjar på 25 är räknat, inte läst. Längre fram i
+samma tabell: fellamporna (Hydrant fault, Fan overload, Compressor
+overload, Overload protection, Fault 380V, Flex frozen, Flex disconnected,
+Low water pressure m.fl.) som egna bitar.
+
+För den nyare styrningen står Modbus-kartan i samma kopia: ord 0–2
+"binaire -> Inputs", 3–6 "binaire -> Errors", 7–9 använd lufttemperatur,
+fukt och våttemperatur, 10 vattentryck, 15 vattenflöde, 20 brunnsventilens
+läge, **22 "Wanted rings" och 23 "Open rings"** (ett tal, inga bitar), och
+50–52 "binaire" (start/stopp). Om det här är SGC400 kan ringarna läsas som
+ett tal och bitkolumnerna 450–455 och 500–503 vara ingångs- och felorden.
+Vilken kolumn som är vilket ord står inte i kopian.
+
+**Facit** ger sonden version 3 (del 7), som läser beskrivningarna med exakt
+tabell och kolumnnummer ur styrdatorns databas. Kör den nästa gång på plats
+och lägg in i `LAMPOR` först därefter. GSSystem självt är Visual Basic 6
+kompilerat till maskinkod och går inte att läsa som kod.
+
 För att para resten behövs skärmbilder av Visualisation i andra lägen, med
 klockslag: en stoppad kanon, en med fel, en lans som går, och när ring 3
 eller 4 öppnas. Med bryggan 7 på styrdatorn behövs ingen `-Ra` — bitarna och

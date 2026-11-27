@@ -18,6 +18,13 @@ Körningen tar ungefär en minut.
 > provas** — det finns ingen SQL Server att prova mot hemma. Går något snett
 > där står felet i rapporten, och dator- och loggdelen sparas ändå.
 
+> **Version 3 (27 november 2026).** Ny sista del, *7. Kolumnbeskrivningar*:
+> Sufags egna beskrivningar av kolumnerna (`MS_Description`, till exempel
+> "Bit 3 = hydrant OK" och "Word 23 : Open rings") med exakt tabell och
+> kolumnnummer. De fanns i säkerhetskopian i zip-filen men utan kolumn, och
+> är facit för lamporna och ringarna. Bara en liten systemtabell läses. Inte
+> provkörd mot en riktig SQL Server, av samma skäl som ovan.
+
 Resultatet blir en textfil, `db-sond-rapport_DATUM-TID.txt`, bredvid skriptet.
 **Den filen tar du med hem.** Den fångar allt vi behöver i ett svep:
 
