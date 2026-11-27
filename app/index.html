@@ -255,7 +255,7 @@ canvas{max-width:100%}
 .note{background:#0c1a2b;border:1px dashed var(--border-hi);border-radius:12px;padding:11px 14px;color:var(--muted);font-size:.8rem;line-height:1.55}
 
 /* ---------- karta (Leaflet) ---------- */
-#opsmap{height:min(62vh,560px);width:100%;background:#0a111e}
+#opsmap{height:min(72vh,720px);width:100%;background:#0a111e}
 .leaflet-container{background:#0a111e;font-family:inherit}
 .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel-solid);color:var(--text);border:1px solid var(--border-hi);box-shadow:var(--shadow)}
 .leaflet-popup-content{margin:9px 12px;font-size:.82rem;line-height:1.5}
@@ -268,6 +268,26 @@ canvas{max-width:100%}
 .umark{min-width:26px;height:26px;padding:0 5px;border-radius:999px;display:grid;place-items:center;
   border:2px solid #0a111e;box-shadow:0 2px 8px #0009;font-weight:800;font-size:.7rem;color:#06121f;white-space:nowrap}
 .map-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+/* Etiketten sitter i samma markör som ikonen, åt det håll brunnen har fritt
+   (MSIDA). Markören är noll stor, så ikonen och etiketten placeras kring
+   brunnens punkt med absolut läge. */
+.mk{position:relative;width:0;height:0}
+.mk .umark{position:absolute;left:0;top:0;transform:translate(-50%,-50%)}
+.mk .umark.vanish{outline:2px solid #fbbf24;outline-offset:1px}
+.mlab{position:absolute;background:#0a111ee6;border:1px solid #2a3d58;border-radius:7px;padding:2px 6px;
+  font-size:.7rem;line-height:1.25;font-weight:700;white-space:nowrap;color:#e9f0fa;box-shadow:0 2px 8px #0008;
+  font-variant-numeric:tabular-nums;pointer-events:auto;cursor:pointer}
+.mlab small{font-weight:600;color:#9fb0c7;font-size:.62rem}
+.mlab.e{left:17px;top:0;transform:translateY(-50%)}
+.mlab.w{right:17px;top:0;transform:translateY(-50%)}
+.mlab.n{bottom:16px;left:0;transform:translateX(-50%)}
+.mlab.s{top:16px;left:0;transform:translateX(-50%)}
+.mlab.ne{left:15px;bottom:13px}.mlab.nw{right:15px;bottom:13px}
+.mlab.se{left:15px;top:13px}.mlab.sw{right:15px;top:13px}
+.mlab.dim{opacity:.6;border-style:dashed}
+.mlab.pump{border-color:#22d3ee;font-size:.74rem}
+/* Utzoomat får etiketterna inte plats: då syns bara ikonerna. */
+.zlow .mlab:not(.pump){display:none}
 .map-legend .row{gap:7px}
 .map-legend i{width:13px;height:13px;border-radius:50%;display:inline-block;flex:0 0 auto}
 
@@ -740,7 +760,8 @@ const histSeg=()=>real?`<div class="histbar"><div class="seg sm">${HIST_RANGES.m
 function liveRefresh(){
   if(document.getElementById('app').classList.contains('hidden'))return;
   const typing=document.activeElement&&/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
-  if(current!=='map'&&!typing)safeRender(true); else refreshLive();
+  if(current!=='map'&&!typing)safeRender(true);
+  else{refreshLive(); if(current==='map')drawMapUnits();}
 }
 
 /* Sparbanksspåret och de tjugo brunnarna. Brunn 7 bär väderstationen; brunn 20
@@ -822,11 +843,13 @@ const UCOL={run:'#34d399',standby:'#60a5fa',limit:'#fbbf24',alarm:'#f87171',off:
 const UCOL_REAL={conn:'#60a5fa',nocon:'#9fb0c7'};
 
 const NAV = [
+  // Kartan först: den är startvyn sedan 27 november (Kristian: den ger hela
+  // bilden på en gång, med värdena vid varje enhet).
+  {id:'map',      label:'Karta',       icon:'map'},
   {id:'overview', label:'Översikt',    icon:'grid'},
   {id:'water',    label:'Vattenbalans',icon:'drop'},
   {id:'dam',      label:'Damm',        icon:'dam'},
   {id:'advisor',  label:'Vattenråd',   icon:'sliders'},
-  {id:'map',      label:'Karta',       icon:'map'},
   {id:'cannons',  label:'Kanoner',     icon:'fan'},
   {id:'lances',   label:'Lansar',      icon:'lance'},
   {id:'alarms',   label:'Larm',        icon:'bell'},
@@ -933,7 +956,7 @@ function activeAlarms(){return alarms.filter(a=>!a.ack)}
    ROUTER
    ============================================================ */
 // En notis öppnar appen på #larm (functions/index.js).
-let current=location.hash==='#larm'?'alarms':'overview', charts={};
+let current=location.hash==='#larm'?'alarms':'map', charts={};
 function go(id){current=id;safeRender();if(window.innerWidth<=860)window.scrollTo(0,0)}
 function buildNav(){
   const a=activeAlarms().length;
@@ -2098,24 +2121,29 @@ function setAdv(g){advGoal=g;render()}
 function setDays(d){advDays=d;render()}
 
 function vMap(){
-  return topbar('Driftövervakning','Karta — enheter på spåret')+`<div class="view">
+  const lg=(c,t)=>`<span class="row"><i style="background:${c};border:1px solid #0a111e"></i><span class="muted small">${t}</span></span>`;
+  return topbar('Driftövervakning','Karta',`<button class="linkbtn" style="flex:0 0 auto" onclick="go('overview')">Översikt</button>`)+`<div class="view">
+   <div id="mapBanner">${alarmBanner()}</div>
    <div class="card" style="padding:0;overflow:hidden"><div id="opsmap"></div></div>
    <div class="map-legend">
-     ${Object.keys(real?UCOL_REAL:UCOL).map(k=>`<span class="row"><i style="background:${(real?UCOL_REAL:UCOL)[k]};border:1px solid #0a111e"></i><span class="muted small">${STATE[k][1]}</span></span>`).join('')}
-     ${real?'<span class="row"><i style="background:#f87171;border:1px solid #0a111e"></i><span class="muted small">Fel</span></span>':''}
+     ${real?lg('#34d399','Kör')+lg('#60a5fa','Hörs, kör inte')+lg('#9fb0c7','Tyst')+lg('#f87171','Fel eller larm')+
+       '<span class="row"><span style="color:#fbbf24">⚠</span><span class="muted small">Hörs inte, körde nyss</span></span>'
+       :Object.keys(UCOL).map(k=>lg(UCOL[k],STATE[k][1])).join('')}
      <span class="row"><i style="background:#0e2a3d;border:2px solid #22d3ee"></i><span class="muted small">Väderstation (br 7)</span></span>
      <span class="row"><i style="background:#1a2a42;border:1px solid #8ba0bd;width:9px;height:9px"></i><span class="muted small">Brunn</span></span>
      <span class="row"><i style="background:#0e5a7a;border:2px solid #22d3ee;border-radius:2px"></i><span class="muted small">Dammens krön</span></span>
    </div>
    ${real&&!cannons.some(c=>c.brunn)?missing('<b>Enheterna ritas inte ut än.</b> Brunnen varje enhet står vid skickas från bryggans version 6. Kartan visar spåret och brunnarna.'):''}
-   <div class="note" style="margin-top:12px">Enheterna sitter vid sin brunn, färgade efter läge — tryck för detaljer. Spårlinjen är medellinjen ur drygt sex varv med klocka, och brunnarna och dammens krön är inmätta med pucken. Brunn 17 och 18 ligger en bit från linjen: gatan är 15–20 m bred längst ner i stora slingan, och varven gick på andra sidan. Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
+   <div class="note" style="margin-top:12px">Vid varje enhet står <b>våttemperaturen</b> från enhetens egen givare (blå under startgränsen ${num(FTHRESH)} °C, gul över) och <b>flödet</b> i m³/h. Flödet är styrsystemets beräknade, ingen kanon mäter det. Står två enheter vid samma brunn visas den som är aktiv; den andra står i rutan. Vid dammen står summan av enheternas flöde, som används tills flödesmätaren FT01 är kontrollerad, och dammens nivå i procent. Utzoomat syns bara ikonerna. Tryck för detaljer. Spårlinjen är medellinjen ur drygt sex varv med klocka, och brunnarna och dammens krön är inmätta med pucken. Brunn 17 och 18 ligger en bit från linjen: gatan är 15–20 m bred längst ner i stora slingan, och varven gick på andra sidan. Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
   </div>`;
 }
 let mapInst=null;
 function initMap(){
   const el=document.getElementById('opsmap'); if(!el||!window.L) return;
   if(mapInst){try{mapInst.remove();}catch(e){} mapInst=null;}
-  mapInst=L.map(el,{zoomControl:true,attributionControl:true,scrollWheelZoom:true});
+  // Halva och kvarts zoomsteg: med hela steg hamnade spåret på 15 i en telefon,
+  // för långt ut för etiketterna, medan 16 inte rymde hela spåret.
+  mapInst=L.map(el,{zoomControl:true,attributionControl:true,scrollWheelZoom:true,zoomSnap:0.25,zoomDelta:0.5,wheelPxPerZoomLevel:120});
   // Flygbild från Esri (förval i prognosappen); referrerPolicy satt om OSM används
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {maxZoom:19,attribution:'Flygbild © Esri'}).addTo(mapInst);
@@ -2131,7 +2159,7 @@ function initMap(){
   L.circleMarker([sn.lat,sn.lon],{radius:5,color:'#38bdf8',weight:2,fillColor:'#38bdf8',fillOpacity:.9})
    .addTo(mapInst).bindPopup(`<b>Snorkeln</b> · dammens bräddavlopp, 100 %<br>`+
      `${Math.round(overSnorkel('SN'))} cm under krönet här, inmätt ${KANT.datum}`);
-  const fit=()=>{if(mapInst){mapInst.invalidateSize();mapInst.fitBounds(line.getBounds().pad(0.12));}};
+  const fit=()=>{if(mapInst){mapInst.invalidateSize();mapInst.fitBounds(line.getBounds(),{padding:[18,18]});}};
   fit();
   // containern kan sakna sin höjd när kartan skapas (vyn fejdas in) — passa in igen
   // när layouten satt sig, annars hamnar zoomen på världsnivå.
@@ -2143,24 +2171,167 @@ function initMap(){
       fillColor:st?'#0e2a3d':'#1a2a42',fillOpacity:.95})
      .addTo(mapInst).bindPopup(st?`<b>Brunn ${w.no}</b><br>Styrsystemets väderstation`:`Brunn ${w.no}${w.spare?' · reserv':''}`);
   });
-  // enheter vid sina brunnar, färgade efter läge
-  // Två enheter kan stå vid samma brunn (brunn 7 och 8 den 25 november).
-  // Den andra flyttas då en bit i sidled, annars döljer den den första.
-  const perWell={};
-  cannons.forEach(c=>{
-    const w=WELLS.find(x=>x.no===c.brunn); if(!w) return;
-    const i=perWell[c.brunn]=(perWell[c.brunn]||0)+1;
-    const old=real&&(c.state!=='conn'||bridgeOld());
-    const col=real?(c.state==='conn'&&!bridgeOld()&&c.lage===1?'#f87171':UCOL_REAL[c.state]):UCOL[c.state];
-    const ic=L.divIcon({className:'',html:`<div class="umark" style="background:${col}${old?';opacity:.55;border-style:dashed':''}">${esc(c.id)}</div>`,
-      iconSize:[28,26],iconAnchor:[14-(i-1)*30,13]});
-    L.marker([w.lat,w.lon],{icon:ic}).addTo(mapInst)
-     .bindPopup(real
-       ?`<b>${esc(c.namn)}</b> · ${LAGE[c.lage]&&!old?LAGE[c.lage][1]:STATE[c.state][1]}<br>Brunn ${c.brunn} · ${esc(c.modell)}<br>`+
-        `Våttemp ${num(c.tw)} °C · ${old?'hörd '+ago(c.heard):'hörd nyss'}<br><a href="#" onclick="openUnit('${esc(c.id)}');return false">Öppna</a>`
-       :`<b>${esc(c.namn)}</b> · ${STATE[c.state][1]}<br>Brunn ${c.brunn} · steg ${esc(c.steg)}<br>`+
-        `Vatten ${num(c.eau)} m³/h · Våttemp ${num(c.tw)} °C`);
-  });
+  // Utzoomat får etiketterna inte plats (se .zlow).
+  const zl=()=>{if(mapInst)mapInst.getContainer().classList.toggle('zlow',mapInst.getZoom()<15.5);};
+  mapInst.on('zoomend',()=>{zl();drawMapUnits();}); zl();
+  mapMk={}; drawMapUnits();
+}
+
+/* ---------- enheterna och pumphuset på kartan ----------
+   Kartan är startvyn och ska gå att läsa utan att trycka: våttemperatur och
+   flöde står vid varje enhet, och summaflödet och dammen vid pumphuset.
+   Markörerna byts ut på plats när ny data kommer. Hela kartan ritas inte om,
+   för då hoppar den tillbaka till utgångsläget, och en öppen ruta stängs. */
+let mapMk={};
+/* Åt vilket håll etiketten står från brunnen. Upp till brunn 12 går spåret
+   i nord-sydlig led med 60 m mellan brunnarna, och etiketten står på den
+   sida av brunnen som vetter bort från spårlinjen (räknas ut). Norr om 12
+   ligger brunnarna i vändslingorna tätt åt alla håll, så där är sidan vald
+   för hand: 13-16 ligger på rad i öst-västlig led och får etiketten ovanför
+   eller under, 17 och 18 står 33 m isär i nord-sydlig led. Prövat med en
+   enhet vid varje brunn. */
+// 7 och 8 står mitt för dammen, där pumphusets etikett sitter öster om
+// spåret, och får därför sin etikett åt väster.
+const MSIDA={7:'w',8:'w',13:'w',14:'s',15:'n',16:'s',17:'s',18:'e',19:'n'};
+function msida(w){
+  if(MSIDA[w.no])return MSIDA[w.no];
+  let best=null,d=1e9;
+  for(const p of TRACK.pts){const dd=(p[0]-w.lat)**2+((p[1]-w.lon)*0.52)**2; if(dd<d){d=dd;best=p;}}
+  return best&&w.lon<best[1]?'w':'e';
+}
+/* Läget för en enhet på kartan. kor följer samma regel som pushlarmen
+   (functions/larm.js): läget Kör, eller på det äldre kortet att vatten går.
+   borta = styrsystemet hör den inte, och pushlarmet säger att den körde nyss:
+   den kan ha försvunnit. En enhet som inte hörts på länge får bara streck. */
+function mapUnitState(c){
+  if(!real){const kor=c.state!=='off';
+    return {live:true,kor,fel:c.state==='alarm',borta:false,q:c.eau,
+      col:UCOL[c.state]||'#9fb0c7',txt:STATE[c.state][1]};}
+  const live=c.state==='conn'&&!bridgeOld();
+  const push=larmlage['enhet-'+c.key]; const larm=!!(push&&push.titel);
+  const kor=live&&(c.lage===6||(Number.isFinite(c.q)&&c.q>0));
+  const fel=live&&(c.lage===1||(larm&&!kor));
+  const borta=!live&&!bridgeOld()&&larm;
+  const col=fel||borta?'#f87171':kor?'#34d399':live?'#60a5fa':'#9fb0c7';
+  const txt=fel?(c.lage===1?'Fel':'Larm'):borta?'Hörs inte — kan ha försvunnit':kor?'Kör':live?'Hörs, kör inte':'Tyst';
+  return {live,kor,fel,borta,q:c.q,col,txt,larm:larm?push:null};
+}
+// Står två enheter vid samma brunn visas bara den som är aktiv: den som kör,
+// annars den som hörs, annars den som larmar, annars den som hördes sist.
+function mapPick(list){
+  const v=c=>{const m=mapUnitState(c);return (m.kor?8:0)+(m.live?4:0)+(m.borta||m.fel?2:0);};
+  return list.slice().sort((a,b)=>v(b)-v(a)||((b.heard||0)-(a.heard||0)))[0];
+}
+function unitLabel(c,m,side){
+  const tw=m.live?num(c.tw):'–', q=m.live?num(m.q):'–';
+  const twc=m.live&&Number.isFinite(c.tw)?(c.tw<=FTHRESH?'#7dd3fc':'#fbbf24'):'#9fb0c7';
+  return `<div class="mlab ${side}${m.live?'':' dim'}"><span style="color:${twc}">${tw}°</span>${m.borta?' <span style="color:#fbbf24">⚠</span>':''}<br>${q} <small>m³/h</small></div>`;
+}
+function drawMapUnits(){
+  // Larmraden och larmknappens siffra följer med, eftersom vyn inte ritas om.
+  const b=document.getElementById('mapBanner'); if(b)b.innerHTML=alarmBanner();
+  buildNav();
+  if(!mapInst)return;
+  const want={};
+  const byWell={};
+  cannons.forEach(c=>{if(WELLS.some(w=>w.no===c.brunn))(byWell[c.brunn]=byWell[c.brunn]||[]).push(c);});
+  for(const [no,list] of Object.entries(byWell)){
+    const w=WELLS.find(x=>x.no===+no), c=mapPick(list), m=mapUnitState(c), side=msida(w);
+    const andra=list.filter(x=>x!==c);
+    const html=sd=>`<div class="mk"><div class="umark${m.borta?' vanish':''}" style="background:${m.col}${m.live?'':';opacity:.6;border-style:dashed'}">${esc(c.id)}</div>${unitLabel(c,m,sd)}</div>`;
+    const pop=`<b>${esc(c.namn)}</b> · ${esc(m.txt)}<br>Brunn ${w.no}${c.modell?' · '+esc(c.modell):''}<br>`+
+      `Våttemp ${m.live?num(c.tw):'–'} °C · flöde ${m.live?num(m.q):'–'} m³/h`+
+      (real?`<br>${m.live?'Hörd nyss':'Hörd '+ago(c.heard)}`:'')+
+      (m.larm?`<br><b style="color:#f87171">${esc(m.larm.titel)}</b>`:'')+
+      (andra.length?`<br><span style="color:#9fb0c7">Också vid brunnen: ${andra.map(x=>esc(x.namn)+' ('+esc(mapUnitState(x).txt.toLowerCase())+')').join(', ')}</span>`:'')+
+      (real?`<br><a href="#" onclick="openUnit('${esc(c.id)}');return false">Öppna</a>`:'');
+    want['w'+no]={ll:[w.lat,w.lon],html,pop,pref:side};
+  }
+  // Pumphuset står vid dammen. Summan är kanonernas eget beräknade flöde
+  // tills FT01 är kontrollerad: den visar ungefär hälften (se Vatten).
+  {
+    const lat=KRON.horn.reduce((a,k)=>a+k.lat,0)/KRON.horn.length, lon=KRON.horn.reduce((a,k)=>a+k.lon,0)/KRON.horn.length;
+    const lv=real?cannons.filter(c=>mapUnitState(c).live&&Number.isFinite(c.q)):cannons;
+    const q=real?(lv.length?sum(lv,c=>c.q):null):totalWater(), pct=damPct();
+    const pc=pct<30?'#f87171':pct<50?'#fbbf24':'#34d399';
+    const html=()=>`<div class="mk"><div class="mlab pump e" style="left:4px">Σ ${num(q)} <small>m³/h</small><br><small>Dammen</small> <span style="color:${pc}">${pct} %</span></div></div>`;
+    const p2=pumps&&pumps.dep12||{};
+    const pop=`<b>Pumphuset</b><br>Kanonernas flöde, summa: ${num(q)} m³/h<br>`+
+      (real?`FT01 visar ${num(p2.k125)} m³/h (troligen för lite)<br>`:'')+
+      `Dammen ${pct} % · egen beräkning, nivån mäts inte<br>`+
+      `<a href="#" onclick="go('water');return false">Vatten</a> · <a href="#" onclick="go('dam');return false">Damm-koll</a>`;
+    want.pump={ll:[lat,lon],html,pop};
+  }
+  // Två varv: det första med etiketternas förra storlek, det andra med den
+  // uppmätta om någon ändrats (en ny siffra kan göra etiketten bredare).
+  for(let varv=0;varv<2;varv++){
+    const sides=placeLabels(want);
+    putMarkers(want,sides);
+    if(!Object.keys(want).map(measureLabel).some(Boolean))break;
+  }
+}
+// Etiketternas storlek i bildpunkter, uppmätt när de ritats.
+let mlabSize={};
+function measureLabel(k){
+  const o=mapMk[k], el=o&&o.mk.getElement()&&o.mk.getElement().querySelector('.mlab');
+  if(!el||!el.offsetWidth)return false;
+  const w=el.offsetWidth,h=el.offsetHeight,f=mlabSize[k];
+  mlabSize[k]={w,h};
+  return !f||Math.abs(f.w-w)>2||Math.abs(f.h-h)>2;
+}
+/* Väljer åt vilket håll varje etikett står, så att de inte skriver över
+   varandra eller en annan enhets ikon. Brunnens egen sida (msida) provas
+   först, sedan motsatt sida och snedställt. Räknas om vid varje zoom, för
+   när man zoomar ut kommer brunnarna närmare varandra på skärmen. Får ingen
+   sida plats tas den som täcker minst. */
+const MSIDOR={e:['e','ne','se','w','nw','sw','n','s'],w:['w','nw','sw','e','ne','se','n','s'],
+  n:['n','ne','nw','s','se','sw','e','w'],s:['s','se','sw','n','ne','nw','e','w']};
+function labelRect(p,sd,w,h){
+  const r={e:[17,-h/2],w:[-17-w,-h/2],n:[-w/2,-16-h],s:[-w/2,16],ne:[15,-13-h],nw:[-15-w,-13-h],se:[15,13],sw:[-15-w,13]}[sd];
+  return {x:p.x+r[0],y:p.y+r[1],w,h};
+}
+function overlap(a,b){
+  const dx=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x), dy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+  return dx>0&&dy>0?dx*dy:0;
+}
+function placeLabels(want){
+  const sz=mapInst.getSize(), pt={}, taken=[], sides={};
+  for(const [k,x] of Object.entries(want))pt[k]=mapInst.latLngToContainerPoint(x.ll);
+  // Alla ikoner är hinder, och pumphusets etikett står fast.
+  for(const k of Object.keys(want))if(k!=='pump')taken.push({x:pt[k].x-15,y:pt[k].y-14,w:30,h:28});
+  if(want.pump){const z=mlabSize.pump||{w:90,h:36};taken.push({x:pt.pump.x+4,y:pt.pump.y-z.h/2,w:z.w,h:z.h});}
+  // Söderifrån, i brunnarnas ordning: där är det glest och förstahandsvalet
+  // står sig, och de trånga vändslingorna anpassar sig efter det.
+  const keys=Object.keys(want).filter(k=>k!=='pump').sort((a,b)=>+a.slice(1)-+b.slice(1));
+  for(const k of keys){
+    const z=mlabSize[k]||{w:64,h:34}; let best=null,bs=1e18;
+    MSIDOR[want[k].pref].forEach((sd,i)=>{
+      const r=labelRect(pt[k],sd,z.w,z.h);
+      let s=taken.reduce((a,t)=>a+overlap(r,t),0);
+      // Utanför kartan syns den inte.
+      s+=r.w*r.h-overlap(r,{x:0,y:0,w:sz.x,h:sz.y});
+      s=s*100+i;
+      if(s<bs){bs=s;best=sd;}
+    });
+    sides[k]=best; taken.push(labelRect(pt[k],best,z.w,z.h));
+  }
+  return sides;
+}
+function putMarkers(want,sides){
+  for(const k of Object.keys(mapMk))if(!want[k]){mapInst.removeLayer(mapMk[k].mk);delete mapMk[k];}
+  for(const [k,x0] of Object.entries(want)){
+    const x={ll:x0.ll,pop:x0.pop,html:x0.html(sides[k])};
+    const ic=L.divIcon({className:'',html:x.html,iconSize:[0,0],iconAnchor:[0,0]});
+    const o=mapMk[k];
+    if(o&&o.lat===x.ll[0]&&o.lon===x.ll[1]){
+      if(o.html!==x.html){o.mk.setIcon(ic);o.html=x.html;}
+      if(o.pop!==x.pop){o.mk.setPopupContent(x.pop);o.pop=x.pop;}
+      continue;
+    }
+    if(o)mapInst.removeLayer(o.mk);
+    const mk=L.marker(x.ll,{icon:ic,zIndexOffset:k==='pump'?0:1000}).addTo(mapInst).bindPopup(x.pop);
+    mapMk[k]={mk,html:x.html,pop:x.pop,lat:x.ll[0],lon:x.ll[1]};
+  }
 }
 
 function vUnits(typ){
@@ -2430,7 +2601,7 @@ setInterval(()=>{
   // Kartan ritas inte om; den skulle hoppa tillbaka till utgångsläget.
   const typing=document.activeElement&&/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
   if(current!=='map'&&!typing) safeRender(true);
-  else refreshLive();
+  else{refreshLive(); if(current==='map')drawMapUnits();}
 },5000);
 // Stämpeln ska åldras även om inga nya värden kommer — det är hela poängen.
 setInterval(refreshLive,15000);
