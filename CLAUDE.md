@@ -257,9 +257,13 @@ de gamla exempelsiffrorna.
 - `app/sw.js`, `app/manifest.json`, `app/kanon-*.png` — det som gör appen
   installerbar. `sw.js` sparar aldrig mätvärden och rör inte sidorna under
   `/__/` (Firebases inloggning).
-- `app/pist.html`, `app/pist-manifest.json` — förarvyn för pistmaskinerna,
-  en klickbar prototyp med påhittad data (`docs/forslag-forarvy.md`). Egen
-  sida så att `index.html` inte behöver röras. Skriver inget till Firebase.
+- `app/pist.html` (förslag 1), `app/pist-mobil.html` (förslag 2, med
+  uppdrag och pass) och deras manifest — förarvyn för pistmaskinen.
+  `app/planering.html` (förslag 3) — när ska vi schakta, pista och spåra,
+  efter SLF:s handbok. Klickbara förslag med påhittad data
+  (`docs/forslag-forarvy.md`). `app/forslag.html` är startsidan som delas
+  med förarna via en förhandslänk i Firebase Hosting. Egna sidor så att
+  `index.html` inte behöver röras. Skriver inget till Firebase.
 - `bridge/` — bryggan och autostarten. Samma krav på UTF-8 med BOM som
   sonden. `brygga-config.json` och de krypterade lösenorden följer inte med
   till git. `-Sjalvtest` och `-ProvaMoln` ska gå igenom efter varje ändring.

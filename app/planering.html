@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Snökoll — planering (förslag 3)</title>
+<meta name="theme-color" content="#050a13">
+<link rel="icon" href="./kanon-192.png">
+<!--
+  PLANERINGEN, FÖRSLAG 3 — KLICKBAR PROTOTYP (27 november 2026)
+
+  När ska vi schakta, pista och spåra? Sidan räknar fram råd ur prognosen,
+  snötillverkningen vid brunnarna och förarnas pass, med tumreglerna i SLF:s
+  handbok "Slope Preparation and Grooming" (Davos 2019). Sidnumren står vid
+  varje regel längre ner.
+
+  PÅHITTAT: prognosen, snötillverkningen per brunn och tiderna då spåret är
+  öppet. Passen är påhittade exempel, plus de pass som körts i förarvyn
+  (förslag 2) i samma webbläsare. Reglerna är riktiga men gränserna är
+  gissningar, som ska rättas efter förarnas svar.
+
+  Sidan skriver ingenting till Firebase och loggar inte in. Den ger bara
+  råd; den kan aldrig styra anläggningen.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#050a13; --panel:#0c1828; --border:#ffffff17; --border-hi:#ffffff2b;
+  --text:#eef4fc; --muted:#9db0c9; --muted2:#8296b5; --accent:#7dd3fc;
+  --kor:#34d399; --fryser:#fbbf24; --sno:#7dd3fc; --vanta:#94a3b8; --mild:#fb923c; --kanon:#a78bfa;
+  --num:"Barlow Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:Barlow,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;
+  background:radial-gradient(1100px 520px at 15% -10%,#12305288,transparent),var(--bg);min-height:100vh}
+button{font:inherit;color:inherit}
+main{max-width:1000px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 14px 40px}
+.topp{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.logo{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#1b3a5a,#0c1b2d);border:1px solid var(--border-hi);flex:0 0 auto}
+h1{font-size:1.45rem;margin:0;line-height:1.1}
+.under{color:var(--muted);margin:3px 0 0;font-size:.9rem}
+.topp a{margin-left:auto;color:var(--accent);text-decoration:none;font-weight:700;font-size:.92rem;white-space:nowrap}
+.prov{display:inline-block;font-size:.66rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#fde68a;background:#2a1f05;
+  border:1px solid #fbbf2455;border-radius:999px;padding:3px 9px;margin-left:6px;vertical-align:2px}
+
+/* Kortet överst: vad som gäller för nästa natt. */
+.nu{border-radius:22px;border:1px solid var(--border-hi);padding:18px 18px 16px;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--f) 22%,#0c1828),#0b1526 60%);box-shadow:0 24px 50px -30px #000}
+.nu .k{font-size:.72rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.nu h2{margin:4px 0 4px;font-family:var(--num);font-size:2.3rem;line-height:1.02;color:var(--f)}
+.nu p{margin:6px 0 0;color:#d6e2f2;line-height:1.5}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 11px;background:#0a1424cc;border:1px solid var(--border);font-size:.86rem;font-weight:600;color:#cbd5e1}
+.chip.ok{border-color:#34d39966;color:#a7f3d0}
+.chip.obs{border-color:#fbbf2466;color:#fde68a}
+.kalla{font-size:.78rem;color:var(--muted2);margin-top:10px}
+
+.sek{margin-top:22px}
+.sek>h2{font-size:.8rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:0 0 9px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px}
+.sek>h2 small{text-transform:none;letter-spacing:.2px;font-weight:600;color:var(--muted2);font-size:.8rem}
+.ruta{border-radius:18px;border:1px solid var(--border);background:var(--panel);padding:12px}
+
+/* Tidslinjen för 48 timmar */
+#tidslinje{display:block;width:100%;height:270px}
+#tidslinje text{font-family:Barlow,system-ui,sans-serif}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:.8rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:14px;height:10px;border-radius:3px}
+
+/* Brunnarna */
+.brunnar{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
+.brunn{border-radius:16px;border:1px solid var(--border);background:#0f1c2f;padding:12px 13px}
+.brunn .huv{display:flex;align-items:center;gap:10px}
+.brunn .nr{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;border:2px solid #cbd5e1;font-family:var(--num);font-weight:700;font-size:1.2rem;flex:0 0 auto}
+.brunn .huv b{display:block;font-size:1rem}
+.brunn .huv small{display:block;color:var(--muted2);font-size:.8rem}
+.status{margin-left:auto;font-size:.78rem;font-weight:800;border-radius:999px;padding:5px 10px;white-space:nowrap}
+.status.klar{background:#064e3b;color:#a7f3d0}
+.status.snart{background:#3f3a0b;color:#fef08a}
+.status.vantar{background:#451a03;color:#fed7aa}
+.status.gar{background:#1e1b4b;color:#c4b5fd}
+.status.schaktad{background:#1e293b;color:#cbd5e1}
+.brunn .rad{font-size:.88rem;color:#c7d4e6;margin-top:9px;line-height:1.45}
+.brunn .rad b{color:var(--text)}
+.stapel{height:8px;border-radius:4px;background:#ffffff12;margin-top:9px;overflow:hidden}
+.stapel i{display:block;height:100%;border-radius:4px}
+.brunn .knappar{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.brunn button{height:40px;border-radius:11px;border:1px solid var(--border-hi);background:#0b1526;padding:0 13px;font-weight:700;cursor:pointer}
+.brunn input{width:84px;height:40px;border-radius:11px;border:1px solid var(--border-hi);background:#0a1424;color:var(--text);padding:0 10px;font:inherit;font-weight:700}
+.brunn .not{font-size:.8rem;color:var(--muted2)}
+
+/* Tio dygn */
+.dagar{display:flex;flex-direction:column;gap:7px}
+.dag{display:grid;grid-template-columns:76px 40px 92px 1fr;align-items:center;gap:10px;border-radius:14px;border:1px solid var(--border);background:#0f1c2f;padding:9px 11px}
+.dag .d b{display:block;font-size:.98rem}
+.dag .d small{color:var(--muted2);font-size:.78rem}
+.dag .tmp{font-family:var(--num);font-size:1.25rem;font-weight:700;white-space:nowrap}
+.dag .tmp small{color:var(--muted);font-weight:600;font-size:1.05rem}
+.dag .tmp .ned{display:block;font-family:Barlow,system-ui,sans-serif;font-size:.76rem;font-weight:600;color:var(--sno)}
+.rad-rad{display:flex;flex-direction:column;gap:4px}
+.rad-rad span{font-size:.86rem;line-height:1.35;padding-left:12px;position:relative;color:#d6e2f2}
+.rad-rad span::before{content:"";position:absolute;left:0;top:.45em;width:7px;height:7px;border-radius:2px;background:var(--f)}
+
+/* Senast gjort */
+.senast{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:9px}
+.gjort{display:flex;gap:11px;align-items:center;border-radius:14px;border:1px solid var(--border);background:#0f1c2f;padding:10px 12px}
+.gjort .ik{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:#0b1220;flex:0 0 auto}
+.gjort b{display:block}
+.gjort small{color:var(--muted2);font-size:.8rem;line-height:1.35;display:block}
+
+details.regler{border-radius:16px;border:1px solid var(--border);background:#0b1526;padding:12px 14px}
+details.regler summary{cursor:pointer;font-weight:700}
+details.regler li,details.regler p{color:#c7d4e6;line-height:1.5;font-size:.92rem}
+details.regler ul{padding-left:20px;margin:8px 0}
+.fot{margin-top:22px;padding:13px 15px;border-radius:16px;border:1px solid var(--border);background:#0a1424;color:var(--muted);font-size:.88rem;line-height:1.55}
+.fot b{color:var(--text)}
+@media (max-width:560px){
+  .nu h2{font-size:1.9rem}
+  .dag{grid-template-columns:64px 34px 1fr;row-gap:6px}
+  .dag .rad-rad{grid-column:1/-1}
+  #tidslinje{height:250px}
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="topp">
+    <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M4.9 6l14.2 12M4.9 18L19.1 6"/><path d="M9.5 3.5 12 6l2.5-2.5M9.5 20.5 12 18l2.5 2.5"/></svg></div>
+    <div><h1>Planering<span class="prov">Påhittad data</span></h1><p class="under">När ska vi schakta, pista och spåra? · förslag 3</p></div>
+    <a href="./forslag.html">Alla förslag</a>
+  </div>
+
+  <section class="nu" id="nu" aria-live="polite"></section>
+
+  <section class="sek">
+    <h2>Närmaste 48 timmarna <small>prognos, och när det är bäst att köra</small></h2>
+    <div class="ruta">
+      <svg id="tidslinje" role="img" aria-label="Prognos och råd timme för timme"></svg>
+      <div class="legend">
+        <span><i style="background:var(--kor)"></i>Kör</span>
+        <span><i style="background:var(--fryser)"></i>Kör när det fryser</span>
+        <span><i style="background:var(--sno)"></i>Kör efter snöfallet</span>
+        <span><i style="background:var(--vanta)"></i>Vänta</span>
+        <span><i style="background:#ffffff40"></i>Moln</span>
+        <span><i style="background:#ffffff10;border:1px dashed #ffffff40"></i>Spåret stängt</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sek">
+    <h2>Klar att schakta? <small>högarna vid brunnarna</small></h2>
+    <div class="brunnar" id="brunnar"></div>
+  </section>
+
+  <section class="sek">
+    <h2>Tio dygn <small>grövre, men bra för att förbereda sig</small></h2>
+    <div class="dagar" id="dagar"></div>
+  </section>
+
+  <section class="sek">
+    <h2>Senast gjort <small>ur förarvyns pass</small></h2>
+    <div class="senast" id="senast"></div>
+  </section>
+
+  <section class="sek">
+    <details class="regler">
+      <summary>Så räknar planeringen</summary>
+      <p>Tumreglerna kommer ur SLF:s handbok <i>Slope Preparation and Grooming</i> (Davos 2019). De gäller mest utförsbackar i Alperna, så gränserna är gissningar som ska rättas efter förarnas svar på "Hur blev det?".</p>
+      <ul>
+        <li><b>Kvällen och vilan</b> (s. 107, 142): kör strax efter att spåret stängt, medan snön är lätt att forma. Låt den sedan vila minst ungefär 8 timmar innan någon åker; det är under vilan som snön binder ihop.</li>
+        <li><b>Klar natt</b> (s. 99, 108): kallnar ytan efter körningen binder snön mycket snabbare. Var klar innan det klarnar. Mulet ger långsam sintring, och då är lång vila viktigast.</li>
+        <li><b>Blöt snö</b> (s. 109–110): kör när den börjar frysa. För tidigt pressas vattnet upp och blir is; för sent blir det klumpar.</li>
+        <li><b>Nysnö</b> (s. 108–109): vänta tills snöfallet slutat, eller kör var 20:e cm när det snöar mycket.</li>
+        <li><b>Mildväder</b> (s. 103): över noll smälter en slät yta mindre.</li>
+        <li><b>Stabilt högtryck</b> (s. 143): ett välpreparerat spår klarar sig några dagar.</li>
+        <li><b>Konstsnön</b> (s. 70–71): ska ha runnit av innan den schaktas ut, annars blir ytan isig. Ju närmare noll våttemperaturen var när snön gjordes, desto blötare snö; stora högar håller vatten längre. Här räknas köldgradtimmar sedan kanonen stannade (summan av minusgraderna timme för timme): 60 för en vanlig hög med normal snö, dubbelt för blöt snö, 1,6 gånger för en stor hög. Är snön under noll hela vägen in är den klar — det visar en sticktermometer.</li>
+      </ul>
+      <p>Riktigt ska prognosen hämtas från Open-Meteo, som Snöprognos redan använder, med moln, sol och nederbörd som prognosappen inte hämtar i dag. Snötillverkningen per brunn kommer från bryggan (<code>/vattenTimme</code> och våttemperaturen i <code>/hist</code>), och passen från förarvyn.</p>
+    </details>
+  </section>
+
+  <div class="fot"><b>Påhittat:</b> prognosen, snötillverkningen vid brunnarna, tiderna då spåret är öppet (08–21) och exempelpassen. <b>Riktigt:</b> brunnarna och tumreglerna. Mätningar och pass som du gör sparas bara i den här webbläsaren. Planeringen ger råd; det är förarna som bestämmer, och inget här kan styra anläggningen.</div>
+</main>
+
+<script>
+'use strict';
+/* ==========================================================================
+   TID
+   --------------------------------------------------------------------------
+   All tid räknas i timmar sedan midnatt i dag (lokal tid). Prognosen och
+   historiken är påhittade som funktioner av den, så att sidan ser rimlig ut
+   vilken dag och tid den än öppnas.
+   ========================================================================== */
+const H = 3600e3;
+const DAG0 = new Date(); DAG0.setHours(0,0,0,0);
+const T_NU = (Date.now()-DAG0.getTime())/H;
+const tidAv = t=>new Date(DAG0.getTime()+t*H);
+const OPPNAR = 8, STANGER = 21;   // spåret, påhittat: belysningen 08–21
+const DAGNAMN = ['sön','mån','tis','ons','tor','fre','lör'];
+const MANAD = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+// Talet med svenskt decimalkomma och riktigt minustecken, men aldrig "−0".
+const fmt = (n,d=0)=>{if(n==null||!isFinite(n))return '–';let s=n.toFixed(d);if(/^-0(\.0+)?$/.test(s))s=s.slice(1);return s.replace('.',',').replace('-','−');};
+const tv = n=>String(Math.floor(n)).padStart(2,'0');
+const esc = s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// "i kväll 21", "i natt 01", "i morgon 14", "lör 14"
+function nar(t){
+  const d=Math.floor(t/24), h=((t%24)+24)%24, kl=tv(h);
+  if(d===0)return (h>=18?'i kväll ':'i dag ')+kl;
+  if(d===1)return (h<7?'i natt ':'i morgon ')+kl;
+  if(d===-1)return (h>=18?'i går kväll ':'i går ')+kl;
+  return DAGNAMN[tidAv(t).getDay()]+' '+kl;
+}
+
+/* ==========================================================================
+   PROGNOSEN — PÅHITTAD
+   --------------------------------------------------------------------------
+   I samma storheter som Open-Meteo ger: temperatur, fukt, moln, nederbörd,
+   snöfall och vind, timme för timme. Ett scenario som visar reglerna: en
+   mulen natt som klarnar, en kall och solig dag, snöfall natten därpå, ett
+   mildväder med regn och sedan kyla igen.
+   ========================================================================== */
+const DYGN = {'-3':[-6,-2],'-2':[-8,-3],'-1':[-5,-2],0:[-4,-1.5],1:[-9,-3],2:[-6,-1.5],3:[-3.5,.5],4:[-.5,3.5],
+  5:[.5,2.5],6:[-5,-2],7:[-11,-4],8:[-8,-3],9:[-6,-1],10:[-5,-2],11:[-5,-2]};   // dygnets lägsta (kl 07) och högsta (kl 14)
+const MOLN = [[-72,60],[0,80],[12,85],[25,85],[27,12],[41,20],[45,85],[52,95],[58,70],[72,80],[96,95],[132,80],[138,30],[144,10],[168,5],[192,70],[216,90],[264,60]];
+const SNOFALL = [[46,52,1.0],[224,230,.5]];   // [från, till, cm per timme]
+const REGN = [[106,116,.4],[120,132,.25]];    // [från, till, mm per timme]
+function temp(t){
+  // Lägst kl 07, högst kl 14 och en mjuk kurva däremellan.
+  const d=Math.floor(t/24), h=t-24*d, mn=x=>(DYGN[x]||[-4,-2])[0], mx=x=>(DYGN[x]||[-4,-2])[1];
+  let a,b,f;
+  if(h<7){a=mx(d-1);b=mn(d);f=(h+10)/17;}
+  else if(h<14){a=mn(d);b=mx(d);f=(h-7)/7;}
+  else{a=mx(d);b=mn(d+1);f=(h-14)/17;}
+  return a+(b-a)*(1-Math.cos(Math.PI*f))/2;
+}
+function linjar(lista,t){
+  if(t<=lista[0][0])return lista[0][1];
+  for(let i=1;i<lista.length;i++)if(t<=lista[i][0]){const [t0,v0]=lista[i-1],[t1,v1]=lista[i];return v0+(v1-v0)*(t-t0)/(t1-t0);}
+  return lista[lista.length-1][1];
+}
+const per = (lista,t)=>lista.reduce((s,[a,b,r])=>s+(t>=a&&t<b?r:0),0);
+const moln = t=>linjar(MOLN,t);
+const sno = t=>per(SNOFALL,t), regn = t=>per(REGN,t);
+const fukt = t=>Math.min(98,68+.25*moln(t)+(sno(t)||regn(t)?6:0));
+const vind = t=>2.4+1.2*Math.sin(t/7)+(sno(t)||regn(t)?2:0);
+// Våttemperaturen ur temperatur och fukt (Stulls formel), som kanonerna styrs efter.
+function vat(T,RH){
+  return T*Math.atan(.151977*Math.sqrt(RH+8.313659))+Math.atan(T+RH)-Math.atan(RH-1.676331)
+    +.00391838*Math.pow(RH,1.5)*Math.atan(.023101*RH)-4.686035;
+}
+const vatT = t=>vat(temp(t),fukt(t));
+
+/* ==========================================================================
+   NATTENS RÅD
+   --------------------------------------------------------------------------
+   En natt räknas från att spåret stänger (21) till att det öppnar (08).
+   Reglerna i den ordning de vägs: mildväder som inte fryser, snöfall,
+   blöt snö som börjar frysa, och annars direkt efter stängning — före det
+   klarnar om det gör det. Körningen räknas ta ungefär två timmar.
+   ========================================================================== */
+const KORTID = 2;          // timmar för ett helt pass, påhittat
+const VILA = 8;            // minsta vila före öppning (s. 107)
+function nattRad(dag){
+  const t0=24*dag+STANGER, t1=24*(dag+1)+OPPNAR, ut={dag,t0,t1,skal:[],chips:[]};
+  const timmar=[]; for(let t=t0;t<t1;t++)timmar.push(t);
+  const snoSum=timmar.concat([t0-3,t0-2,t0-1]).reduce((s,t)=>s+sno(t),0);
+  const snoTimmar=timmar.filter(t=>sno(t)>0);
+  const regnSum=[...Array(10)].map((_,i)=>t0-6+i).concat(timmar).reduce((s,t)=>s+regn(t),0);
+  const minT=Math.min(...timmar.map(temp)), maxDag=Math.max(...[...Array(9)].map((_,i)=>temp(24*dag+12+i)));
+  const molnStart=moln(t0), klarnar=timmar.find(t=>molnStart>=60&&moln(t)<40);
+  const fryser=maxDag>.3?[...Array(t1-(24*dag+14))].map((_,i)=>24*dag+14+i).find(t=>temp(t)<=-.5):null;
+  if(minT>-.5||(regnSum>=1&&minT>-1.5)){
+    ut.typ='vanta'; ut.titel='Vänta';
+    ut.text='Mildväder'+(regnSum>=1?' och regn':'')+': snön fryser inte i natt. Kör inte i blöt snö som inte hinner frysa — då pressas vattnet upp och blir is. Gör ytan slät när det fryser igen.';
+    ut.chips.push(['obs','Fryser inte i natt'],['',`${fmt(Math.max(...timmar.map(temp)),1)}–${fmt(minT,1)} °C`]);
+    if(regnSum>=.5)ut.chips.push(['obs',`${fmt(regnSum,1)} mm regn`]);
+  } else if(snoSum>=2){
+    const slut=snoTimmar.length?snoTimmar[snoTimmar.length-1]+1:t0;
+    ut.typ='sno'; ut.start=Math.max(t0,slut); ut.slut=Math.min(t1,ut.start+KORTID);
+    ut.titel=`Kör ${nar(ut.start)}, när snöfallet slutat`;
+    ut.text=`${fmt(snoSum)} cm snö väntas. Vänta tills snöfallet slutat, så att den nya snön pressas och fräses i ett svep`+
+      (snoSum>=20?', eller kör var 20:e centimeter.':'.')+(t1-ut.slut<VILA?' Vilan blir kort, så det blir mjukt i början av dagen.':'');
+    ut.chips.push(['obs',`${fmt(snoSum)} cm snö ${nar(snoTimmar[0]||t0)}–${tv(slut%24)}`]);
+  } else if(fryser!=null&&fryser<t1-KORTID){
+    ut.typ='fryser'; ut.start=Math.max(fryser,24*dag+16); ut.slut=ut.start+KORTID;
+    ut.titel=`Kör ${nar(ut.start)}, när det börjar frysa`;
+    ut.text='Snön har varit blöt under dagen. Kör precis när den börjar frysa: för tidigt pressas vattnet upp och blir is, för sent blir det klumpar.';
+    ut.chips.push(['obs',`Plusgrader i dag, upp till ${fmt(maxDag,1)} °C`],['ok',`Fryser ${nar(fryser)}`]);
+  } else {
+    ut.typ='kor'; ut.start=t0; ut.slut=t0+KORTID;
+    ut.titel=`Kör ${nar(ut.start)}–${tv(ut.slut%24)}`;
+    if(klarnar!=null&&klarnar>t0){
+      ut.text=`Kör direkt när spåret stängt och var klar innan det klarnar, ${nar(klarnar)}. En klar natt efter körningen gör att snön binder snabbt och spåret blir fast till morgonen.`;
+      ut.chips.push(['ok',`Klarnar ${nar(klarnar)}`]);
+    } else if(molnStart<40){
+      ut.text='Klar natt: snön binder snabbt efter körningen. Kör direkt när spåret stängt.';
+      ut.chips.push(['ok','Klart hela natten']);
+    } else {
+      ut.text='Mulet hela natten ger långsam sintring. Kör direkt när spåret stängt, så att snön får vila så länge som möjligt.';
+      ut.chips.push(['obs','Mulet hela natten']);
+    }
+    ut.chips.push(['ok','Inget snöfall']);
+  }
+  if(ut.slut!=null){
+    const vila=t1-ut.slut;
+    ut.vila=vila;
+    ut.chips.push([vila>=VILA?'ok':'obs',`Vila ${fmt(vila)} h till ${tv(OPPNAR)}`+(vila>=VILA?'':' (minst 8 önskas)')]);
+  }
+  ut.chips.push(['',`${fmt(temp(ut.start??t0),1)} °C, våt ${fmt(vatT(ut.start??t0),1)}`]);
+  return ut;
+}
+const FARG = {kor:'var(--kor)',fryser:'var(--fryser)',sno:'var(--sno)',vanta:'var(--vanta)'};
+const RAD_NAMN = {kor:'Kör',fryser:'Kör när det fryser',sno:'Efter snöfallet',vanta:'Vänta'};
+
+function ritaNu(){
+  // Nästa natt som inte är slut. Mitt i natten är det natten som pågår.
+  const dag=T_NU<OPPNAR?-1:0, n=nattRad(dag);
+  const rubrik=dag<0?'Natten nu':(T_NU>=STANGER?'I natt':'I kväll och i natt');
+  const el=document.getElementById('nu');
+  el.style.setProperty('--f',FARG[n.typ]);
+  el.innerHTML=`<div class="k">${rubrik} · ${RAD_NAMN[n.typ]}</div><h2>${esc(n.titel)}</h2><p>${esc(n.text)}</p>
+    <div class="chips">${n.chips.map(([k,t])=>`<span class="chip ${k}">${esc(t)}</span>`).join('')}</div>
+    <div class="kalla">Spåret stängt ${tv(STANGER)}–${tv(OPPNAR)} (påhittat). Prognosen är påhittad i Open-Meteos form.</div>`;
+}
+
+/* ==========================================================================
+   TIDSLINJEN
+   ========================================================================== */
+function ritaTidslinje(){
+  const svg=document.getElementById('tidslinje'), W=svg.clientWidth||600, Hh=svg.clientHeight||270;
+  const t0=Math.floor(T_NU), t1=t0+48, P={l:30,r:8};
+  const x=t=>P.l+(t-t0)/(t1-t0)*(W-P.l-P.r);
+  const yM=[4,20], yR=[26,46], yT=[58,Hh-62], yN=[Hh-56,Hh-28], yX=Hh-12;
+  const timmar=[]; for(let t=t0;t<=t1;t++)timmar.push(t);
+  const temps=timmar.map(temp), vats=timmar.map(vatT);
+  const lo=Math.floor(Math.min(...temps,...vats,-2)/2)*2-1, hi=Math.ceil(Math.max(...temps,2)/2)*2;
+  const yt=v=>yT[1]-(v-lo)/(hi-lo)*(yT[1]-yT[0]);
+  let h='';
+  // Spåret stängt: 21–08.
+  for(let d=Math.floor(t0/24)-1;d<=Math.ceil(t1/24);d++){
+    const a=Math.max(t0,24*d+STANGER), b=Math.min(t1,24*(d+1)+OPPNAR);
+    if(b>a)h+=`<rect x="${x(a)}" y="${yR[0]-4}" width="${x(b)-x(a)}" height="${yN[1]-yR[0]+4}" fill="#ffffff07" stroke="#ffffff22" stroke-dasharray="3 3"/>`;
+  }
+  // Moln: grått, tätare ju mulnare.
+  for(let t=t0;t<t1;t++)h+=`<rect x="${x(t)}" y="${yM[0]}" width="${x(t+1)-x(t)+.5}" height="${yM[1]-yM[0]}" fill="#cbd5e1" fill-opacity="${(moln(t+.5)/100*.55).toFixed(2)}"/>`;
+  h+=`<text x="2" y="${yM[1]-4}" font-size="9.5" fill="#8296b5">Moln</text>`;
+  // Råden.
+  for(let d=Math.floor((t0-OPPNAR)/24)-1;d<=Math.floor(t1/24);d++){
+    const n=nattRad(d);
+    const a=Math.max(t0,n.typ==='vanta'?n.t0:n.start), b=Math.min(t1,n.typ==='vanta'?n.t1:n.slut);
+    if(!(b>a))continue;
+    h+=`<rect x="${x(a)}" y="${yR[0]}" width="${Math.max(3,x(b)-x(a))}" height="${yR[1]-yR[0]}" rx="6" style="fill:${FARG[n.typ]}" fill-opacity="${n.typ==='vanta'?.35:.9}"/>`;
+    const txt=n.typ==='vanta'?'Vänta':tv(n.start%24)+'–'+tv(n.slut%24);
+    // Får texten inte plats i rutan (smal telefon) står den bredvid.
+    if(x(b)-x(a)>38)h+=`<text x="${(x(a)+x(b))/2}" y="${yR[1]-6}" font-size="11" font-weight="800" text-anchor="middle" fill="#0b1220">${txt}</text>`;
+    else{const hoger=x(b)+46<W-P.r;
+      h+=`<text x="${hoger?x(b)+4:x(a)-4}" y="${yR[1]-6}" font-size="10.5" font-weight="800" text-anchor="${hoger?'start':'end'}" style="fill:${FARG[n.typ]}">${txt}</text>`;}
+  }
+  h+=`<text x="2" y="${yR[1]-6}" font-size="9.5" fill="#8296b5">Råd</text>`;
+  // Temperaturen: luften heldragen, våttemperaturen streckad, nollan markerad.
+  for(let v=lo+1;v<=hi;v+=2){if(v%2)continue;
+    h+=`<line x1="${P.l}" x2="${W-P.r}" y1="${yt(v)}" y2="${yt(v)}" stroke="${v===0?'#fbbf24':'#ffffff10'}" stroke-opacity="${v===0?.55:1}" ${v===0?'stroke-dasharray="5 4"':''}/>`+
+      `<text x="${P.l-5}" y="${yt(v)+3.5}" font-size="10" fill="${v===0?'#fbbf24':'#8296b5'}" text-anchor="end">${fmt(v)}°</text>`;}
+  const linje=vals=>timmar.map((t,i)=>`${x(t).toFixed(1)},${yt(vals[i]).toFixed(1)}`).join(' L');
+  h+=`<path d="M${linje(vats)}" fill="none" stroke="#67e8f9" stroke-width="1.8" stroke-dasharray="4 3" opacity=".8"/>`;
+  h+=`<path d="M${linje(temps)}" fill="none" stroke="#f8fafc" stroke-width="2.4"/>`;
+  // Nederbörd: snö i cm (blått), regn i mm (orange).
+  const maxN=Math.max(1,...timmar.map(t=>sno(t)+regn(t)));
+  for(let t=t0;t<t1;t++){
+    const s=sno(t), r=regn(t);
+    if(s)h+=`<rect x="${x(t)+.5}" y="${yN[1]-s/maxN*(yN[1]-yN[0])}" width="${Math.max(1,x(t+1)-x(t)-1)}" height="${s/maxN*(yN[1]-yN[0])}" fill="#7dd3fc"/>`;
+    if(r)h+=`<rect x="${x(t)+.5}" y="${yN[1]-r/maxN*(yN[1]-yN[0])}" width="${Math.max(1,x(t+1)-x(t)-1)}" height="${r/maxN*(yN[1]-yN[0])}" fill="#fb923c"/>`;
+  }
+  h+=`<line x1="${P.l}" x2="${W-P.r}" y1="${yN[1]}" y2="${yN[1]}" stroke="#ffffff25"/><text x="2" y="${yN[1]-3}" font-size="9.5" fill="#8296b5">Snö</text>`;
+  // Klockslag och dagar.
+  for(let t=t0;t<=t1;t++){
+    const hh=((t%24)+24)%24;
+    if(hh%6===0){
+      h+=`<line x1="${x(t)}" x2="${x(t)}" y1="${yT[0]}" y2="${yN[1]+3}" stroke="#ffffff${hh===0?'30':'10'}"/>`;
+      const txt=hh===0?DAGNAMN[tidAv(t).getDay()]+' '+tidAv(t).getDate():tv(hh);
+      h+=`<text x="${x(t)}" y="${yX}" font-size="10.5" font-weight="${hh===0?800:500}" fill="${hh===0?'#e2e8f0':'#8296b5'}" text-anchor="middle">${txt}</text>`;
+    }
+  }
+  // Nu.
+  h+=`<line x1="${x(T_NU)}" x2="${x(T_NU)}" y1="${yM[0]}" y2="${yN[1]}" stroke="#f87171" stroke-width="2"/><text x="${x(T_NU)+4}" y="${yT[0]+10}" font-size="10" font-weight="800" fill="#f87171">nu</text>`;
+  h+=`<text x="${W-P.r}" y="${yT[0]+10}" font-size="10" fill="#cbd5e1" text-anchor="end">luft —  våt - - -</text>`;
+  svg.setAttribute('viewBox',`0 0 ${W} ${Hh}`);
+  svg.innerHTML=h;
+}
+
+/* ==========================================================================
+   KLAR ATT SCHAKTA?
+   --------------------------------------------------------------------------
+   Påhittad snötillverkning per brunn: när kanonen gick, hur mycket vatten
+   och vilken våttemperatur det var (riktigt: /vattenTimme och /hist från
+   bryggan). Snön räknas som klar när den fått tillräckligt med köld sedan
+   kanonen stannade. En sticktermometer går före modellen.
+   ========================================================================== */
+const TILLVERKNING = [   // timmar räknade från nu; till:null betyder att kanonen går
+  {brunn:7,  enhet:'Kanon 3', fran:-11, till:null, m3:130, tw:-4.8},
+  {brunn:10, enhet:'Kanon 4', fran:-16, till:-2,   m3:175, tw:-4.6},
+  {brunn:15, enhet:'Kanon 8', fran:-29, till:-20,  m3:110, tw:-5.4},
+  {brunn:5,  enhet:'Lans 6',  fran:-46, till:-30,  m3:140, tw:-2.7},
+  {brunn:3,  enhet:'Kanon 1', fran:-60, till:-52,  m3:45,  tw:-6.8},
+];
+const KRAV = 60;   // köldgradtimmar för en vanlig hög med normal snö (första gissning)
+const blothet = tw=>tw>-3.5?{namn:'blöt',f:2}:tw>-6?{namn:'normal',f:1}:{namn:'torr',f:.5};
+const storlek = m3=>m3<60?{namn:'liten hög',f:.7}:m3<=150?{namn:'hög',f:1}:{namn:'stor hög',f:1.6};
+// Summan av minusgraderna timme för timme mellan två tider.
+function kold(a,b){let s=0;for(let t=a;t<b;t++)s+=Math.max(0,-temp(t+.5))*Math.min(1,b-t);return s;}
+const MATLAGRING='snokollPlaneringMatning', PASSLAGRING='snokollPist2Pass';
+function lasJson(k,f){try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?f:v}catch(e){return f}}
+function sparaJson(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+// Exempelpassen är desamma som i förarvyn; riktiga pass därifrån läggs till.
+const START = Date.now();
+const UPP = {
+  schakta:{verb:'Schaktat', farg:'#fde047', ikon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4Q8.5 12 12 20" stroke-width="3"/><path d="M12 12h9"/><path d="M2 20q4-8 9 0z" fill="currentColor" stroke="none"/></svg>'},
+  pista:{verb:'Pistat', farg:'#bae6fd', ikon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 6.5v11M12 6.5v11M16 6.5v11" stroke-width="1.8"/></svg>'},
+  spara:{verb:'Spårat', farg:'#86efac', ikon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 3v18M9 3v18M15 3v18M19 3v18"/></svg>'},
+};
+const BETYG = {bra:'bra', blott:'blött', isigt:'isigt', klumpigt:'klumpigt'};
+const allaPass = ()=>[
+  {upp:'pista',   start:START-7.0*H, slut:START-6.5*H, meter:830,  fran:'vid brunn 17', till:'vid brunn 14', betyg:'bra', exempel:true},
+  {upp:'spara',   start:START-6.5*H, slut:START-3.2*H, meter:1650, fran:'vid brunn 17', till:'vid brunn 1', betyg:'bra', exempel:true},
+  {upp:'schakta', start:START-1.6*H, slut:START-1.1*H, meter:240,  fran:'vid brunn 10', till:'vid brunn 10', betyg:'blott', exempel:true},
+  ...lasJson(PASSLAGRING,[])
+].filter(p=>p&&UPP[p.upp]&&p.slut);
+const klock = ms=>{const d=new Date(ms), h=tv(d.getHours())+':'+tv(d.getMinutes());return d.toDateString()===new Date().toDateString()?h:'i går '+h;};
+const brunnarI = p=>[p.fran,p.till].join(' ').match(/\d+/g)?.map(Number)||[];
+
+function ritaBrunnar(){
+  const mat=lasJson(MATLAGRING,{});
+  const kort=TILLVERKNING.map(p=>{
+    const bl=blothet(p.tw), st=storlek(p.m3), krav=KRAV*bl.f*st.f;
+    const slutT=p.till==null?null:T_NU+p.till, r={p,bl,st,krav};
+    if(slutT==null){r.status='gar';r.namn='Kanonen går';r.andel=0;
+      r.text=`Gör snö sedan ${nar(T_NU+p.fran)} · ${p.m3} m³ hittills · våt ${fmt(p.tw,1)} (${bl.namn} snö).`;return r;}
+    const acc=kold(slutT,T_NU); r.andel=Math.min(1,acc/krav);
+    r.text=`Kanonen stannade ${nar(slutT)} · ${p.m3} m³ · våt ${fmt(p.tw,1)}: ${bl.namn} snö, ${st.namn}. Köld sedan dess ${fmt(acc)} av ${fmt(krav)} °C·h.`;
+    if(acc>=krav){r.status='klar';r.namn='Klar';}
+    else{
+      // När räcker kölden enligt prognosen?
+      let s=acc, eta=null; for(let t=T_NU;t<264;t++){s+=Math.max(0,-temp(t+.5));if(s>=krav){eta=t+1;break;}}
+      r.eta=eta; r.status=eta!=null&&eta-T_NU<=12?'snart':'vantar';
+      r.namn=eta==null?'Väntar':r.status==='snart'?'Snart':'Väntar';
+      r.text+=eta==null?' Prognosen ger inte nog med köld på tio dygn.':` Troligen klar ${nar(eta)}.`;
+    }
+    // Sticktermometern går före modellen: under noll hela vägen in är klart.
+    const m=mat[p.brunn];
+    if(m&&m.t>DAG0.getTime()+slutT*H){
+      r.mat=m;
+      if(m.c<=-1){r.status='klar';r.namn='Klar (mätt)';r.andel=1;}
+      else if(m.c>-.5){r.status='vantar';r.namn='Vatten kvar (mätt)';}
+    }
+    // Har högen redan schaktats ut efter att kanonen stannade?
+    const sch=allaPass().filter(q=>q.upp==='schakta'&&q.slut>DAG0.getTime()+slutT*H&&brunnarI(q).includes(p.brunn)).sort((a,b)=>b.slut-a.slut)[0];
+    if(sch){r.schakt=sch;}
+    return r;
+  });
+  document.getElementById('brunnar').innerHTML=kort.map(r=>{
+    const farg={klar:'#34d399',snart:'#fde047',vantar:'#fb923c',gar:'#a78bfa'}[r.status];
+    const sch=r.schakt?`<div class="rad"><b>Schaktad ${klock(r.schakt.slut)}</b>${r.schakt.betyg?`, föraren: <b>${BETYG[r.schakt.betyg]}</b>`:''}${r.status!=='klar'?' — modellen hade sagt vänta. Sådana svar rättar gränserna.':'.'}</div>`:'';
+    const matTxt=r.mat?`<span class="not">Mätt ${fmt(r.mat.c,1)} °C ${klock(r.mat.t)}</span>`:'';
+    return `<div class="brunn"><div class="huv"><span class="nr">${r.p.brunn}</span><div><b>Brunn ${r.p.brunn}</b><small>${esc(r.p.enhet)}</small></div>
+      <span class="status ${r.schakt?'schaktad':r.status}">${r.schakt?'Schaktad':r.namn}</span></div>
+      <div class="rad">${esc(r.text)}</div>
+      ${r.status!=='gar'?`<div class="stapel"><i style="width:${(r.andel*100).toFixed(0)}%;background:${farg}"></i></div>`:''}
+      ${sch}
+      ${r.status!=='gar'?`<div class="knappar"><button data-mat="${r.p.brunn}">Mät högen</button>${matTxt}</div>`:''}</div>`;
+  }).join('');
+  document.querySelectorAll('[data-mat]').forEach(b=>b.addEventListener('click',()=>{
+    const no=b.dataset.mat, rad=b.parentElement;
+    rad.innerHTML=`<label class="not" for="m${no}">Temperatur 30 cm in i högen</label><input id="m${no}" type="number" step="0.1" inputmode="decimal" placeholder="°C">
+      <button data-spara="${no}">Spara</button>`;
+    const inp=rad.querySelector('input'); inp.focus();
+    rad.querySelector('[data-spara]').addEventListener('click',()=>{
+      const c=parseFloat(String(inp.value).replace(',','.').replace('−','-'));
+      if(!isFinite(c)){inp.focus();return;}
+      const m=lasJson(MATLAGRING,{}); m[no]={c,t:Date.now()}; sparaJson(MATLAGRING,m); ritaBrunnar();
+    });
+  }));
+}
+
+/* ==========================================================================
+   TIO DYGN
+   ========================================================================== */
+const IKON = {
+  sol:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fde047" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="#fde047"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>',
+  halv:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke-linecap="round"><circle cx="9" cy="9" r="3.6" fill="#fde047"/><path d="M7 19h10a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.6 1.4A3 3 0 0 0 7 19z" fill="#cbd5e1"/></svg>',
+  moln:'<svg width="30" height="30" viewBox="0 0 24 24"><path d="M6.5 19h11a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.6A3.3 3.3 0 0 0 6.5 19z" fill="#94a3b8"/></svg>',
+  sno:'<svg width="30" height="30" viewBox="0 0 24 24" stroke-linecap="round"><path d="M6.5 14h11a3.6 3.6 0 0 0 0-7.2 5 5 0 0 0-9.6 1.4A2.9 2.9 0 0 0 6.5 14z" fill="#94a3b8"/><path d="M8 17.5v.1M12 19v.1M16 17.5v.1M10 21.5v.1M14 21.5v.1" stroke="#e0f2fe" stroke-width="2.6"/></svg>',
+  regn:'<svg width="30" height="30" viewBox="0 0 24 24" stroke-linecap="round"><path d="M6.5 14h11a3.6 3.6 0 0 0 0-7.2 5 5 0 0 0-9.6 1.4A2.9 2.9 0 0 0 6.5 14z" fill="#94a3b8"/><path d="M8.5 16.5l-1 3M12.5 16.5l-1 3M16.5 16.5l-1 3" stroke="#fb923c" stroke-width="2"/></svg>',
+};
+function dagRad(d){
+  const tt=[...Array(24)].map((_,i)=>24*d+i), T=tt.map(t=>temp(t+.5));
+  const max=Math.max(...T), min=Math.min(...T), snoSum=tt.reduce((s,t)=>s+sno(t),0), regnSum=tt.reduce((s,t)=>s+regn(t),0);
+  const molnDag=tt.slice(9,16).reduce((s,t)=>s+moln(t),0)/7, molnNatt=[...Array(8)].map((_,i)=>24*d+22+i).reduce((s,t)=>s+moln(t),0)/8;
+  const kanonTimmar=tt.filter(t=>vatT(t+.5)<=-3).length;
+  const imorgon=[...Array(24)].map((_,i)=>24*(d+1)+i);
+  const mildImorgon=imorgon.some(t=>temp(t)>1)||imorgon.reduce((s,t)=>s+regn(t),0)>=1;
+  const rad=[];
+  if(regnSum>=1)rad.push(['var(--mild)',`Regn, ${fmt(regnSum,1)} mm: spåra inte i onödan. Över noll smälter en slät yta mindre.`]);
+  else if(max>.5)rad.push(['var(--fryser)','Mild dag: kör när det börjar frysa på kvällen.']);
+  if(snoSum>=2)rad.push(['var(--sno)',`${fmt(snoSum)} cm snö: preparera när det slutat${snoSum>=20?', var 20:e cm':''}.`]);
+  if(mildImorgon&&regnSum<1&&max<=.5)rad.push(['var(--mild)','Mildväder i morgon: schakta inte ut blöt snö nu, låt högarna ligga.']);
+  if(min<=-8&&molnNatt<40)rad.push(['var(--kor)','Kall och klar natt: snön binder snabbt efter körningen.']);
+  if(!regnSum&&!snoSum&&max<=-1&&molnDag<50&&!(min<=-8&&molnNatt<40))rad.push(['var(--kor)','Stabilt: ett välpreparerat spår håller.']);
+  if(!rad.length)rad.push(['var(--vanta)','Vanligt underhåll.']);
+  // Timmar då kanonerna kan gå står som en siffra, inte som ett råd: det är
+  // ett beslut för snötillverkningen, och det kom upp nästan varje dag.
+  const kanonTxt=kanonTimmar?`<span class="ned" style="color:#c4b5fd">kanoner ${kanonTimmar} h</span>`:'';
+  const ikon=snoSum>=1?IKON.sno:regnSum>=1?IKON.regn:molnDag<30?IKON.sol:molnDag<70?IKON.halv:IKON.moln;
+  const dt=tidAv(24*d+12);
+  return `<div class="dag"><div class="d"><b>${d===0?'I dag':d===1?'I morgon':DAGNAMN[dt.getDay()][0].toUpperCase()+DAGNAMN[dt.getDay()].slice(1)}</b><small>${dt.getDate()} ${MANAD[dt.getMonth()]}</small></div>
+    <div>${ikon}</div>
+    <div class="tmp">${fmt(max)}°<small> / ${fmt(min)}°</small>${snoSum>=.5?`<span class="ned">${fmt(snoSum)} cm snö</span>`:regnSum>=.5?`<span class="ned" style="color:#fdba74">${fmt(regnSum,1)} mm regn</span>`:''}${kanonTxt}</div>
+    <div class="rad-rad">${rad.map(([f,t])=>`<span style="--f:${f}">${esc(t)}</span>`).join('')}</div></div>`;
+}
+function ritaDagar(){document.getElementById('dagar').innerHTML=[...Array(10)].map((_,d)=>dagRad(d)).join('');}
+
+/* ==========================================================================
+   SENAST GJORT
+   ========================================================================== */
+function ritaSenast(){
+  const pass=allaPass();
+  document.getElementById('senast').innerHTML=['spara','pista','schakta'].map(k=>{
+    const U=UPP[k], p=pass.filter(q=>q.upp===k).sort((a,b)=>b.slut-a.slut)[0];
+    return `<div class="gjort"><span class="ik" style="background:${U.farg}">${U.ikon}</span><div><b>${U.verb} ${p?klock(p.slut):'—'}</b>
+      <small>${p?`${fmt(p.meter/1000,1)} km · ${esc(p.fran)} till ${esc(String(p.till).replace(/^vid /,''))}${p.betyg?' · '+BETYG[p.betyg]:''}${p.exempel?' · exempel':''}`:'Inget de senaste dygnen.'}</small></div></div>`;
+  }).join('')+`<a class="gjort" href="./pist-mobil.html" style="text-decoration:none;color:inherit"><span class="ik" style="background:#e2e8f0">→</span><div><b>Förarvyn</b><small>Välj uppdrag där, så syns passen här.</small></div></a>`;
+}
+
+ritaNu(); ritaTidslinje(); ritaBrunnar(); ritaDagar(); ritaSenast();
+new ResizeObserver(()=>ritaTidslinje()).observe(document.getElementById('tidslinje'));
+// Förarvyn i en annan flik som lägger till ett pass.
+window.addEventListener('storage',e=>{if(e.key===PASSLAGRING){ritaSenast();ritaBrunnar();}});
+if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body>
+</html>

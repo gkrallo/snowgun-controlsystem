@@ -696,8 +696,10 @@ let simFart = 1;
    det maskinen kört över räknas som preparerat. Historiken nedan är påhittad
    och räknas bakåt från nu, så att den ser likadan ut när sidan öppnas. */
 const PREP = new Array(N).fill(null);
+// Bit för bit med heltal: att räkna upp s med DS gav avrundningsfel som hoppade
+// över en bit då och då, och varje överhoppad bit syntes som en lucka i spåret.
 function forstamp(fran,till,av,tid){
-  for(let s=fran;s<till;s+=DS) PREP[segVid(s)]={t:tid(s),av};
+  for(let i=Math.floor(fran/DS);i*DS<till-1e-9;i++) PREP[((i%N)+N)%N]={t:tid(Math.max(fran,i*DS)),av};
 }
 forstamp(0,800,'Maskin 2',()=>START-5.4*3600e3);
 forstamp(800,M1.s,'Maskin 1',s=>START-(M1.s-s)/M1.v*1000);
@@ -785,7 +787,8 @@ function varPaVarvet(s){
   if(!alla.length)return '';
   if(Math.abs(dS(alla[0].s,s))<25)return 'vid brunn '+alla[0].no;
   const fram=alla.filter(a=>dS(a.s,s)>0)[0], bak=alla.filter(a=>dS(a.s,s)<0)[0];
-  return fram&&bak?'mellan brunn '+bak.no+' och '+fram.no:'vid brunn '+alla[0].no;
+  // I vändslingorna är brunnen på båda sidor samma brunn.
+  return fram&&bak&&fram.no!==bak.no?'mellan brunn '+bak.no+' och '+fram.no:'vid brunn '+alla[0].no;
 }
 // Kortaste vägen längs varvet från s till t, med tecken (framåt positivt).
 function dS(t,s){let d=mod(t-s);return d>L/2?d-L:d}

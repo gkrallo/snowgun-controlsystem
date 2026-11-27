@@ -62,10 +62,13 @@ self.addEventListener("fetch", e => {
 
   // Själva sidan: nätet först, så att en ny version kommer fram direkt. Den
   // sparade kopian används bara när nätet saknas.
-  // Förarvyn (pist.html) sparas under sitt eget namn. Annars blev den den
-  // sparade startsidan, och Snökoll visade förarvyn när nätet saknades.
+  // Varje sida sparas under sitt eget namn (förarvyns förslag, startsidan för
+  // förslagen). Annars blev den senast öppnade sidan den sparade startsidan,
+  // och Snökoll visade en förarvy när nätet saknades. Allt som inte är en
+  // namngiven .html-fil, som "/", är Snökoll själv.
   if (req.mode === "navigate") {
-    const sida = /\/pist\.html$/.test(url.pathname) ? "./pist.html" : "./index.html";
+    const namn = url.pathname.split("/").pop();
+    const sida = /^[\w-]+\.html$/.test(namn) ? "./" + namn : "./index.html";
     e.respondWith(
       fetch(req, { cache: "no-cache" })
         .then(res => {
