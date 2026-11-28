@@ -32,9 +32,9 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
-- **Bryggan** (`bridge/brygga.ps1`, version 11 på styrdatorn sedan 28
-  november, förmiddagen; version 12 med TT01 vid drift ligger klar i
-  zipfilen men är inte installerad) går på styrdatorn som en
+- **Bryggan** (`bridge/brygga.ps1`, version 12 på styrdatorn sedan 28
+  november 11:20, med TT01 vid drift och snökvaliteten per enhet) går på
+  styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
   inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
@@ -163,8 +163,8 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   visades som ring 1 och 2, är tända hela tiden kanonen går. Lägg in en
   lampa i `LAMPOR` först när den jämförts med skärmen eller Sufags
   beskrivningar, aldrig ur en gissning utan märkning. Snökvaliteten och
-  start-/stoppgränsen per enhet kommer med bryggan 12 (alla på 5, −2,5/−2
-  den 28 november).
+  start-/stoppgränsen per enhet kommer med bryggan 12 (kanonerna på 5 och
+  −2,5/−2, lansarna −3/−2,5 och Lans 7 på kvalitet 4, den 28 november).
 - **Väderstationen vid brunn 7 visar för varmt**, 0,3–1,7 grader och
   ojämnt, medan fukten i luften stämmer (jämfört med kanon 3 vid samma
   brunn 25 november). Troligen uppvärmd givare, inte en offset — lägg

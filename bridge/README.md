@@ -11,7 +11,13 @@ föll bort på kvartsgränsen), journalen går tillbaka till 30 oktober 08:45
 och gav 82 inkopplingar. SGC400-3 var senast inkopplad vid en annan brunn
 än 10 och räknas vid brunnen från 09:53.
 
-- **Version 12 (28 november, inte installerad än)** minns vattentemperaturen
+- **Version 12 går på styrdatorn sedan 28 november 11:20.** Den första
+  zipfilen (10:35) saknade snökvaliteten och installerades först; den
+  ombyggda (11:06) har den. `Select-String -Pattern 'kvalitet'` i
+  `brygga.ps1` ger 4 i den rätta. 11:21 hade alla enheter kvalitet 5 utom
+  Lans 7 (TAURUS, SGC400-5) med 4; start −2,5 och stopp −2 på
+  S ACCESS 300, −3/−2,5 på lansarna. Kanon 1 (äldre kortet) −2,5.
+- Version 12 minns vattentemperaturen
   i pumphuset (TT01) från senast vattnet gick (FT01 minst 2 m³/h) och skickar
   den som `pump/dep12/vattenTempDrift` och `vattenTempDriftTid` (styrdatorns
   tid, minuter). Står pumparna visar TT01 vattnet som står i röret. Värdet
