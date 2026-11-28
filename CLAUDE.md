@@ -167,7 +167,11 @@ I korthet:
 6. **Firebase-regler låsta:** bara bryggan skriver driftdata, bara inloggade
    medlemmar läser. Undantaget är `/damm`, där medlemmar skriver sina egna
    avläsningar av vattenmätaren och måttbandet (Kristian, 25 november).
-   Inget i Firebase kan styra anläggningen.
+   Kristian har också sagt ja (28 november) till en publik del, `/publikt`,
+   för gästsidan: alla läser, bara snögruppen skriver, och den innehåller
+   bara spårat när och var, stängt, snödjup, väder och ett meddelande —
+   inget från styrsystemet och inga namn. Inte byggd än
+   (`docs/forslag-forarvy.md`). Inget i Firebase kan styra anläggningen.
 7. **Tidsstämpel på allt** — appen varnar för gammal data, visar aldrig stale
    som live.
 8. **Bryggan auto-startar** vid omboot. **Budgetlarm** i Google Cloud, skriv
@@ -260,7 +264,8 @@ de gamla exempelsiffrorna.
 - `app/pist.html` (förslag 1), `app/pist-mobil.html` (förslag 2, med
   uppdrag och pass) och deras manifest — förarvyn för pistmaskinen.
   `app/planering.html` (förslag 3) — när ska vi schakta, pista och spåra,
-  efter SLF:s handbok. Klickbara förslag med påhittad data
+  efter SLF:s handbok. `app/spar.html` (förslag 4) — spårläget för gästerna,
+  med en vinterbild i 3D (three.js). Klickbara förslag med påhittad data
   (`docs/forslag-forarvy.md`). `app/forslag.html` är startsidan som delas
   med förarna via en förhandslänk i Firebase Hosting. Egna sidor så att
   `index.html` inte behöver röras. Skriver inget till Firebase.

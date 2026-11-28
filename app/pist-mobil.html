@@ -246,6 +246,29 @@ button{font:inherit;color:inherit}
   padding:0 14px;font-weight:700;cursor:pointer;color:var(--text);text-decoration:none;font-size:1rem}
 .menygrid .pa{background:#173252;border-color:#38bdf866;color:#bae6fd}
 .menygrid small{margin-left:auto;color:var(--muted);font-weight:600}
+/* I efterhand */
+.ef .eflbl{font-size:.8rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);margin:14px 2px 0}
+.ef .eflbl:first-child{margin-top:2px}
+.ef .snabb{margin-top:7px}
+.snabb button.pa,.efrad button.pa{background:#173252;border-color:#38bdf8;color:#e0f2fe}
+.efrad{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.efrad button{height:42px;border-radius:999px;border:1px solid var(--border-hi);background:#0f1d31;padding:0 15px;font-weight:600;cursor:pointer}
+.efrad span{color:var(--muted)}
+.ef select,.ef input[type=time]{height:44px;border-radius:12px;border:1px solid var(--border-hi);background:#0a1424;color:var(--text);
+  font:inherit;font-weight:600;padding:0 10px;color-scheme:dark}
+.ef select{flex:1;min-width:0}
+.ef input[type=time]{font-family:var(--num);font-size:1.15rem;width:7.2em}
+.ef .skiss{display:block;width:100%;max-width:420px;margin:10px auto 0}
+.efsumma{margin-top:12px;padding:10px 12px;border-radius:14px;background:#0f1c2f;border:1px solid var(--border);display:flex;flex-direction:column;gap:3px}
+.efsumma b{font-size:1.02rem}
+.efsumma span{color:var(--muted);font-size:.88rem}
+.efsumma .obs{color:#fde68a}
+.efsumma .feltext{color:#fca5a5}
+.arkknappar button:disabled{opacity:.4;cursor:not-allowed}
+.meddrakna{font-size:.78rem;color:var(--muted2);text-align:right;margin-top:4px;min-height:1em}
+.efterknapp{width:100%;height:50px;margin-bottom:10px;border-radius:14px;border:1px dashed #38bdf899;background:#0c1a2e;color:#bae6fd;font-weight:700;cursor:pointer}
+.tabortpass{display:block;margin:5px 0 0 auto;height:30px;padding:0 10px;border-radius:9px;border:1px solid #f8717166;background:#3b1418;color:#fecaca;
+  font-family:system-ui,sans-serif;font-size:.76rem;font-weight:700;cursor:pointer}
 
 #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 172px);transform:translate(-50%,-10px);opacity:0;pointer-events:none;z-index:35;
   padding:11px 16px;border-radius:14px;background:#0f1d31f2;border:1px solid var(--border-hi);box-shadow:0 18px 40px -12px #000;font-weight:600;
@@ -672,20 +695,52 @@ function forstamp(typ,fran,till,tid){
     const j=((i%N)+N)%N, t=tid(Math.max(fran,i*DS)); if(!PREP[j]||PREP[j].t<t)PREP[j]={t,typ};
   }
 }
-forstamp('pista',1500,L,()=>START-6.6*3600e3);
-forstamp('spara',1500,L,()=>START-6.2*3600e3);
-forstamp('spara',0,800,()=>START-3.3*3600e3);
-forstamp('pista',M.s+DS,1500,()=>START-21*3600e3);
-forstamp('pista',800,M.s,s=>START-(M.s-s)/(10/3.6)*1000);
-// Högen vid brunn 10 schaktades ut för en dryg timme sedan.
-brunn(10).pass.forEach(p=>forstamp('schakta',p.s-20,p.s+20,()=>START-1.2*3600e3));
-M.v = UPPDRAG[uppdrag].fart/3.6;
+// Det maskinen stämplat sedan sidan öppnades, bit för bit. Det sparas för sig,
+// så att PREP kan byggas om från början när en inmatning i efterhand läggs
+// till eller tas bort, utan att det som körts nu försvinner.
+const LIVE = new Map();
 let prepAndrad = true;
+/* Bygger PREP: den påhittade historiken, de sparade passen med sina sträckor
+   (även de som skrivits in i efterhand) och det maskinen kört nu. Det senaste
+   gäller alltid, så ett pass som skrivs in i efterhand kan aldrig skriva över
+   något som loggats senare. */
+function byggPrep(){
+  PREP.fill(null);
+  forstamp('pista',1500,L,()=>START-6.6*3600e3);
+  forstamp('spara',1500,L,()=>START-6.2*3600e3);
+  forstamp('spara',0,800,()=>START-3.3*3600e3);
+  forstamp('pista',M.s+DS,1500,()=>START-21*3600e3);
+  forstamp('pista',800,M.s,s=>START-(M.s-s)/(10/3.6)*1000);
+  // Högen vid brunn 10 schaktades ut för en dryg timme sedan.
+  brunn(10).pass.forEach(p=>forstamp('schakta',p.s-20,p.s+20,()=>START-1.2*3600e3));
+  for(const p of lasJson(PASSLAGRING,[]))
+    if(p&&UPPDRAG[p.upp]&&Array.isArray(p.bitar))
+      for(const [a,b,t] of p.bitar) if(b>a&&t>0) forstamp(p.upp,a,b,()=>t);
+  LIVE.forEach((v,i)=>{if(!PREP[i]||PREP[i].t<v.t)PREP[i]=v;});
+  prepAndrad=true;
+}
+byggPrep();
+M.v = UPPDRAG[uppdrag].fart/3.6;
 function stampla(s0,s1,r){
   if(uppdrag==='transport')return;
   let i=segVid(s0); const slut=segVid(s1), nu=Date.now();
-  for(let k=0;k<N;k++){ PREP[i]={t:nu,typ:uppdrag}; if(i===slut)break; i=(i+(r>0?1:-1)+N)%N; }
+  for(let k=0;k<N;k++){
+    const v={t:nu,typ:uppdrag}; PREP[i]=v; LIVE.set(i,v);
+    if(aktivtPass)aktivtPass.seg.add(i);
+    if(i===slut)break; i=(i+(r>0?1:-1)+N)%N;
+  }
   prepAndrad=true;
+}
+// Bitarna ett pass kört över, som sammanhängande sträckor [från, till, när]
+// i meter längs varvet. Det är sträckorna gästsidan (förslag 4) visar.
+function tillBitar(idx){
+  const runs=[]; let a=null, b=null;
+  for(const i of idx){ if(a!=null&&i===b+1){b=i;continue;} if(a!=null)runs.push([a,b]); a=b=i; }
+  if(a!=null)runs.push([a,b]);
+  // En sträcka över varvets start blir en, inte två.
+  if(runs.length>1&&runs[0][0]===0&&runs[runs.length-1][1]===N-1){const f=runs.shift(); runs[runs.length-1][1]=f[1]+N;}
+  return runs.map(([a,b])=>{let t=0;for(let i=a;i<=b;i++){const v=LIVE.get(i%N);if(v&&v.t>t)t=v.t;}
+    return [+(a*DS).toFixed(1),+((b+1)*DS).toFixed(1),t];});
 }
 
 /* Passen: ett pass är ett uppdrag från det väljs till nästa. Efteråt kan
@@ -698,12 +753,16 @@ const exempelPass = ()=>[
   {id:'px3', upp:'schakta', start:START-1.6*3600e3, slut:START-1.1*3600e3, meter:240,  fran:'vid brunn 10', till:'vid brunn 10', betyg:'blott', exempel:true},
 ];
 let aktivtPass = null;
-function startaPass(){aktivtPass={id:'p'+Date.now().toString(36), upp:uppdrag, start:Date.now(), meter:0, fran:varPaVarvet(M.s)};}
+function startaPass(){aktivtPass={id:'p'+Date.now().toString(36), upp:uppdrag, start:Date.now(), meter:0, fran:varPaVarvet(M.s), seg:new Set()};}
 // Ett pass sparas bara om det blev något: transport och korta stunder räknas inte.
 function avslutaPass(){
   const p=aktivtPass; aktivtPass=null;
   if(!p||p.upp==='transport'||p.meter<100)return null;
   p.slut=Date.now(); p.till=varPaVarvet(M.s); p.meter=Math.round(p.meter);
+  p.bitar=tillBitar([...p.seg].sort((a,b)=>a-b)); delete p.seg; p.kalla='gps';
+  // Antaget: spåra betyder både klassiskt och skejt. Om föraren ska välja
+  // det när uppdraget väljs är ett öppet val (docs/forslag-forarvy.md).
+  if(p.upp==='spara')p.spar=['klassiskt','skejt'];
   sparaJson(PASSLAGRING,[...lasJson(PASSLAGRING,[]),p]);
   return p;
 }
@@ -906,6 +965,10 @@ function laggTillLager(){
   karta.addSource('framat',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   karta.addLayer({id:'framat-sken',type:'line',source:'framat',layout:{'line-join':'round','line-cap':'round'},
     paint:{'line-color':'#e0f2fe','line-width':BREDD(1.9),'line-blur':BREDD(.9),'line-opacity':.2}},'varv-djup');
+  // Sträckan som skrivs in i efterhand, streckad, medan arket är öppet.
+  karta.addSource('forhand',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  karta.addLayer({id:'forhand',type:'line',source:'forhand',layout:{'line-join':'round'},
+    paint:{'line-color':'#fde047','line-width':BREDD(.45),'line-opacity':.95,'line-dasharray':[1.4,1]}});
 }
 // Ränderna går längs körriktningen, som spåren efter manchestern. Bilden är
 // lång, eftersom varje skarv mellan bilderna syns som en ruta i spåret.
@@ -1215,6 +1278,7 @@ function stangArk(){
   if(igenkanning){try{igenkanning.abort()}catch(e){} igenkanning=null;}
   if(oppenMark){sparaKommentar();oppenMark=null;}
   ark.classList.remove('oppen');
+  visaForhand([]);
 }
 function oppnaArk(html){
   clearTimeout(arkTimer); arkTimer=null;
@@ -1290,13 +1354,14 @@ function talaIn(ta,tips,knapp){
   if(igenkanning){try{igenkanning.stop()}catch(e){}return;}
   if(!Tal){tips.textContent='Den här webbläsaren kan inte tolka tal. Tryck i rutan och sedan på mikrofonen på tangentbordet.';ta.focus();return;}
   const r=new Tal(); r.lang='sv-SE'; r.interimResults=true; r.maxAlternatives=1;
-  const bas=ta.value.trim()?ta.value.trim()+' ':'';
-  r.onresult=e=>{let t='';for(let i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;ta.value=bas+t;};
+  const bas=ta.value.trim()?ta.value.trim()+' ':'', etikett=knapp.querySelector('span').textContent;
+  // input-händelsen så att arket ser texten (räknaren och Publicera-knappen).
+  r.onresult=e=>{let t='';for(let i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;ta.value=bas+t;ta.dispatchEvent(new Event('input'));};
   r.onerror=e=>{tips.textContent=(e.error==='not-allowed'||e.error==='service-not-allowed')
     ?'Mikrofonen är inte tillåten för sidan. Tryck i rutan och använd mikrofonen på tangentbordet i stället.'
     :e.error==='no-speech'?'Hörde ingenting. Tryck och försök igen.'
     :'Rösten gick inte att tolka just nu. Tryck i rutan och använd mikrofonen på tangentbordet.';};
-  r.onend=()=>{igenkanning=null;knapp.classList.remove('lyssnar');knapp.querySelector('span').textContent='Tala in en kommentar';};
+  r.onend=()=>{igenkanning=null;knapp.classList.remove('lyssnar');knapp.querySelector('span').textContent=etikett;};
   try{r.start();igenkanning=r;knapp.classList.add('lyssnar');knapp.querySelector('span').textContent='Lyssnar … tryck för att sluta';tips.textContent='';}
   catch(e){tips.textContent='Rösten gick inte att starta. Tryck i rutan och använd mikrofonen på tangentbordet.';ta.focus();}
 }
@@ -1315,9 +1380,12 @@ function visaMeny(){
     <div class="menygrid">
       <button data-g="lista">Markeringar <small>${allaMarkeringar().length}</small></button>
       <button data-g="pass">Passen <small>${allaPass().length}</small></button>
+      <button data-g="efter">Skriv in i efterhand</button>
+      <button data-g="medd">Meddelande till gästerna <small>${lasMedd()?'visas':''}</small></button>
       <button data-g="natt" class="${natt?'pa':''}">Nattläge <small>${natt?'på':'av'}</small></button>
       <button data-g="hel">Helskärm</button>
       <a href="./planering.html">Planering</a>
+      <a href="./spar.html">Gästsidan</a>
       <button data-g="info">Om förslaget</button>
       <a href="./forslag.html" class="bred">Alla förslag</a>
     </div>`);
@@ -1326,6 +1394,8 @@ function visaMeny(){
     const g=b.dataset.g;
     if(g==='lista')visaLista();
     if(g==='pass')visaPass();
+    if(g==='efter')visaEfterhand(true);
+    if(g==='medd')visaMeddelande();
     if(g==='natt'){satNatt(!natt);visaMeny();}
     if(g==='hel'){stangArk();helskarm();}
     if(g==='info'){stangArk();document.getElementById('info').classList.remove('hidden');}
@@ -1368,16 +1438,234 @@ function fragaBetyg(p){
     stangArk(); visaToast('Tack — '+BETYG[b.dataset.b].toLowerCase()+' sparat');
   }));
 }
-// Passen senaste dygnet och ett halvt, de påhittade exemplen inräknade.
-const allaPass = ()=>[...exempelPass(),...lasJson(PASSLAGRING,[])].filter(p=>p&&UPPDRAG[p.upp]&&Date.now()-p.slut<36*3600e3).sort((a,b)=>b.slut-a.slut);
+// Passen de senaste två dygnen, de påhittade exemplen inräknade. Två dygn och
+// inte ett och ett halvt, så att det som skrivits in för i går syns.
+const allaPass = ()=>[...exempelPass(),...lasJson(PASSLAGRING,[])].filter(p=>p&&UPPDRAG[p.upp]&&Date.now()-p.slut<48*3600e3).sort((a,b)=>b.slut-a.slut);
 function visaPass(){
-  const rad=(p,pagar)=>{const U=UPPDRAG[p.upp];
+  const rad=(p,pagar)=>{const U=UPPDRAG[p.upp], efter=p.kalla==='efterhand';
+    const titel=pagar?U.namn+' pågår':efter?U.verb+' '+hhmm(p.slut):U.verb+' '+hhmm(p.start)+'–'+hhmm(p.slut);
+    const var_=efter?esc(p.besk):esc(p.fran)+(pagar?'':' till '+esc(p.till.replace(/^vid /,'')));
     return `<div class="rad" style="cursor:default"><span class="mk-ikon" style="background:${U.farg}">${U.ikon}</span>
-      <span><b>${pagar?U.namn+' pågår':U.verb+' '+hhmm(p.start)+'–'+hhmm(p.slut)}</b><small>${fmt(p.meter/1000,1)} km · ${esc(p.fran)}${pagar?'':' till '+esc(p.till.replace(/^vid /,''))}${p.betyg?' · '+BETYG[p.betyg].toLowerCase():''}${p.exempel?' · exempel':''}</small></span>
-      <span class="tid">${pagar?'nu':klockslag(p.slut)}</span></div>`;};
-  oppnaArk(`<div class="arkhuv"><div><b>Passen</b><small>senaste dygnet och ett halvt · vad som gjordes, var och hur det blev</small></div><button class="stang" aria-label="Stäng">✕</button></div>
+      <span><b>${titel}</b><small>${fmt(p.meter/1000,1)} km · ${var_}${efter?' · inskrivet i efterhand':''}${p.betyg?' · '+BETYG[p.betyg].toLowerCase():''}${p.exempel?' · exempel':''}</small></span>
+      <span class="tid">${pagar?'nu':klockslag(p.slut)}${efter?`<button class="tabortpass" data-id="${esc(p.id)}">Ta bort</button>`:''}</span></div>`;};
+  oppnaArk(`<div class="arkhuv"><div><b>Passen</b><small>senaste två dygnen · vad som gjordes, var och hur det blev</small></div><button class="stang" aria-label="Stäng">✕</button></div>
+    <button class="efterknapp">+ Skriv in ett pass i efterhand</button>
     <div class="lista">${aktivtPass&&uppdrag!=='transport'?rad(aktivtPass,true):''}${allaPass().map(p=>rad(p,false)).join('')}</div>`);
   arkIn.querySelector('.stang').addEventListener('click',stangArk);
+  arkIn.querySelector('.efterknapp').addEventListener('click',()=>visaEfterhand(true));
+  arkIn.querySelectorAll('.tabortpass').forEach(b=>b.addEventListener('click',()=>{
+    sparaJson(PASSLAGRING,lasJson(PASSLAGRING,[]).filter(p=>p.id!==b.dataset.id));
+    byggPrep(); visaPass(); visaToast('Borttaget. Sträckan visar nu det som gjordes före.');
+  }));
+}
+
+/* ==========================================================================
+   I EFTERHAND
+   --------------------------------------------------------------------------
+   Om GPS:en inte var igång, eller om passet kördes utan telefon, skrivs det
+   in efteråt: vad, ungefär när, och från vilken brunn till vilken. Det ska
+   gå på en halv minut, och det ska vara svårt att skriva fel:
+   - brunn 1 ligger i vändslingan i söder, så den tas med när brunn 1 väljs
+   - brunn 17, 18 och 19 ligger i öglan i norr, så hela öglan tas med när
+     någon av dem väljs
+   - raksträckan mellan brunn 1 och 16 körs åt båda hållen, i två körfält;
+     båda tas med om inte föraren säger "bara söderut" eller "bara norrut"
+   - ett klockslag som inte har varit än går inte att spara
+   - det senaste gäller alltid: där maskinen loggat något senare skriver
+     inmatningen inte över det, och sidan säger hur mycket det gäller
+   Det som sparats går att ta bort i listan över passen.
+   ========================================================================== */
+// Var brunnarna 1–16 passeras på varvet: n = körfältet norrut (från
+// vändslingan i söder mot öglan i norr), s = körfältet söderut. Räknas ur
+// spåret, så att det stämmer om spåret mäts om.
+const AXEL = (()=>{
+  const b1=brunn(1).pass.map(p=>p.s).sort((a,b)=>a-b), b16=brunn(16).pass.map(p=>p.s).sort((a,b)=>a-b);
+  const lo=b1[b1.length-1], hi=b16[0], ax={};
+  for(let n=1;n<=16;n++){
+    const ps=brunn(n).pass.map(p=>p.s), nb=ps.find(s=>s>=lo-1&&s<=hi+1);
+    ax[n]={n:nb, s:ps.find(s=>s!==nb)};
+  }
+  return {ax, sydslinga:[b1[0],b1[b1.length-1]], nordogla:[b16[0],b16[b16.length-1]]};
+})();
+const OGLA = n=>n>=17;
+// Sträckorna [från, till] i meter längs varvet som valet betyder.
+function efterhandBitar(e){
+  if(e.var==='hela')return [[0,L]];
+  const a=Math.min(OGLA(e.fran)?16:e.fran, OGLA(e.till)?16:e.till),
+        b=Math.max(OGLA(e.fran)?16:e.fran, OGLA(e.till)?16:e.till), ut=[];
+  if(a<b){
+    if(e.sidor!=='soder'&&AXEL.ax[a].n!=null&&AXEL.ax[b].n!=null)ut.push([AXEL.ax[a].n,AXEL.ax[b].n]);
+    if(e.sidor!=='norr'&&AXEL.ax[a].s!=null&&AXEL.ax[b].s!=null){let s0=AXEL.ax[b].s, s1=AXEL.ax[a].s; if(s1<s0)s1+=L; ut.push([s0,s1]);}
+  }
+  if(a===1)ut.push(AXEL.sydslinga);
+  if(OGLA(e.fran)||OGLA(e.till))ut.push(AXEL.nordogla);
+  return ut;
+}
+function efterhandBesk(e){
+  if(e.var==='hela')return 'hela varvet';
+  const a=Math.min(e.fran,e.till), b=Math.max(e.fran,e.till), ogla=OGLA(e.fran)||OGLA(e.till);
+  const delar=[];
+  const a2=Math.min(OGLA(e.fran)?16:e.fran, OGLA(e.till)?16:e.till), b2=Math.max(OGLA(e.fran)?16:e.fran, OGLA(e.till)?16:e.till);
+  if(a2<b2)delar.push('brunn '+a2+'–'+b2+' '+({bada:'åt båda hållen',soder:'bara söderut',norr:'bara norrut'})[e.sidor]);
+  if(a2===1)delar.push('vändslingan i söder');
+  if(ogla)delar.push('öglan i norr');
+  return delar.join(' och ')||('brunn '+a+'–'+b);
+}
+const EF = {upp:'spara', klassiskt:true, skejt:true, var:'hela', fran:1, till:16, sidor:'bada', dag:0, tid:''};
+function efterhandTid(){
+  const [h,m]=(EF.tid||'0:0').split(':').map(Number), d=new Date();
+  d.setDate(d.getDate()-EF.dag); d.setHours(h||0,m||0,0,0); return d.getTime();
+}
+function visaForhand(bitar){
+  if(!kartaKlar)return;
+  karta.getSource('forhand').setData({type:'FeatureCollection',features:bitar.map(([a,b])=>({type:'Feature',properties:{},
+    geometry:{type:'LineString',coordinates:stracka(a,b)}}))});
+}
+/* Spåret som en tunnelbanekarta: vändslingan i söder till vänster, öglan i
+   norr till höger, körfältet söderut överst och norrut underst (som på en
+   karta vriden med norr åt höger). Det valda är ifyllt i uppdragets färg. */
+function efterhandSkiss(e,farg){
+  const W=340, x=n=>34+(n-1)*(226/15), yS=30, yN=82, ym=(yS+yN)/2, X1=x(1), X16=x(16);
+  const kurva=`M${X16} ${yN}C${X16+88} ${yN+16},${X16+88} ${yS-16},${X16} ${yS}`;
+  const slinga=`M${X1} ${yS}A${(yN-yS)/2} ${(yN-yS)/2} 0 0 0 ${X1} ${yN}`;
+  const pa=(d,k)=>`<path d="${d}" fill="none" stroke="${k?farg:'#334155'}" stroke-width="${k?7:5}" stroke-linecap="round"/>`;
+  const hela=e.var==='hela';
+  const a=hela?1:Math.min(OGLA(e.fran)?16:e.fran, OGLA(e.till)?16:e.till), b=hela?16:Math.max(OGLA(e.fran)?16:e.fran, OGLA(e.till)?16:e.till);
+  const ogla=hela||OGLA(e.fran)||OGLA(e.till), syd=hela||a===1;
+  const soder=hela||(a<b&&e.sidor!=='norr'), norr=hela||(a<b&&e.sidor!=='soder');
+  // Punkter på kurvan för brunn 17, 18 och 19.
+  const bz=(t,p0,p1,p2,p3)=>(1-t)**3*p0+3*(1-t)**2*t*p1+3*(1-t)*t*t*p2+t**3*p3;
+  const op=[17,18,19].map((n,i)=>{const t=.28+i*.22;return {n,x:bz(t,X16,X16+88,X16+88,X16),y:bz(t,yN,yN+16,yS-16,yS)};});
+  let h=`<svg viewBox="0 0 ${W} 112" class="skiss" role="img" aria-label="Spåret som en skiss med det valda ifyllt">`;
+  h+=pa(`M${X1} ${yS}H${X16}`,false)+pa(`M${X1} ${yN}H${X16}`,false)+pa(slinga,false)+pa(kurva,false);
+  if(soder)h+=pa(`M${x(a)} ${yS}H${x(b)}`,true);
+  if(norr)h+=pa(`M${x(a)} ${yN}H${x(b)}`,true);
+  if(syd)h+=pa(slinga,true);
+  if(ogla)h+=pa(kurva,true);
+  for(let n=1;n<=16;n++){
+    h+=`<circle cx="${x(n)}" cy="${yS}" r="2.4" fill="#0b1220"/><circle cx="${x(n)}" cy="${yN}" r="2.4" fill="#0b1220"/>`;
+    if(n%3===1||n===16||(!hela&&(n===a||n===b)))h+=`<text x="${x(n)}" y="${ym+4}" font-size="11" font-weight="700" text-anchor="middle" fill="${!hela&&(n===a||n===b)?'#fff':'#94a3b8'}">${n}</text>`;
+  }
+  // Numren i öglan står innanför den, så att de inte hamnar utanför bilden.
+  op.forEach(o=>h+=`<circle cx="${o.x}" cy="${o.y}" r="2.4" fill="#0b1220"/><text x="${o.x-8}" y="${o.y+4}" font-size="11" font-weight="700" text-anchor="end" fill="${!hela&&(e.fran===o.n||e.till===o.n)?'#fff':'#94a3b8'}">${o.n}</text>`);
+  h+=`<text x="${X1+4}" y="${yS-10}" font-size="10.5" fill="#94a3b8">← söderut</text><text x="${X16-4}" y="${yN+19}" font-size="10.5" fill="#94a3b8" text-anchor="end">norrut →</text></svg>`;
+  return h;
+}
+function visaEfterhand(ny){
+  oppenMark=null;
+  if(ny){const d=new Date(); EF.tid=String(d.getHours()).padStart(2,'0')+':'+String(Math.floor(d.getMinutes()/5)*5).padStart(2,'0'); EF.dag=0;}
+  const chip=(grupp,v,txt,pa)=>`<button data-${grupp}="${v}" class="${pa?'pa':''}">${txt}</button>`;
+  const brunnVal=(nam,v)=>`<select data-sel="${nam}" aria-label="${nam==='fran'?'Från brunn':'Till brunn'}">${Array.from({length:19},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===v?'selected':''}>Brunn ${n}${n===1?' · slingan':OGLA(n)?' · öglan':''}</option>`).join('')}</select>`;
+  oppnaArk(`<div class="arkhuv"><div><b>Skriv in i efterhand</b><small>Om GPS:en inte var igång. Det senaste gäller alltid.</small></div><button class="stang" aria-label="Stäng">✕</button></div>
+    <div class="ef">
+      <div class="eflbl">Vad gjorde du?</div>
+      <div class="snabb">${['spara','pista','schakta'].map(k=>chip('upp',k,UPPDRAG[k].namn,EF.upp===k)).join('')}</div>
+      ${EF.upp==='spara'?`<div class="snabb">${chip('spar','klassiskt','Klassiskt',EF.klassiskt)}${chip('spar','skejt','Skejt',EF.skejt)}</div>`:''}
+      <div class="eflbl">Var?</div>
+      <div class="snabb">${chip('var','hela','Hela spåret',EF.var==='hela')}${chip('var','del','Från brunn … till brunn …',EF.var==='del')}</div>
+      ${EF.var==='del'?`<div class="efrad">${brunnVal('fran',EF.fran)}<span>till</span>${brunnVal('till',EF.till)}</div>
+        <div class="snabb">${chip('sidor','bada','Båda hållen',EF.sidor==='bada')}${chip('sidor','soder','Bara söderut',EF.sidor==='soder')}${chip('sidor','norr','Bara norrut',EF.sidor==='norr')}</div>`:''}
+      <div id="efskiss"></div>
+      <div class="eflbl">Ungefär när var det klart?</div>
+      <div class="efrad">${chip('dag',0,'I dag',EF.dag===0)}${chip('dag',1,'I går',EF.dag===1)}<input type="time" step="300" value="${EF.tid}" aria-label="Klockslag"></div>
+      <div id="efsumma" class="efsumma"></div>
+    </div>
+    <div class="arkknappar"><button class="avbryt">Avbryt</button><button class="huvud spara">Spara</button></div>`);
+  arkIn.querySelector('.stang').addEventListener('click',stangArk);
+  arkIn.querySelector('.avbryt').addEventListener('click',stangArk);
+  const satt=(k,v)=>{EF[k]=v;visaEfterhand(false);};
+  arkIn.querySelectorAll('[data-upp]').forEach(b=>b.addEventListener('click',()=>satt('upp',b.dataset.upp)));
+  arkIn.querySelectorAll('[data-spar]').forEach(b=>b.addEventListener('click',()=>satt(b.dataset.spar,!EF[b.dataset.spar])));
+  arkIn.querySelectorAll('[data-var]').forEach(b=>b.addEventListener('click',()=>satt('var',b.dataset.var)));
+  arkIn.querySelectorAll('[data-sidor]').forEach(b=>b.addEventListener('click',()=>satt('sidor',b.dataset.sidor)));
+  arkIn.querySelectorAll('[data-dag]').forEach(b=>b.addEventListener('click',()=>satt('dag',+b.dataset.dag)));
+  arkIn.querySelectorAll('[data-sel]').forEach(s=>s.addEventListener('change',()=>satt(s.dataset.sel,+s.value)));
+  const tid=arkIn.querySelector('input[type=time]');
+  tid.addEventListener('input',()=>{EF.tid=tid.value;efterhandSumma();});
+  arkIn.querySelector('.spara').addEventListener('click',sparaEfterhand);
+  efterhandSumma();
+}
+// Det som skulle sparas, och allt som gör att det inte går eller bör
+// kontrolleras. Spara-knappen går bara att trycka på när det är rätt.
+function efterhandKontroll(){
+  const bitar=efterhandBitar(EF), t=efterhandTid(), U=UPPDRAG[EF.upp];
+  const langd=bitar.reduce((s,[a,b])=>s+b-a,0);
+  let fel='';
+  if(!EF.tid)fel='Välj ett klockslag.';
+  else if(t>Date.now()+60e3)fel='Klockslaget har inte varit än'+(EF.dag?'':' i dag')+'.';
+  else if(EF.upp==='spara'&&!EF.klassiskt&&!EF.skejt)fel='Välj klassiskt, skejt eller båda.';
+  else if(!bitar.length)fel='Välj två olika brunnar, eller brunn 1 för bara vändslingan.';
+  // Hur mycket av sträckan som redan har något senare.
+  let senare=0;
+  for(const [a,b] of bitar)for(let i=Math.floor(a/DS);i*DS<b-1e-9;i++){const p=PREP[((i%N)+N)%N];if(p&&p.t>t)senare+=DS;}
+  return {bitar,t,U,langd,fel,senare};
+}
+function efterhandSumma(){
+  const k=efterhandKontroll(), el=document.getElementById('efsumma'); if(!el)return;
+  document.getElementById('efskiss').innerHTML=efterhandSkiss(EF,k.U.farg);
+  visaForhand(k.bitar);
+  const spar=EF.upp==='spara'?' ('+[EF.klassiskt&&'klassiskt',EF.skejt&&'skejt'].filter(Boolean).join(' och ')+')':'';
+  el.innerHTML=k.fel?`<b class="feltext">${k.fel}</b>`
+    :`<b>${k.U.verb}${spar} ${fmt(k.langd/1000,1)} km</b><span>${esc(efterhandBesk(EF))}, ${klockslag(k.t)}</span>`
+     +(k.senare>=DS?`<span class="obs">På ${k.senare<1000?Math.round(k.senare/10)*10+' m':fmt(k.senare/1000,1)+' km'} av sträckan finns något senare. Där gäller det senare.</span>`:'')
+     +(Date.now()-k.t>24*3600e3?`<span class="obs">Det är mer än ett dygn sedan. Stämmer dagen?</span>`:'');
+  arkIn.querySelector('.spara').disabled=!!k.fel;
+}
+function sparaEfterhand(){
+  const k=efterhandKontroll(); if(k.fel)return;
+  const p={id:'e'+Date.now().toString(36), upp:EF.upp, start:k.t, slut:k.t, meter:Math.round(k.langd),
+    besk:efterhandBesk(EF), fran:'', till:'', kalla:'efterhand', skrivet:Date.now(),
+    bitar:k.bitar.map(([a,b])=>[+a.toFixed(1),+b.toFixed(1),k.t])};
+  if(EF.upp==='spara')p.spar=[EF.klassiskt&&'klassiskt',EF.skejt&&'skejt'].filter(Boolean);
+  sparaJson(PASSLAGRING,[...lasJson(PASSLAGRING,[]),p]);
+  byggPrep(); stangArk();
+  visaToast('Sparat: '+k.U.verb.toLowerCase()+' '+klockslag(k.t)+', '+fmt(k.langd/1000,1)+' km');
+}
+
+/* ==========================================================================
+   MEDDELANDE TILL GÄSTERNA
+   --------------------------------------------------------------------------
+   En fri text som står överst på gästsidan (förslag 4), till exempel att
+   spåret är stängt för snötillverkning eller att det bjuds på fika. Den
+   gäller till ett visst datum och försvinner sedan av sig själv, så att
+   gamla besked inte blir stående. På gästsidan står "från snögruppen",
+   aldrig förarens namn. I prototypen sparas den bara i den här webbläsaren;
+   riktigt i /publikt/meddelande, som bara snögruppen får skriva.
+   ========================================================================== */
+const MEDDLAGRING='snokollPist2Meddelande', MEDD_MAX=240;
+const MEDD_SNABB=['Stängt för snötillverkning','Fika vid starten på lördag','Nyspårat i kväll','Akta pistmaskinen, vi kör nu'];
+const lasMedd=()=>{const m=lasJson(MEDDLAGRING,null);return m&&m.text&&(!m.till||m.till>Date.now())?m:null;};
+const slutPaDagen=dagar=>{const d=new Date();d.setDate(d.getDate()+dagar);d.setHours(23,59,59,0);return d.getTime();};
+const MEDD_TILL={idag:['I dag',()=>slutPaDagen(0)], imorgon:['Till i morgon',()=>slutPaDagen(1)], vecka:['En vecka',()=>slutPaDagen(7)], tills:['Tills jag tar bort det',()=>null]};
+let meddTill='imorgon';
+function visaMeddelande(){
+  oppenMark=null;
+  const m=lasMedd();
+  oppnaArk(`<div class="arkhuv"><div><b>Meddelande till gästerna</b><small>Står överst på gästsidan, "från snögruppen".${m?' Ett meddelande visas nu.':''}</small></div><button class="stang" aria-label="Stäng">✕</button></div>
+    <button class="tala">${IK.mikrofon}<span>Tala in meddelandet</span></button>
+    <textarea id="meddtext" rows="3" maxlength="${MEDD_MAX}" placeholder="Till exempel: Fika vid starten på lördag kl. 10–12!">${esc(m?m.text:'')}</textarea>
+    <div class="meddrakna" id="meddrakna"></div>
+    <div class="snabb">${MEDD_SNABB.map(s=>`<button data-t="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+    <div class="taltips" id="taltips"></div>
+    <div class="ef"><div class="eflbl">Hur länge ska det synas?</div>
+      <div class="snabb">${Object.entries(MEDD_TILL).map(([k,[t]])=>`<button data-till="${k}" class="${k===meddTill?'pa':''}">${t}</button>`).join('')}</div></div>
+    <p class="arktips">Allt här syns för alla som öppnar gästsidan. Skriv inget som inte får stå där.</p>
+    <div class="arkknappar">${m?'<button class="farlig tabortmedd">Ta bort</button>':'<button class="avbryt">Avbryt</button>'}<button class="huvud publicera">${m?'Uppdatera':'Publicera'}</button></div>`);
+  const ta=arkIn.querySelector('#meddtext'), rakna=arkIn.querySelector('#meddrakna'), tala=arkIn.querySelector('.tala'), pub=arkIn.querySelector('.publicera');
+  const uppdatera=()=>{const n=ta.value.trim().length; rakna.textContent=n?`${n} av ${MEDD_MAX} tecken`:''; pub.disabled=!n;};
+  ta.addEventListener('input',uppdatera); uppdatera();
+  tala.addEventListener('click',()=>talaIn(ta,arkIn.querySelector('#taltips'),tala));
+  arkIn.querySelectorAll('[data-t]').forEach(b=>b.addEventListener('click',()=>{ta.value=(ta.value.trim()?ta.value.trim()+' ':'')+b.dataset.t;uppdatera();}));
+  arkIn.querySelectorAll('[data-till]').forEach(b=>b.addEventListener('click',()=>{meddTill=b.dataset.till;arkIn.querySelectorAll('[data-till]').forEach(x=>x.classList.toggle('pa',x===b));}));
+  arkIn.querySelector('.stang').addEventListener('click',stangArk);
+  const av=arkIn.querySelector('.avbryt'); if(av)av.addEventListener('click',stangArk);
+  const tb=arkIn.querySelector('.tabortmedd');
+  if(tb)tb.addEventListener('click',()=>{try{localStorage.removeItem(MEDDLAGRING)}catch(e){} stangArk(); visaToast('Meddelandet är borttaget från gästsidan');});
+  pub.addEventListener('click',()=>{
+    const text=ta.value.trim().slice(0,MEDD_MAX); if(!text)return;
+    sparaJson(MEDDLAGRING,{text, t:Date.now(), till:MEDD_TILL[meddTill][1]()});
+    stangArk(); visaToast('Publicerat på gästsidan');
+  });
 }
 document.getElementById('uppknapp').addEventListener('click',()=>visaUppdrag(false));
 

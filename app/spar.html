@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spårläget — förslag 4</title>
+<meta name="description" content="När Sparbanksspåret spårades senast, hur mycket snö det ligger och vad som är öppet.">
+<meta name="theme-color" content="#071226">
+<link rel="icon" href="./kanon-192.png">
+<!--
+  GÄSTSIDAN, FÖRSLAG 4 (28 november 2026)
+
+  En sida för klubbens hemsida: när spåret spårades senast (det gästerna
+  frågar mest efter), hur långt som är öppet, snödjupet och vädret. Överst
+  en tecknad vinterbild i 3D av Sparbanksspåret, där spåret lyser starkare ju
+  färskare det är. Ett tryck på "Se senaste spårningen" spelar upp den: den
+  röda pistmaskinen kör sträckan och spåret blir nytt bakom den.
+
+  PÅHITTAT: alla spårningar, det stängda partiet, snödjupet, vädret,
+  delarnas namn och sponsorerna. Granarna och marken är tecknade, inte
+  inmätta. RIKTIGT: spåret och brunnarna (samma kopior som i förslag 2).
+  Har man skrivit in eller kört ett pass i förslag 2 i samma webbläsare
+  kommer det med här, så att kedjan från förare till gäst går att prova.
+
+  Sidan loggar inte in och skriver ingenting någonstans. Den läser bara.
+
+  Varför en tecknad bild och inte flygbilden: den blir snyggare och mer
+  vintrig, och Esris flygbild kräver troligen konto och licens på en publik
+  sida med sponsorer (inte kontrollerat).
+
+  INKOPPLINGEN SENARE (inte gjord, kräver Kristians beslut)
+  - Allt här är publikt, så det kan inte läsas ur Snökolls data, som bara
+    medlemmar får läsa. Förslaget är en egen liten del i Realtime Database,
+    /publikt, som alla får läsa men bara snögruppen skriva. Den innehåller
+    bara det som står på sidan: spårat när och var, stängda partier, snö-
+    djupet med datum och vädret. Inget från styrsystemet, inga namn och
+    ingen maskin i realtid. Ungefär:
+      /publikt/sparat/{id}   {typ, spar:[klassiskt, skejt], bitar:[[från, till, när]], kalla}
+      /publikt/stangt/{id}   {bitar:[[från, till]], text}
+      /publikt/djup          {t, delar:{norr:[min,max], …}}
+      /publikt/vader         {t, luft, text}
+      /publikt/meddelande    {text, t, till}   (fri text från snögruppen)
+    Det är ett undantag från regeln att bara inloggade läser. Kristian sade
+    ja till det 28 november: då beror sidan inte av klubbens hemsida eller
+    någon annan för att hålla sig uppdaterad, och den kan länkas från
+    klubbens Facebooksida.
+  - Spårningarna kommer från förarvyn: när uppdraget är Spåra, och från
+    "Skriv in i efterhand" när GPS:en inte var igång.
+  - Snödjupet från den senaste mätningen, oavsett fordon (pistmaskinen,
+    en skoter med pucken eller till fots).
+  - Vädret ur prognosen, som i Snöprognos.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#071226; --bg2:#0b1a33; --kort:#0f203bd9; --kant:#ffffff1c; --kant2:#ffffff30;
+  --text:#f1f6ff; --dov:#a9bbd6; --dov2:#7f95b6;
+  --farsk:#22d3ee; --igar:#60a5fa; --aldre:#94a3b8; --pistat:#bae6fd; --schakt:#fbbf24; --stangt:#f0778a;
+  --num:"Barlow Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+  /* Himlen sätts efter solens höjd just nu, i skriptet. */
+  --himmel1:#8fb9e8; --himmel2:#e6eef8;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:Barlow,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{min-height:100vh}
+button{font:inherit;color:inherit}
+a{color:#bae6fd}
+
+/* ---------- bilden överst ---------- */
+.hero{position:relative;height:min(64vh,620px);min-height:420px;overflow:hidden;
+  background:linear-gradient(180deg,var(--himmel1) 0%,var(--himmel2) 62%);transition:background 1s}
+.hero.natt{background-image:var(--stjarnor),linear-gradient(180deg,var(--himmel1) 0%,var(--himmel2) 70%)}
+#scen{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab}
+#scen:active{cursor:grabbing}
+#sno{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:110px;pointer-events:none;
+  background:linear-gradient(180deg,transparent,var(--bg))}
+.topp{position:absolute;top:0;left:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+  padding:max(14px,env(safe-area-inset-top)) 16px 0;z-index:3;pointer-events:none}
+.klubb{display:flex;flex-direction:column;padding:10px 14px 11px;border-radius:16px;background:#071226a8;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--kant)}
+.klubb span{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dov);font-weight:700}
+.klubb b{font-size:1.5rem;font-weight:800;letter-spacing:-.01em;line-height:1.1;margin-top:2px}
+.klubb small{color:var(--dov);font-size:.86rem}
+.proto{font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:6px 10px;border-radius:999px;
+  background:#422006e6;border:1px solid #f59e0b88;color:#fde68a;white-space:nowrap}
+.kontroller{position:absolute;right:14px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:3}
+.kontroller button{width:42px;height:42px;border-radius:13px;border:1px solid var(--kant2);background:#071226b3;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);font-size:1.25rem;font-weight:700;cursor:pointer;display:grid;place-items:center}
+.nere{position:absolute;left:0;right:0;bottom:54px;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:3;pointer-events:none}
+.spela{pointer-events:auto;display:inline-flex;align-items:center;gap:10px;height:52px;padding:0 22px 0 16px;border-radius:999px;cursor:pointer;
+  border:1px solid #a5f3fc;background:linear-gradient(180deg,#e0fbffee,#a5f3fcee);color:#062033;font-weight:800;font-size:1.02rem;
+  box-shadow:0 6px 30px #22d3ee66,0 0 0 6px #22d3ee22;animation:puls 2.6s ease-in-out infinite}
+.spela svg{flex:0 0 auto}
+@keyframes puls{50%{box-shadow:0 6px 34px #22d3ee88,0 0 0 11px #22d3ee11}}
+.tips{font-size:.8rem;color:#e2e8f0;text-shadow:0 1px 6px #0009;font-weight:600}
+.etikett{position:absolute;left:0;top:0;z-index:2;pointer-events:none;white-space:nowrap;font-size:.76rem;font-weight:700;
+  padding:4px 9px;border-radius:999px;background:#071226c9;border:1px solid var(--kant2);color:#e2e8f0;transform:translate(-50%,-100%);
+  transition:opacity .3s}
+.etikett.stangd{border-color:#f0778a99;color:#fecdd3}
+.etikett.start{background:#e0fbffe6;color:#062033;border-color:#fff}
+.bubbla{position:absolute;z-index:4;max-width:250px;padding:10px 13px;border-radius:14px;background:#071226f0;border:1px solid var(--kant2);
+  font-size:.88rem;line-height:1.35;transform:translate(-50%,calc(-100% - 14px));pointer-events:none;box-shadow:0 8px 30px #0008}
+.bubbla b{display:block;font-size:.95rem}
+.bubbla span{color:var(--dov)}
+.replay{position:absolute;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);z-index:5;width:min(440px,calc(100% - 28px));
+  padding:12px 14px;border-radius:18px;background:#071226e6;border:1px solid var(--kant2);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.replay .rad1{display:flex;align-items:center;gap:10px}
+.replay b{font-size:1.02rem}
+.replay small{display:block;color:var(--dov);font-size:.84rem;margin-top:1px}
+.replay button{margin-left:auto;height:38px;padding:0 13px;border-radius:11px;border:1px solid var(--kant2);background:#ffffff12;font-weight:700;cursor:pointer;flex:0 0 auto}
+.replay .stapel{height:5px;border-radius:9px;background:#ffffff1c;margin-top:10px;overflow:hidden}
+.replay .stapel i{display:block;height:100%;width:0;background:linear-gradient(90deg,#22d3ee,#a5f3fc);border-radius:9px}
+.ingen3d{position:absolute;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#334155;font-weight:600;z-index:1}
+.hero.spelar .nere,.hero.spelar .kontroller,.hero.spelar .topp{opacity:0;pointer-events:none}
+.hero .nere,.hero .kontroller,.hero .topp{transition:opacity .3s}
+
+/* ---------- innehållet ---------- */
+main{position:relative;z-index:2;max-width:1040px;margin:-44px auto 0;padding:0 16px 40px;display:grid;gap:14px}
+.kort{background:var(--kort);border:1px solid var(--kant);border-radius:22px;padding:18px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.kort h2{margin:0 0 12px;font-size:.78rem;letter-spacing:.11em;text-transform:uppercase;color:var(--dov);font-weight:800}
+.meddelande{display:grid;grid-template-columns:46px 1fr;gap:14px;align-items:start;
+  background:linear-gradient(135deg,#1c2f52f0,#0f203bf0);border-color:#fde68a55;box-shadow:0 0 0 1px #fde68a22 inset}
+.meddelande .megafon{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:#fde68a;color:#422006}
+.meddelande b{display:block;font-size:.76rem;letter-spacing:.1em;text-transform:uppercase;color:#fde68a;font-weight:800}
+.meddelande p{margin:4px 0 0;font-size:1.12rem;line-height:1.4;font-weight:600;overflow-wrap:anywhere}
+.meddelande small{display:block;color:var(--dov);font-size:.82rem;margin-top:6px}
+.lage .status{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--dov);font-size:.95rem}
+.prick{width:10px;height:10px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px #34d39933;flex:0 0 auto}
+.prick.gul{background:#fbbf24;box-shadow:0 0 0 4px #fbbf2433}
+.prick.gra{background:#94a3b8;box-shadow:0 0 0 4px #94a3b833}
+.senast{margin:8px 0 4px;font-size:clamp(2rem,8.5vw,3.1rem);line-height:1.02;font-weight:800;letter-spacing:-.02em}
+.senast em{font-style:normal;color:#a5f3fc}
+.not{color:var(--dov);font-size:.92rem;margin:4px 0 0;line-height:1.4}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border-radius:999px;font-weight:700;font-size:.95rem;
+  border:1px solid var(--kant2);background:#ffffff0d}
+.chip.ja{border-color:#22d3ee77;background:#22d3ee1f;color:#cffafe}
+.chip.delvis{border-color:#fbbf2477;background:#fbbf241a;color:#fde68a}
+.chip.nej{color:var(--dov2);text-decoration:line-through}
+.rutor{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px}
+.ruta{padding:11px 11px 12px;border-radius:16px;background:#ffffff0a;border:1px solid var(--kant);min-width:0}
+.ruta small{display:block;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--dov2);font-weight:800}
+.ruta b{display:block;font-family:var(--num);font-size:1.75rem;font-weight:700;line-height:1.05;margin-top:5px;white-space:nowrap}
+.ruta span{display:block;color:var(--dov);font-size:.8rem;margin-top:2px;line-height:1.3}
+.stangtrad{display:flex;gap:10px;align-items:flex-start;margin-top:12px;padding:11px 13px;border-radius:14px;background:#4c0519a6;border:1px solid #f0778a55;color:#fecdd3;font-size:.92rem;line-height:1.4}
+.presenteras{display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:13px;border-top:1px solid var(--kant);color:var(--dov);font-size:.86rem}
+.logga{display:inline-grid;place-items:center;height:40px;padding:0 16px;border-radius:11px;border:1.5px dashed #ffffff40;color:#e2e8f0;font-weight:800;
+  letter-spacing:.02em;font-size:.86rem;white-space:nowrap}
+.forklaring{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:.8rem;color:var(--dov)}
+.forklaring i{display:inline-block;width:18px;height:6px;border-radius:4px;margin-right:6px;vertical-align:middle}
+.uppdaterad{font-size:.78rem;color:var(--dov2);margin-top:10px}
+
+.delar{display:flex;flex-direction:column;gap:8px}
+.del{display:grid;grid-template-columns:12px 1fr auto;gap:12px;align-items:center;padding:11px 13px;border-radius:15px;background:#ffffff08;border:1px solid var(--kant)}
+.del .farg{width:12px;height:38px;border-radius:6px}
+.del b{display:block;font-size:1rem}
+.del small{display:block;color:var(--dov);font-size:.84rem;margin-top:1px}
+.del .djup{font-family:var(--num);font-weight:700;font-size:1.2rem;color:#e2e8f0;text-align:right;white-space:nowrap}
+.del .djup span{display:block;font-family:Barlow,system-ui,sans-serif;font-size:.68rem;color:var(--dov2);font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+
+.vecka{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.dag{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 2px 9px;border-radius:14px;background:#ffffff08;border:1px solid var(--kant);min-width:0}
+.dag .ik{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:#ffffff0d;color:var(--dov2)}
+.dag.spar .ik{background:#22d3ee26;color:#a5f3fc}
+.dag.pist .ik{background:#bae6fd1f;color:#e0f2fe}
+.dag b{font-size:.78rem;color:var(--dov);font-weight:700}
+.dag.idag b{color:#fff}
+.dag small{font-family:var(--num);font-size:.92rem;color:#e2e8f0;font-weight:600;min-height:1.1em}
+.veckanot{color:var(--dov);font-size:.86rem;margin:10px 2px 0}
+
+.sponsorer{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sponsor{height:66px;border-radius:14px;display:grid;place-items:center;text-align:center;border:1.5px dashed #ffffff33;color:#cbd5e1;
+  font-weight:800;font-size:.8rem;letter-spacing:.03em;background:#ffffff06;padding:0 8px}
+.sponsortext{color:var(--dov);font-size:.88rem;margin:12px 2px 0;line-height:1.45}
+footer{color:var(--dov2);font-size:.84rem;line-height:1.55;padding:4px 4px 0}
+footer b{color:var(--dov)}
+
+@media (min-width:900px){
+  .hero{height:min(70vh,700px)}
+  main{grid-template-columns:1.25fr 1fr;align-items:start}
+  .lage{grid-row:span 2}
+  .helbredd{grid-column:1/-1}
+  .sponsorer{grid-template-columns:repeat(6,1fr)}
+}
+@media (max-width:380px){ .ruta b{font-size:1.45rem} .rutor{gap:7px} .ruta{padding:9px 8px 10px} }
+@media (prefers-reduced-motion:reduce){ .spela{animation:none} }
+</style>
+</head>
+<body>
+<header class="hero" id="hero">
+  <canvas id="scen" aria-label="Tecknad vinterbild av Sparbanksspåret. Spåret lyser starkare ju nyare spårningen är."></canvas>
+  <canvas id="sno" aria-hidden="true"></canvas>
+  <div id="etiketter"></div>
+  <div class="topp">
+    <div class="klubb"><span>Lidköpings Vintersportklubb</span><b>Spårläget</b><small>Sparbanksspåret</small></div>
+    <span class="proto">Förslag 4 · påhittad data</span>
+  </div>
+  <div class="kontroller" id="kontroller" hidden>
+    <button id="narmare" aria-label="Närmare">+</button>
+    <button id="langre" aria-label="Längre bort">−</button>
+    <button id="aterstall" aria-label="Visa hela spåret"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+  </div>
+  <div class="nere" id="nere" hidden>
+    <button class="spela" id="spela"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#062033"/><path d="M10 8l6 4-6 4z" fill="#a5f3fc"/></svg><span>Se senaste spårningen</span></button>
+    <span class="tips">Dra åt sidan för att vrida · tryck på spåret</span>
+  </div>
+  <div class="replay" id="replay" hidden>
+    <div class="rad1"><div><b id="rp-titel"></b><small id="rp-text"></small></div><button id="rp-hoppa">Hoppa över</button></div>
+    <div class="stapel"><i id="rp-stapel"></i></div>
+  </div>
+  <div class="bubbla" id="bubbla" hidden></div>
+  <div class="ingen3d" id="ingen3d" hidden>Bilden kunde inte visas här. Allt om spåret står nedanför.</div>
+</header>
+
+<main>
+  <section class="kort meddelande helbredd" id="meddelande" hidden></section>
+  <section class="kort lage" id="lage" aria-live="polite"></section>
+  <section class="kort">
+    <h2>Delar av spåret</h2>
+    <div class="delar" id="delar"></div>
+  </section>
+  <section class="kort">
+    <h2>Senaste veckan</h2>
+    <div class="vecka" id="vecka"></div>
+    <p class="veckanot" id="veckanot"></p>
+  </section>
+  <section class="kort helbredd">
+    <h2>Spåret görs möjligt av</h2>
+    <div class="sponsorer" id="sponsorer"></div>
+    <p class="sponsortext">Snön görs och spåren dras av ideella i snögruppen. Vill ditt företag synas här och hjälpa till? Hör av dig till klubben.
+      Sidan har inga kakor och följer inte besökarna, så det behövs ingen kakruta.</p>
+  </section>
+  <footer class="helbredd" id="fot"></footer>
+</main>
+
+<script type="module">
+'use strict';
+/* ==========================================================================
+   SPÅRET OCH BRUNNARNA — samma kopior ur Snöprognos som i förslag 2.
+   Punkterna går motsols, och varvet börjar vid brunn 14.
+   ========================================================================== */
+const SPAR_PTS = [
+  [58.506815,13.086985],[58.50682,13.086814],[58.506818,13.086712],[58.506808,13.086593],
+  [58.506789,13.086479],[58.506763,13.08637],[58.506738,13.086299],[58.5067,13.086228],
+  [58.506647,13.086163],[58.506591,13.086108],[58.506532,13.086067],[58.506462,13.086039],
+  [58.50639,13.086027],[58.506265,13.086034],[58.506143,13.086067],[58.506075,13.0861],
+  [58.506007,13.086099],[58.505948,13.086136],[58.505812,13.086268],[58.505727,13.086391],
+  [58.505681,13.086485],[58.505647,13.086518],[58.505622,13.086555],[58.505387,13.086927],
+  [58.505328,13.087004],[58.505272,13.087059],[58.50514,13.087166],[58.505089,13.087199],
+  [58.504729,13.087348],[58.504538,13.087444],[58.504445,13.087504],[58.504305,13.087623],
+  [58.503995,13.087849],[58.503782,13.087986],[58.503686,13.088022],[58.503578,13.088036],
+  [58.503444,13.088031],[58.503346,13.088003],[58.503278,13.087957],[58.503164,13.087859],
+  [58.50281,13.087488],[58.502675,13.087395],[58.502622,13.08738],[58.502577,13.087383],
+  [58.502507,13.087412],[58.502422,13.087464],[58.502268,13.087603],[58.502052,13.087881],
+  [58.501905,13.088132],[58.50185,13.08819],[58.501775,13.088245],[58.501723,13.088266],
+  [58.50166,13.08826],[58.501545,13.088226],[58.501387,13.088161],[58.50121,13.088108],
+  [58.501147,13.088109],[58.501013,13.08814],[58.500892,13.088198],[58.500629,13.088376],
+  [58.500514,13.088469],[58.500476,13.088513],[58.50039,13.088573],[58.500299,13.088664],
+  [58.500261,13.088719],[58.5002,13.088763],[58.500121,13.088791],[58.499914,13.088801],
+  [58.49987,13.08881],[58.499835,13.088827],[58.499813,13.088852],[58.499792,13.088904],
+  [58.499781,13.088969],[58.499781,13.089036],[58.499789,13.089084],[58.499808,13.08914],
+  [58.499878,13.089243],[58.499912,13.089266],[58.499956,13.089279],[58.499992,13.089278],
+  [58.500027,13.089264],[58.500051,13.089244],[58.500073,13.089215],[58.500128,13.089077],
+  [58.500171,13.088996],[58.500219,13.088921],[58.500318,13.088799],[58.500458,13.088658],
+  [58.50055,13.088586],[58.500645,13.088489],[58.500703,13.088443],[58.50078,13.088396],
+  [58.500867,13.088356],[58.501013,13.088268],[58.501126,13.088218],[58.501215,13.088198],
+  [58.501367,13.088214],[58.501439,13.088233],[58.501605,13.0883],[58.501695,13.088318],
+  [58.501793,13.088313],[58.501873,13.088287],[58.501914,13.088255],[58.501959,13.088199],
+  [58.502,13.088132],[58.502095,13.08795],[58.502168,13.087851],[58.502418,13.087581],
+  [58.50251,13.087513],[58.502579,13.087478],[58.502624,13.087478],[58.502668,13.087491],
+  [58.50283,13.087589],[58.502903,13.087658],[58.503014,13.087801],[58.503126,13.087911],
+  [58.503256,13.088027],[58.503375,13.088107],[58.503454,13.088138],[58.503534,13.088151],
+  [58.503623,13.088136],[58.503729,13.0881],[58.503816,13.088054],[58.504079,13.087881],
+  [58.504237,13.087761],[58.504359,13.087651],[58.50441,13.087615],[58.504582,13.087521],
+  [58.504975,13.087367],[58.50501,13.087359],[58.505159,13.087266],[58.505282,13.087164],
+  [58.505386,13.087062],[58.505448,13.086993],[58.505637,13.086732],[58.50572,13.086602],
+  [58.505747,13.086543],[58.505783,13.086505],[58.505895,13.08636],[58.505958,13.086295],
+  [58.506059,13.086224],[58.506226,13.086161],[58.506369,13.086129],[58.506431,13.086132],
+  [58.506545,13.086174],[58.506587,13.086207],[58.506625,13.086251],[58.506682,13.086335],
+  [58.506713,13.086395],[58.50675,13.086493],[58.506775,13.086584],[58.506792,13.086699],
+  [58.506801,13.086938],[58.506798,13.08704],[58.506774,13.087276],[58.506776,13.087361],
+  [58.506785,13.087497],[58.506798,13.087614],[58.506816,13.087729],[58.506912,13.088191],
+  [58.506929,13.088325],[58.506937,13.088444],[58.506939,13.088615],[58.506934,13.088734],
+  [58.506922,13.088835],[58.506898,13.088963],[58.506852,13.08915],[58.50681,13.089281],
+  [58.506625,13.089655],[58.506595,13.08974],[58.506575,13.089835],[58.506563,13.089935],
+  [58.506563,13.090037],[58.506571,13.090139],[58.506596,13.090285],[58.506632,13.090404],
+  [58.506676,13.090511],[58.506737,13.090613],[58.506799,13.090682],[58.506866,13.090727],
+  [58.506919,13.090742],[58.506982,13.090732],[58.507041,13.090709],[58.507154,13.09061],
+  [58.507219,13.090517],[58.5073,13.090384],[58.507387,13.090286],[58.507484,13.090132],
+  [58.507528,13.090023],[58.507547,13.089947],[58.507554,13.089863],[58.507554,13.089709],
+  [58.507545,13.089626],[58.507529,13.089566],[58.5075,13.089502],[58.507456,13.089443],
+  [58.507423,13.089415],[58.507371,13.08939],[58.507238,13.089361],[58.507168,13.089331],
+  [58.507121,13.089283],[58.507095,13.089216],[58.507061,13.089039],[58.507017,13.08885],
+  [58.506985,13.088602],[58.506968,13.08833],[58.506949,13.088145],[58.506902,13.08785],
+  [58.506848,13.087577],[58.50683,13.087462],[58.50681,13.087191],[58.506815,13.086985]
+];
+const BRUNNAR = [
+  {no:1,lat:58.5000251,lon:13.0888591},{no:2,lat:58.5007883,lon:13.0884306},
+  {no:3,lat:58.501446,lon:13.0883199},{no:4,lat:58.5020553,lon:13.0881364},
+  {no:5,lat:58.5026144,lon:13.0875538},{no:6,lat:58.5031421,lon:13.0880276},
+  {no:7,lat:58.5037755,lon:13.0879116,station:true},{no:8,lat:58.5042417,lon:13.0878237},
+  {no:9,lat:58.504721,lon:13.0875332},{no:10,lat:58.5052341,lon:13.0873162},
+  {no:11,lat:58.5056589,lon:13.086779},{no:12,lat:58.5060168,lon:13.0862999},
+  {no:13,lat:58.5066904,lon:13.086078},{no:14,lat:58.5068476,lon:13.0871011},
+  {no:15,lat:58.5070145,lon:13.0881917},{no:16,lat:58.5069455,lon:13.089078},
+  {no:17,lat:58.506789,lon:13.0903636},{no:18,lat:58.5070813,lon:13.0904723},
+  {no:19,lat:58.5074957,lon:13.0896091},{no:20,lat:58.50341,lon:13.086911,spare:true},
+];
+
+const ORIGO = {lat:58.503781, lon:13.087922};
+const MLAT = (()=>{const p=ORIGO.lat*Math.PI/180;return 111132.92-559.82*Math.cos(2*p)+1.175*Math.cos(4*p)})();
+const MLON = (()=>{const p=ORIGO.lat*Math.PI/180;return 111412.84*Math.cos(p)-93.5*Math.cos(3*p)})();
+const tillXY = (lat,lon)=>[(lon-ORIGO.lon)*MLON,(lat-ORIGO.lat)*MLAT];
+const P = SPAR_PTS.map(p=>tillXY(p[0],p[1]));
+const CUM = [0];
+for(let i=1;i<P.length;i++) CUM.push(CUM[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));
+const L = CUM[CUM.length-1];
+const mod = s=>((s%L)+L)%L;
+function punkt(s){
+  s=mod(s); let lo=0, hi=CUM.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1; if(CUM[m]<=s)lo=m; else hi=m;}
+  const t=(s-CUM[lo])/((CUM[hi]-CUM[lo])||1);
+  return [P[lo][0]+t*(P[hi][0]-P[lo][0]), P[lo][1]+t*(P[hi][1]-P[lo][1])];
+}
+function passager(x,y,maxd){
+  const d=[], s=[];
+  for(let i=0;i<P.length-1;i++){
+    const a=P[i], b=P[i+1], dx=b[0]-a[0], dy=b[1]-a[1];
+    let t=((x-a[0])*dx+(y-a[1])*dy)/(dx*dx+dy*dy||1); t=Math.max(0,Math.min(1,t));
+    d.push(Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy)); s.push(CUM[i]+t*Math.hypot(dx,dy));
+  }
+  let ut=[];
+  for(let i=0;i<d.length;i++){
+    if(d[i]>maxd)continue;
+    if(i>0&&d[i]>d[i-1])continue;
+    if(i<d.length-1&&d[i]>d[i+1])continue;
+    ut.push({s:mod(s[i]),d:d[i]});
+  }
+  ut.sort((a,b)=>a.s-b.s);
+  const slut=[];
+  for(const p of ut){const f=slut[slut.length-1]; if(f&&p.s-f.s<20){if(p.d<f.d)slut[slut.length-1]=p;continue;} slut.push(p);}
+  if(slut.length>1&&slut[0].s+L-slut[slut.length-1].s<20){const a=slut.shift(), b=slut.pop(); slut.push(a.d<b.d?a:b);}
+  return slut.sort((a,b)=>a.s-b.s);
+}
+BRUNNAR.forEach(b=>{[b.x,b.y]=tillXY(b.lat,b.lon); b.pass=b.spare?[]:passager(b.x,b.y,18);});
+const brunn = no=>BRUNNAR.find(b=>b.no===no);
+// Var brunnarna 1–16 passeras: n = körfältet norrut, s = körfältet söderut
+// (samma uträkning som "Skriv in i efterhand" i förslag 2).
+const AXEL = (()=>{
+  const b1=brunn(1).pass.map(p=>p.s).sort((a,b)=>a-b), b16=brunn(16).pass.map(p=>p.s).sort((a,b)=>a-b);
+  const lo=b1[b1.length-1], hi=b16[0], ax={};
+  for(let n=1;n<=16;n++){const ps=brunn(n).pass.map(p=>p.s), nb=ps.find(s=>s>=lo-1&&s<=hi+1); ax[n]={n:nb, s:ps.find(s=>s!==nb)};}
+  return {ax, sydslinga:[b1[0],b1[b1.length-1]], nordogla:[b16[0],b16[b16.length-1]]};
+})();
+const ax = AXEL.ax;
+
+// Varvet i bitar om ungefär fem meter, som i förarvyn.
+const N = Math.round(L/5), DS = L/N;
+
+/* Delarna gästerna ser. Brunnarnas nummer säger inget för en gäst, så
+   delarna har namn. Namnen är förslag. */
+const DELAR = [
+  {id:'norr', namn:'Norra öglan', bitar:[[ax[13].n, ax[13].s+L]]},
+  {id:'rak',  namn:'Långa raksträckan', bitar:[[ax[13].s, ax[3].s],[ax[3].n, ax[13].n]]},
+  {id:'syd',  namn:'Södra slingan', bitar:[[ax[3].s, ax[3].n]]},
+];
+const iBitar = (bitar,f)=>{for(const [a,b] of bitar)for(let i=Math.floor(a/DS);i*DS<b-1e-9;i++)f(((i%N)+N)%N,i*DS);};
+const DEL_AV = new Array(N).fill(null);
+DELAR.forEach(d=>iBitar(d.bitar,i=>DEL_AV[i]=d));
+
+/* ==========================================================================
+   PÅHITTAT LÄGE
+   --------------------------------------------------------------------------
+   Riktigt ska det här läsas ur /publikt (se kommentaren överst). Tiderna
+   räknas från klockan nu, så att exemplet alltid ser aktuellt ut.
+   ========================================================================== */
+const NU = Date.now(), H = 3600e3;
+const klockan = (h,m,dagar=0)=>{const d=new Date(NU);d.setDate(d.getDate()-dagar);d.setHours(h,m,0,0);return d.getTime();};
+// Vändslingan längst i söder är stängd i exemplet: för lite snö där.
+const STANGT = [{bitar:[[AXEL.sydslinga[0]-30, AXEL.sydslinga[1]+30]], text:'Vändslingan längst i söder är stängd: för lite snö. Spåret vänder före.'}];
+const STANGD = new Array(N).fill(false);
+STANGT.forEach(st=>iBitar(st.bitar,i=>STANGD[i]=true));
+const oppnaBitar = t=>[[0, STANGT[0].bitar[0][0], t],[STANGT[0].bitar[0][1], L, t]];
+const BADA = ['klassiskt','skejt'];
+const t1 = NU>klockan(7,0) ? klockan(6,10) : klockan(21,40,1);
+const EXEMPEL = [
+  {id:'x1', typ:'spara', spar:BADA, bitar:oppnaBitar(t1), kalla:'gps'},
+  {id:'x2', typ:'spara', spar:BADA, bitar:oppnaBitar(klockan(21,35,2)), kalla:'gps'},
+  {id:'x3', typ:'spara', spar:['skejt'], bitar:oppnaBitar(klockan(6,20,4)), kalla:'efterhand'},
+  {id:'x4', typ:'pista', bitar:oppnaBitar(klockan(22,5,5)), kalla:'gps'},
+  {id:'x5', typ:'spara', spar:BADA, bitar:oppnaBitar(klockan(6,0,6)), kalla:'gps'},
+].filter(h=>h.bitar[0][2]<NU);
+// Passen från förslag 2 i samma webbläsare: körda med GPS eller inskrivna i
+// efterhand. Så går det att prova hela vägen från förare till gäst.
+function fransForslag2(){
+  let lista=[];
+  try{lista=JSON.parse(localStorage.getItem('snokollPist2Pass')||'[]');}catch(e){}
+  if(!Array.isArray(lista))return [];
+  return lista.filter(p=>p&&['spara','pista','schakta'].includes(p.upp)&&Array.isArray(p.bitar)&&p.bitar.length)
+    .map(p=>({id:p.id, typ:p.upp, spar:p.upp==='spara'?(p.spar||BADA):p.upp==='pista'?['skejt']:[], bitar:p.bitar, kalla:p.kalla||'gps', forslag2:true}))
+    .filter(h=>NU-Math.max(...h.bitar.map(b=>b[2]))<7*24*H);
+}
+const HANDELSER = [...EXEMPEL, ...fransForslag2()].map(h=>({...h, t:Math.max(...h.bitar.map(b=>b[2]))}));
+const DJUP = {t:klockan(10,30,2), fordon:'skoter med pucken', delar:{norr:[34,58], rak:[30,52], syd:[12,41]}};
+// Meddelandet överst: det som skrivits i förslag 2 i samma webbläsare, annars
+// ett exempel. Ett meddelande som gått ut visas aldrig.
+const EXEMPEL_MEDD = {text:'Fika vid starten på lördag kl. 10–12! Snögruppen bjuder på kaffe och bulle.', t:klockan(18,20,1), till:null, exempel:true};
+function lasMeddelande(){
+  try{const m=JSON.parse(localStorage.getItem('snokollPist2Meddelande')||'null'); if(m&&m.text&&(!m.till||m.till>NU))return m;}catch(e){}
+  return EXEMPEL_MEDD;
+}
+const VADER = {luft:-4, text:'lätt snöfall', natt:-9, sno:true};
+
+/* Läget per bit: den senaste spårningen, pistningen eller snöflytten. Det
+   senaste gäller alltid, precis som i förarvyn. */
+function tillstand(utan){
+  const st=new Array(N).fill(null);
+  for(const h of HANDELSER){
+    if(h===utan)continue;
+    for(const [a,b,t] of h.bitar) iBitar([[a,b]],j=>{if(!st[j]||st[j].t<t)st[j]={t,typ:h.typ,spar:h.spar||[],h};});
+  }
+  return st;
+}
+const ST = tillstand(null);
+
+/* ---------- text ---------- */
+const MAN = ['jan','feb','mars','apr','maj','juni','juli','aug','sep','okt','nov','dec'];
+const VDAG = ['söndags','måndags','tisdags','onsdags','torsdags','fredags','lördags'];
+const VKORT = ['sön','mån','tis','ons','tor','fre','lör'];
+const fmt = (n,d=0)=>{let s=n.toFixed(d);if(/^-0(\.0+)?$/.test(s))s=s.slice(1);return s.replace('.',',').replace('-','−');};
+const hhmm = t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const dagarSedan = t=>{const a=new Date(t), b=new Date(NU);return Math.round((new Date(b.getFullYear(),b.getMonth(),b.getDate())-new Date(a.getFullYear(),a.getMonth(),a.getDate()))/864e5);};
+function dagOrd(t){const d=dagarSedan(t);if(d===0)return 'i dag';if(d===1)return 'i går';if(d<7)return 'i '+VDAG[new Date(t).getDay()];const x=new Date(t);return x.getDate()+' '+MAN[x.getMonth()];}
+const nar = t=>dagOrd(t)+' '+hhmm(t);
+const km = m=>fmt(m/1000,1)+' km';
+const esc = s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Hur en bit beskrivs och färgas. Färgen säger hur färskt det är; gult och
+// rött är för det som inte går att åka på som vanligt.
+function bitLage(st,i){
+  if(STANGD[i])return {k:'stangt', farg:'#f0778a', text:'Stängt'};
+  if(!st||NU-st.t>7*24*H)return {k:'inget', farg:'#64748b', text:'Inte spårat senaste veckan'};
+  const ca=st.h&&st.h.kalla==='efterhand'?'ca ':'';
+  if(st.typ==='schakta')return {k:'schakt', farg:'#fbbf24', text:'Snö flyttad '+dagOrd(st.t)+' '+ca+hhmm(st.t)+', inte preparerat än'};
+  if(st.typ==='pista')return {k:'pistat', farg:'#bae6fd', text:'Pistat '+dagOrd(st.t)+' '+ca+hhmm(st.t)+' · skejt, inga klassiska spår'};
+  const age=NU-st.t, farg=age<12*H?'#22d3ee':age<36*H?'#60a5fa':'#94a3b8';
+  const spar=st.spar.includes('klassiskt')&&st.spar.includes('skejt')?'klassiskt och skejt':st.spar.includes('klassiskt')?'bara klassiskt':'bara skejt';
+  return {k:'spar', farg, text:'Spårat '+dagOrd(st.t)+' '+ca+hhmm(st.t)+' · '+spar};
+}
+
+/* ==========================================================================
+   KORTEN
+   ========================================================================== */
+function tillOchMed(t){
+  const d=-dagarSedan(t); if(d<=0)return 'i dag'; if(d===1)return 'i morgon';
+  if(d<7)return VDAG[new Date(t).getDay()].replace(/s$/,''); const x=new Date(t); return x.getDate()+' '+MAN[x.getMonth()];
+}
+function ritaKort(){
+  const m=lasMeddelande(), mEl=document.getElementById('meddelande');
+  if(m){
+    mEl.hidden=false;
+    mEl.innerHTML=`<span class="megafon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></span>
+      <div><b>Från snögruppen</b><p>${esc(m.text)}</p><small>${nar(m.t)}${m.till?' · gäller till och med '+tillOchMed(m.till):''}${m.exempel?' · exempel':''}</small></div>`;
+  }
+  const oppetM=STANGD.filter(x=>!x).length*DS;
+  const senast=HANDELSER.filter(h=>h.typ==='spara').sort((a,b)=>b.t-a.t)[0];
+  let sparatDygn=0, klass=0, skejt=0;
+  for(let i=0;i<N;i++){
+    if(STANGD[i])continue; const s=ST[i]; if(!s)continue; const fars=NU-s.t<24*H;
+    if(s.typ==='spara'&&fars)sparatDygn+=DS;
+    if(s.typ==='spara'&&s.spar.includes('klassiskt')&&NU-s.t<48*H)klass+=DS;
+    if((s.typ==='pista'||(s.typ==='spara'&&s.spar.includes('skejt')))&&NU-s.t<48*H)skejt+=DS;
+  }
+  // Ett spår räknas som draget om det finns på nästan hela det öppna, annars
+  // "på delar". Hellre för lite än för mycket.
+  const chip=(namn,m)=>m>=oppetM*.9?`<span class="chip ja">✓ ${namn}</span>`:m>=oppetM*.1?`<span class="chip delvis">${namn} på delar</span>`:`<span class="chip nej">${namn}</span>`;
+  const gammal=senast&&NU-senast.t>48*H;
+  // Inskrivet i efterhand: klockslaget är ungefärligt, och det ska synas.
+  const ca=senast&&senast.kalla==='efterhand'?'ca ':'';
+  const allaDjup=DELAR.flatMap(d=>STANGD.some((x,i)=>!x&&DEL_AV[i]===d)?DJUP.delar[d.id]:[]);
+  document.getElementById('lage').innerHTML=`
+    <div class="status"><span class="prick ${STANGT.length?'gul':''}"></span>${STANGT.length?'Öppet, utom en del':'Spåret är öppet'} · ${km(oppetM)} av ${km(L)}</div>
+    <h1 class="senast">${senast&&NU-senast.t<7*24*H?`Spårat <em>${dagOrd(senast.t)} ${ca}${hhmm(senast.t)}</em>`:'Ingen spårning registrerad senaste veckan'}</h1>
+    ${gammal?`<p class="not">Inget registrerat sedan dess. Det kan ha spårats utan att det skrivits in.</p>`:''}
+    <div class="chips">${chip('Klassiskt',klass)}${chip('Skejt',skejt)}</div>
+    <div class="rutor">
+      <div class="ruta"><small>Spårat</small><b>${km(sparatDygn)}</b><span>senaste dygnet, av ${km(oppetM)} öppet</span></div>
+      <div class="ruta"><small>Snödjup</small><b>${Math.min(...allaDjup)}–${Math.max(...allaDjup)} cm</b><span>uppmätt ${dagOrd(DJUP.t)}</span></div>
+      <div class="ruta"><small>Just nu</small><b>${fmt(VADER.luft)}°</b><span>${VADER.text}, ${fmt(VADER.natt)}° i natt</span></div>
+    </div>
+    ${STANGT.map(s=>`<div class="stangtrad"><span>⚠</span><span>${esc(s.text)}</span></div>`).join('')}
+    <div class="forklaring">
+      <span><i style="background:#22d3ee"></i>Nyspårat</span><span><i style="background:#60a5fa"></i>Spårat i går</span>
+      <span><i style="background:#94a3b8"></i>Äldre</span><span><i style="background:#bae6fd"></i>Pistat, bara skejt</span>
+      <span><i style="background:#f0778a"></i>Stängt</span></div>
+    <div class="presenteras">Dagens spår presenteras av <span class="logga">Din logga här</span></div>
+    <div class="uppdaterad">Uppgifterna hämtades ${hhmm(NU)}. Spårningarna skrivs in av förarna.</div>`;
+
+  // Delarna, med det som gäller för det mesta av varje del.
+  document.getElementById('delar').innerHTML=DELAR.map(d=>{
+    const lagen={}; let oppna=0, stangda=0;
+    for(let i=0;i<N;i++){ if(DEL_AV[i]!==d)continue; if(STANGD[i]){stangda++;continue;} oppna++;
+      const l=bitLage(ST[i],i); const k=l.text; (lagen[k]=lagen[k]||{l,n:0}).n++; }
+    const mest=Object.values(lagen).sort((a,b)=>b.n-a.n)[0];
+    const l=mest?mest.l:{farg:'#f0778a',text:'Stängt'};
+    const delvis=mest&&mest.n<oppna*.9?' · delvis':'';
+    const djup=DJUP.delar[d.id];
+    return `<div class="del"><span class="farg" style="background:${l.farg}"></span>
+      <span><b>${esc(d.namn)}</b><small>${esc(l.text)}${delvis}${stangda&&oppna?' · en bit stängd':''}</small></span>
+      <span class="djup">${djup[0]}–${djup[1]} cm<span>snödjup</span></span></div>`;
+  }).join('');
+
+  // Veckan: spårat, pistat eller inget, dag för dag.
+  let antal=0;
+  document.getElementById('vecka').innerHTML=Array.from({length:7},(_,k)=>6-k).map(dag=>{
+    const pa=HANDELSER.filter(h=>dagarSedan(h.t)===dag), sp=pa.filter(h=>h.typ==='spara').sort((a,b)=>b.t-a.t)[0], pi=pa.find(h=>h.typ==='pista');
+    if(sp)antal++;
+    const d=new Date(NU); d.setDate(d.getDate()-dag);
+    const cls=sp?'spar':pi?'pist':'';
+    const ik=sp?'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 3v18M10 3v18M15 3v18M19 3v18"/></svg>'
+      :pi?'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7v10M12 7v10M16 7v10"/></svg>':'–';
+    return `<div class="dag ${cls} ${dag===0?'idag':''}"><span class="ik">${ik}</span><small>${sp?hhmm(sp.t):pi?'pistat':''}</small><b>${dag===0?'i dag':VKORT[d.getDay()]}</b></div>`;
+  }).join('');
+  document.getElementById('veckanot').textContent=`Spårat ${antal} av de senaste 7 dagarna.`;
+
+  document.getElementById('sponsorer').innerHTML=['Din logga här','Din logga här','Din logga här','Din logga här','Din logga här','Din logga här']
+    .map(t=>`<div class="sponsor">${t}</div>`).join('');
+
+  const fran2=HANDELSER.filter(h=>h.forslag2).length;
+  document.getElementById('fot').innerHTML=`<b>Förslag 4 · 28 november 2026.</b> Spårningarna, det stängda partiet, snödjupet, vädret,
+    exempelmeddelandet, delarnas namn och sponsorerna är påhittade. Spåret är riktigt; marken och granarna är tecknade.
+    ${fran2?`${fran2} pass från förarvyn (förslag 2) i den här webbläsaren är med.`:'Skriver du in en spårning i förslag 2 i samma webbläsare kommer den med här.'}
+    <br><a href="./forslag.html">Alla förslag</a> · <a href="./pist-mobil.html">Förarvyn (förslag 2)</a>`;
+}
+ritaKort();
+
+/* ==========================================================================
+   HIMLEN — efter solens höjd i Lidköping just nu
+   ========================================================================== */
+function solen(t){
+  const d=new Date(t), r=Math.PI/180;
+  const dygn=(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())-Date.UTC(d.getUTCFullYear(),0,0))/864e5;
+  const dekl=-23.44*Math.cos(2*Math.PI/365*(dygn+10));
+  const soltid=d.getUTCHours()+d.getUTCMinutes()/60+13.09/15, tim=(soltid-12)*15;
+  const la=58.5*r, de=dekl*r, ha=tim*r;
+  const sinh=Math.sin(la)*Math.sin(de)+Math.cos(la)*Math.cos(de)*Math.cos(ha), h=Math.asin(sinh);
+  let az=Math.atan2(Math.sin(ha), Math.cos(ha)*Math.sin(la)-Math.tan(de)*Math.cos(la));   // från söder, västerut positivt
+  return {hojd:h/r, az:az/r};
+}
+// ?klocka=22:00 i adressen visar bilden som den ser ut då (bara ljuset och
+// himlen, inte uppgifterna), så att kvällsbilden går att visa på dagen.
+const SOL = (()=>{const m=/^(\d{1,2})(?::(\d{2}))?$/.exec(new URLSearchParams(location.search).get('klocka')||'');
+  if(!m)return solen(NU); const d=new Date(NU); d.setHours(+m[1],+(m[2]||0),0,0); return solen(d.getTime());})();
+// 0 = natt, 1 = dag; skymningen däremellan.
+const DAG = Math.max(0,Math.min(1,(SOL.hojd+6)/9));
+const blanda = (a,b,k)=>{const p=x=>[1,3,5].map(i=>parseInt(x.slice(i,i+2),16));const A=p(a),B=p(b);
+  return '#'+A.map((v,i)=>Math.round(v+(B[i]-v)*k).toString(16).padStart(2,'0')).join('');};
+const skymning = 1-Math.abs(DAG-.5)*2;
+const himmel1 = DAG<.5?blanda('#030a1c','#1e3a6a',DAG*2):blanda('#1e3a6a','#7fb0e6',(DAG-.5)*2);
+const himmel2 = blanda(DAG<.5?blanda('#10223f','#d7a58a',DAG*2):blanda('#e8b49a','#e6eef8',(DAG-.5)*2), '#e9c3a4', skymning*.25);
+const hero=document.getElementById('hero');
+hero.style.setProperty('--himmel1',himmel1); hero.style.setProperty('--himmel2',himmel2);
+if(DAG<.35){
+  // Stjärnor, ritade en gång.
+  const c=document.createElement('canvas'); c.width=600; c.height=300; const g=c.getContext('2d');
+  let fro=11; const slump=()=>(fro=(fro*16807)%2147483647)/2147483647;
+  for(let i=0;i<170;i++){g.fillStyle=`rgba(255,255,255,${(.25+slump()*.75)*(1-DAG*2.5)})`;g.beginPath();g.arc(slump()*600,slump()*190,slump()*1.1+.25,0,7);g.fill();}
+  hero.style.setProperty('--stjarnor',`url(${c.toDataURL()})`); hero.classList.add('natt');
+}
+
+/* ==========================================================================
+   SNÖFALLET — en platt bild ovanpå, billig och oberoende av 3D-bilden
+   ========================================================================== */
+const stillaPreferens = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const snoCanvas=document.getElementById('sno'), snoG=snoCanvas.getContext('2d');
+const flingor=Array.from({length:150},()=>({x:Math.random(),y:Math.random(),z:.3+Math.random()*.7,f:Math.random()*6.3}));
+function ritaSno(dt){
+  const w=snoCanvas.clientWidth, h=snoCanvas.clientHeight, pr=Math.min(devicePixelRatio,2);
+  if(snoCanvas.width!==Math.round(w*pr)){snoCanvas.width=Math.round(w*pr);snoCanvas.height=Math.round(h*pr);}
+  snoG.setTransform(pr,0,0,pr,0,0); snoG.clearRect(0,0,w,h);
+  if(!VADER.sno||stillaPreferens)return;
+  for(const f of flingor){
+    f.y+=dt*(.03+.07*f.z); f.f+=dt*.8; f.x+=dt*.006*Math.sin(f.f);
+    if(f.y>1.02){f.y=-.02;f.x=Math.random();}
+    snoG.fillStyle=`rgba(255,255,255,${.35+.5*f.z})`;
+    snoG.beginPath(); snoG.arc(f.x*w,f.y*h,.6+2.1*f.z*f.z,0,7); snoG.fill();
+  }
+}
+
+/* ==========================================================================
+   3D-BILDEN
+   --------------------------------------------------------------------------
+   three.js från cdnjs. Går den inte att hämta, eller saknar telefonen
+   WebGL, står allt viktigt ändå i korten under bilden.
+   ========================================================================== */
+const TRE = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.170.0/three.module.min.js';
+let THREE=null;
+try{THREE=await import(TRE);}catch(e){THREE=null;}
+if(!THREE)ingen3D(); else starta3D();
+function ingen3D(){document.getElementById('ingen3d').hidden=false; document.getElementById('scen').style.display='none'; loopUtan3D();}
+function loopUtan3D(){let sist=performance.now();const f=t=>{ritaSno(Math.min(.1,(t-sist)/1000));sist=t;requestAnimationFrame(f);};requestAnimationFrame(f);}
+
+function starta3D(){
+  const canvas=document.getElementById('scen');
+  let renderer;
+  try{renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});}catch(e){ingen3D();return;}
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=.95+.15*DAG;
+  const scene=new THREE.Scene();
+  scene.fog=new THREE.Fog(new THREE.Color(himmel2),900,2600);
+  const kam=new THREE.PerspectiveCamera(36,1,4,8000);
+
+  // Spårets koordinater (x österut, y norrut) till 3D (X österut, Z söderut).
+  let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9;
+  P.forEach(([x,y])=>{minx=Math.min(minx,x);maxx=Math.max(maxx,x);miny=Math.min(miny,y);maxy=Math.max(maxy,y);});
+  const cx=(minx+maxx)/2, cy=(miny+maxy)/2;
+  // Marken böljar lite, som snö gör. Tecknad, inte inmätt.
+  // Långa, mjuka vågor: korta vågor blev randiga i den låga vintersolen.
+  const hojd=(x,y)=>1.8*Math.sin(x/97+1.3)*Math.cos(y/131-.4)+.6*Math.sin((x-y)/71);
+  const V=(x,y,dy=0)=>new THREE.Vector3(x-cx, hojd(x,y)+dy, -(y-cy));
+
+  // Ljuset: låg vintersol om dagen, kallt månljus om natten.
+  const hemi=new THREE.HemisphereLight(new THREE.Color(blanda('#334a75','#d6e6ff',DAG)), new THREE.Color(blanda('#0b1426','#8193b3',DAG)), .8+1.7*DAG);
+  scene.add(hemi);
+  const sol=new THREE.DirectionalLight(new THREE.Color(DAG>.5?'#fff0dc':'#9fb7ff'), DAG>.5?2.6*DAG:.55);
+  const solHojd=Math.max(9,DAG>.5?SOL.hojd:38)*Math.PI/180, solAz=(DAG>.5?SOL.az:SOL.az+180)*Math.PI/180;
+  // Azimut från söder, västerut positivt: söder är +Z, väster är −X.
+  sol.position.set(-Math.sin(solAz)*Math.cos(solHojd)*1500, Math.sin(solHojd)*1500, Math.cos(solAz)*Math.cos(solHojd)*1500);
+  sol.castShadow=true; sol.shadow.mapSize.set(2048,2048);
+  Object.assign(sol.shadow.camera,{left:-760,right:760,top:760,bottom:-760,near:10,far:4000});
+  sol.shadow.bias=-.0006; sol.shadow.normalBias=.6;
+  scene.add(sol, sol.target);
+
+  // Marken.
+  const markGeo=new THREE.PlaneGeometry(3200,3600,170,190); markGeo.rotateX(-Math.PI/2);
+  const pos=markGeo.attributes.position, mfarg=new Float32Array(pos.count*3), a=new THREE.Color('#dfe9f8'), b=new THREE.Color('#ffffff'), c=new THREE.Color();
+  for(let i=0;i<pos.count;i++){
+    const X=pos.getX(i), Z=pos.getZ(i), h=hojd(X+cx,-Z+cy); pos.setY(i,h);
+    c.copy(a).lerp(b,Math.max(0,Math.min(1,(h+2.5)/5))).toArray(mfarg,i*3);
+  }
+  markGeo.setAttribute('color',new THREE.BufferAttribute(mfarg,3)); markGeo.computeVertexNormals();
+  const mark=new THREE.Mesh(markGeo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.93,metalness:0}));
+  mark.receiveShadow=true; scene.add(mark);
+
+  // Granarna: tecknade, utplacerade med slump i dungar och gläntor, aldrig
+  // närmare spåret än tolv meter.
+  let fro=7; const slump=()=>(fro=(fro*16807)%2147483647)/2147483647;
+  const SP=[]; for(let s=0;s<L;s+=4)SP.push(punkt(s));
+  const naraSpar=(x,y,r)=>{for(const p of SP){const dx=p[0]-x,dy=p[1]-y;if(dx*dx+dy*dy<r*r)return true;}return false;};
+  const tathet=(x,y)=>.5+.33*Math.sin(x/88+2)*Math.cos(y/117)+.22*Math.sin((x+y)/53)+.12*Math.cos(x/29-y/37);
+  // Granarna är större än i verkligheten, så att de syns som granar och inte
+  // som prickar när hela spåret är i bild.
+  const trad=[];
+  for(let x=minx-330;x<maxx+330;x+=11)for(let y=miny-330;y<maxy+330;y+=11){
+    const px=x+(slump()-.5)*9, py=y+(slump()-.5)*9, t=tathet(px,py);
+    if(slump()>Math.pow(Math.max(0,t-.34)*1.5,1.5))continue;
+    if(naraSpar(px,py,16))continue;
+    trad.push([px,py,1.15+slump()*.7,slump()*6.3,slump()]);
+    if(trad.length>3600)break;
+  }
+  const tradFarg=new THREE.MeshStandardMaterial({color:'#2f6a50',roughness:.8,flatShading:true});
+  const snoFarg=new THREE.MeshStandardMaterial({color:'#f7fbff',roughness:.8,flatShading:true});
+  const stamFarg=new THREE.MeshStandardMaterial({color:'#4a3626',roughness:.9});
+  const vaningar=[[3.6,5.2,4.2],[2.8,4.4,6.6],[1.9,3.8,9.0]];   // radie, höjd, mitten
+  const delarTrad=[{geo:new THREE.CylinderGeometry(.35,.45,2.2,6),mat:stamFarg,y:1.1}];
+  for(const [r,h,y] of vaningar){
+    delarTrad.push({geo:new THREE.ConeGeometry(r,h,7),mat:tradFarg,y});
+    // Snön på varje våning: en mindre kon med samma topp.
+    const k=.6; delarTrad.push({geo:new THREE.ConeGeometry(r*k*1.08,h*k,7),mat:snoFarg,y:y+h/2-h*k/2+.05});
+  }
+  const mtx=new THREE.Matrix4(), q=new THREE.Quaternion(), sk=new THREE.Vector3(), po=new THREE.Vector3(), upp=new THREE.Vector3(0,1,0);
+  const nyans=new THREE.Color();
+  for(const d of delarTrad){
+    const im=new THREE.InstancedMesh(d.geo,d.mat,trad.length); im.castShadow=d.mat!==stamFarg; im.receiveShadow=true;
+    trad.forEach(([x,y,s,rot,v],i)=>{
+      q.setFromAxisAngle(upp,rot); sk.set(s,s*(.9+v*.25),s);
+      po.copy(V(x,y)); po.y+=d.y*sk.y;
+      mtx.compose(po,q,sk); im.setMatrixAt(i,mtx);
+      if(d.mat===tradFarg)im.setColorAt(i,nyans.set('#ffffff').offsetHSL(0,0,-(v*.18)));
+    });
+    scene.add(im);
+  }
+
+  // Spåret: ett band, bit för bit, så att varje femmetersbit kan få sin färg.
+  // Bredare än i verkligheten, så att det syns när hela spåret är i bild.
+  function manchester(spar){
+    const cv=document.createElement('canvas'); cv.width=128; cv.height=32; const g=cv.getContext('2d');
+    g.fillStyle='#fff'; g.fillRect(0,0,128,32);
+    for(let x=1;x<128;x+=6){g.fillStyle='rgba(10,30,70,.18)';g.fillRect(x,0,2,32);}
+    if(spar){g.fillStyle='rgba(5,25,60,.6)';[16,27].forEach(x=>g.fillRect(x,0,4,32));}
+    const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace;
+    t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy()); return t;
+  }
+  function band(bredd,lyft){
+    const p=new Float32Array(N*4*3), uv=new Float32Array(N*4*2), idx=[];
+    const kant=(s)=>{const m=punkt(s), f=punkt(s+1.5), bk=punkt(s-1.5), tx=f[0]-bk[0], ty=f[1]-bk[1], l=Math.hypot(tx,ty)||1;
+      const nx=-ty/l*bredd/2, ny=tx/l*bredd/2;
+      return [V(m[0]+nx,m[1]+ny,lyft), V(m[0]-nx,m[1]-ny,lyft)];};
+    let fore=kant(0);
+    for(let i=0;i<N;i++){
+      const nasta=kant((i+1)*DS), v=[fore[0],fore[1],nasta[0],nasta[1]];
+      v.forEach((w,k)=>{p.set([w.x,w.y,w.z],(i*4+k)*3);});
+      const v0=i*DS/7, v1=(i+1)*DS/7; uv.set([0,v0,1,v0,0,v1,1,v1],i*8);
+      idx.push(i*4,i*4+2,i*4+1, i*4+1,i*4+2,i*4+3);
+      fore=nasta;
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(p,3));
+    geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+    geo.setAttribute('color',new THREE.BufferAttribute(new Float32Array(N*4*3),3));
+    geo.setIndex(idx); geo.computeVertexNormals();
+    return geo;
+  }
+  const bandGeo=band(7,.35);
+  const bandMat=[false,true].map(spar=>new THREE.MeshBasicMaterial({vertexColors:true,map:manchester(spar),toneMapped:false,side:THREE.DoubleSide,
+    polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2}));
+  const bandet=new THREE.Mesh(bandGeo,bandMat); bandet.receiveShadow=false; scene.add(bandet);
+  // Ett sken under bandet, starkast i mörker.
+  const skenGeo=band(22,.2), SKEN=.16+.3*(1-DAG);
+  const sken=new THREE.Mesh(skenGeo,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:SKEN,
+    blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false,side:THREE.DoubleSide}));
+  scene.add(sken);
+
+  let visat=ST.slice();
+  const fargTmp=new THREE.Color(), VIT=new THREE.Color('#ffffff'), GRA=new THREE.Color('#6b7a90');
+  // ljus > 0: nyss spårat i uppspelningen, lyser vitt och mattas av till sin
+  // färg. ljus < 0: väntar på maskinen, nedtonat.
+  function satBit(i,st,ljus=0){
+    visat[i]=st;
+    const l=bitLage(st,i); fargTmp.set(l.farg);
+    if(ljus>0)fargTmp.lerp(VIT,ljus); else if(ljus<0)fargTmp.lerp(GRA,-ljus);
+    const ca=bandGeo.attributes.color.array, cs=skenGeo.attributes.color.array;
+    const g=l.k==='spar'?1:l.k==='stangt'?.5:l.k==='inget'?.25:.6;
+    for(let k=0;k<4;k++){ca.set([fargTmp.r,fargTmp.g,fargTmp.b],(i*4+k)*3); cs.set([fargTmp.r*g,fargTmp.g*g,fargTmp.b*g],(i*4+k)*3);}
+  }
+  // Klassiska spår (två fåror) där det senast spårats med klassiskt.
+  function grupper(){
+    bandGeo.clearGroups(); let start=0, mat=null;
+    for(let i=0;i<=N;i++){
+      const m=i<N?(visat[i]&&visat[i].typ==='spara'&&visat[i].spar.includes('klassiskt')&&!STANGD[i]?1:0):-1;
+      if(m!==mat){if(mat!==null)bandGeo.addGroup(start*6,(i-start)*6,mat); start=i; mat=m;}
+    }
+    bandGeo.attributes.color.needsUpdate=true; skenGeo.attributes.color.needsUpdate=true;
+  }
+  for(let i=0;i<N;i++)satBit(i,ST[i]); grupper();
+
+  // Den röda pistmaskinen, tecknad med lådor, utan märkets logga. Större än
+  // i verkligheten, så att den syns.
+  function pistmaskin(){
+    const g=new THREE.Group();
+    const M=(c,o={})=>new THREE.MeshStandardMaterial({color:c,roughness:.55,metalness:.1,...o});
+    // Lyser lite av sig själv, så att den syns även i mörker.
+    const rod=M('#d9262b',{emissive:'#d9262b',emissiveIntensity:.08+.22*(1-DAG)}), mork=M('#14171f',{roughness:.9}), glas=M('#0c1424',{roughness:.15,metalness:.6}), gra=M('#8b95a5'), vit=M('#e8edf3');
+    const lada=(w,h,d,mat,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=true;g.add(m);return m;};
+    lada(.95,1.0,4.4,mork,-1.2,.5,0); lada(.95,1.0,4.4,mork,1.2,.5,0);
+    lada(1.9,.95,3.9,rod,0,1.35,-.15);
+    lada(1.8,1.35,1.75,rod,0,2.45,.55);
+    lada(1.84,.8,1.5,glas,0,2.6,.7);
+    const blad=lada(3.5,1.15,.22,vit,0,.75,2.75); blad.rotation.x=-.12;
+    lada(2.7,.6,1.1,gra,0,.7,-2.75);
+    lada(2.8,.06,1.5,vit,0,.18,-3.85);
+    const fyr=new THREE.Mesh(new THREE.SphereGeometry(.2,10,8),new THREE.MeshBasicMaterial({color:'#fb923c',toneMapped:false}));
+    fyr.position.set(0,3.28,.55); g.add(fyr); g.userData.fyr=fyr;
+    [-.6,.6].forEach(x=>{const l=new THREE.Mesh(new THREE.BoxGeometry(.32,.18,.06),new THREE.MeshBasicMaterial({color:'#fff7dd',toneMapped:false}));l.position.set(x,2.0,1.45);g.add(l);});
+    g.scale.setScalar(2.3);
+    return g;
+  }
+  const maskin=pistmaskin(); maskin.visible=false; scene.add(maskin);
+
+  // Skyltar med sponsorer vid starten.
+  function skylt(text,s,sida){
+    const cv=document.createElement('canvas'); cv.width=512; cv.height=128; const g=cv.getContext('2d');
+    g.fillStyle='#f8fafc'; g.fillRect(0,0,512,128); g.strokeStyle='#94a3b8'; g.setLineDash([14,10]); g.lineWidth=6; g.strokeRect(10,10,492,108);
+    g.fillStyle='#0f172a'; g.font='800 46px Barlow, sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(text,256,66);
+    const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace;
+    const grp=new THREE.Group();
+    const tavla=new THREE.Mesh(new THREE.PlaneGeometry(14,3.5),new THREE.MeshStandardMaterial({map:t,roughness:.7,side:THREE.DoubleSide}));
+    tavla.position.y=4.2; tavla.castShadow=true; grp.add(tavla);
+    [-6.4,6.4].forEach(x=>{const st=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,6,6),new THREE.MeshStandardMaterial({color:'#475569'}));st.position.set(x,3,0);st.castShadow=true;grp.add(st);});
+    const m=punkt(s), f=punkt(s+3), tx=f[0]-m[0], ty=f[1]-m[1], l=Math.hypot(tx,ty);
+    const x=m[0]-ty/l*13*sida, y=m[1]+tx/l*13*sida;
+    grp.position.copy(V(x,y)); grp.lookAt(V(m[0],m[1]).setY(grp.position.y)); grp.rotateY(Math.PI/2*sida*.35);
+    scene.add(grp);
+  }
+  skylt('DIN LOGGA HÄR',18,-1); skylt('DIN LOGGA HÄR',L-22,1);
+
+  /* ---------- etiketterna ---------- */
+  const etikettLager=document.getElementById('etiketter');
+  // Viktigast först: krockar två etiketter på skärmen visas bara den första.
+  const etiketter=[
+    ...STANGT.map(st=>({text:'Stängt',s:(st.bitar[0][0]+st.bitar[0][1])/2,cls:'stangd'})),
+    {text:'Norra öglan',s:ax[16].n+(ax[16].s-ax[16].n)*.55,cls:''},
+    {text:'Långa raksträckan',s:(ax[11].n+ax[9].n)/2,cls:''},
+    {text:'Södra slingan',s:ax[4].s,cls:''},
+    {text:'Start',s:2,cls:'start'},
+  ].map(e=>{const el=document.createElement('div');el.className='etikett '+e.cls;el.textContent=e.text;etikettLager.appendChild(el);
+    const [x,y]=punkt(e.s);return {...e,el,v:V(x,y,10)};});
+  const proj=new THREE.Vector3();
+  function placeraEtiketter(w,h,syns){
+    const lagda=[];
+    for(const e of etiketter){
+      proj.copy(e.v).project(kam);
+      const px=(proj.x*.5+.5)*w, py=(-proj.y*.5+.5)*h, bw=e.el.offsetWidth+8, bh=e.el.offsetHeight+6;
+      const ruta={x0:px-bw/2,x1:px+bw/2,y0:py-bh,y1:py};
+      const krock=lagda.some(r=>r.x0<ruta.x1&&ruta.x0<r.x1&&r.y0<ruta.y1&&ruta.y0<r.y1);
+      const ok=syns&&!krock&&proj.z<1&&Math.abs(proj.x)<1.05&&Math.abs(proj.y)<1.05;
+      e.el.style.opacity=ok?1:0;
+      if(ok){lagda.push(ruta); e.el.style.transform=`translate(${px}px,${py}px) translate(-50%,-100%)`;}
+    }
+  }
+
+  /* ---------- kameran ---------- */
+  // Kameran står söder om spåret och tittar norrut, så att det långa spåret
+  // går på djupet och får plats på en stående telefon. Den vaggar sakta åt
+  // sidorna; ett drag vrider den.
+  const mal=new THREE.Vector3(0,0,0);
+  const PHI0=1.08;   // hur snett kameran tittar: 0 rakt ner, 1,57 längs marken
+  const K={theta:.18,phi:PHI0,r:1300,rMin:250,rMax:3200};
+  let rPass=1300, ledig=0, vagg=0;
+  // Punkter längs spåret som ska rymmas i bild (inte hela rektangeln runt
+  // det, som blev mycket bredare när kameran vrids).
+  const horn=[]; for(let s=0;s<L;s+=25){const [x,y]=punkt(s);horn.push(V(x,y,0),V(x,y,12));}
+  function kamPa(theta,phi,r,ut){ut=ut||kam.position;ut.set(mal.x+r*Math.sin(phi)*Math.sin(theta),mal.y+r*Math.cos(phi),mal.z+r*Math.sin(phi)*Math.cos(theta));return ut;}
+  // Avståndet där hela spåret får plats, med plats för rubriken och knappen.
+  function passa(){
+    let bast=0;
+    for(const dt of [-.22,0,.22]){
+      let lo=150, hi=5000;
+      for(let k=0;k<22;k++){
+        const r=(lo+hi)/2; kamPa(K.theta+dt,K.phi,r); kam.lookAt(mal); kam.updateMatrixWorld();
+        // Rubriken tar toppen och knappen botten; spåret ska få plats mellan.
+        let ok=true; for(const v of horn){proj.copy(v).project(kam); if(Math.abs(proj.x)>.92||proj.y>.5||proj.y<-.5){ok=false;break;}}
+        if(ok)hi=r; else lo=r;
+      }
+      bast=Math.max(bast,hi);
+    }
+    return bast;
+  }
+  // På en liggande skärm tittar kameran från öster i stället, så att det
+  // långa spåret ligger på bredden. Har man själv vridit bilden får den vara.
+  let vridit=false;
+  const theta0=()=>kam.aspect>1.15?Math.PI/2+.12:.18;
+  function storlek(){
+    const w=canvas.clientWidth, h=canvas.clientHeight;
+    renderer.setSize(w,h,false); kam.aspect=w/h; kam.updateProjectionMatrix();
+    if(!vridit)K.theta=theta0();
+    const forra=rPass; rPass=passa(); K.r=K.r*rPass/forra; K.rMax=rPass*1.6; K.rMin=Math.max(120,rPass*.18);
+    scene.fog.near=rPass*.95; scene.fog.far=rPass*2.6;
+  }
+  K.r=1300; storlek(); K.r=rPass;
+
+  /* ---------- dra, nypa och trycka ---------- */
+  const pekare=new Map(); let dragStart=null, nypStart=null;
+  canvas.addEventListener('pointerdown',e=>{
+    pekare.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pekare.size===1)dragStart={x:e.clientX,y:e.clientY,t:performance.now(),theta:K.theta,phi:K.phi,flytt:0};
+    if(pekare.size===2){const [a,b]=[...pekare.values()];nypStart={d:Math.hypot(a.x-b.x,a.y-b.y),r:K.r};}
+    ledig=performance.now()+9000;
+  });
+  canvas.addEventListener('pointermove',e=>{
+    if(!pekare.has(e.pointerId))return;
+    pekare.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pekare.size===2&&nypStart){const [a,b]=[...pekare.values()];K.r=Math.max(K.rMin,Math.min(K.rMax,nypStart.r*nypStart.d/Math.max(20,Math.hypot(a.x-b.x,a.y-b.y))));return;}
+    if(dragStart&&!replay){
+      const dx=e.clientX-dragStart.x, dy=e.clientY-dragStart.y; dragStart.flytt=Math.max(dragStart.flytt,Math.hypot(dx,dy));
+      K.theta=dragStart.theta-dx*.006; if(Math.abs(dx)>4)vridit=true;
+      if(e.pointerType==='mouse')K.phi=Math.max(.42,Math.min(1.32,dragStart.phi-dy*.004));
+      vagg=0;
+    }
+    ledig=performance.now()+9000;
+  });
+  const slapp=e=>{
+    const d=dragStart; pekare.delete(e.pointerId);
+    if(pekare.size<2)nypStart=null;
+    if(pekare.size===0){dragStart=null; if(e.type==='pointerup'&&d&&d.flytt<8&&performance.now()-d.t<450)tryck(e);}
+  };
+  canvas.addEventListener('pointerup',slapp); canvas.addEventListener('pointercancel',slapp);
+  // Hjulet zoomar bara med Ctrl (nypningen på en pekplatta); annars rullar sidan som vanligt.
+  canvas.addEventListener('wheel',e=>{if(!e.ctrlKey)return;e.preventDefault();K.r=Math.max(K.rMin,Math.min(K.rMax,K.r*Math.exp(e.deltaY*.01)));ledig=performance.now()+9000;},{passive:false});
+  document.getElementById('narmare').onclick=()=>{K.r=Math.max(K.rMin,K.r*.7);ledig=performance.now()+9000;};
+  document.getElementById('langre').onclick=()=>{K.r=Math.min(K.rMax,K.r/.7);ledig=performance.now()+9000;};
+  document.getElementById('aterstall').onclick=()=>{vridit=false;K.theta=theta0();K.phi=PHI0;K.r=rPass;vagg=0;ledig=0;};
+  const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), bubbla=document.getElementById('bubbla');
+  let bubblaTimer=null;
+  function tryck(e){
+    const rc=canvas.getBoundingClientRect();
+    ndc.set((e.clientX-rc.left)/rc.width*2-1, -(e.clientY-rc.top)/rc.height*2+1);
+    ray.setFromCamera(ndc,kam);
+    const hit=ray.intersectObject(sken)[0]||ray.intersectObject(bandet)[0];
+    if(!hit){bubbla.hidden=true;return;}
+    const i=Math.floor(hit.faceIndex/2), l=bitLage(visat[i],i), del=DEL_AV[i];
+    bubbla.innerHTML=`<b>${esc(del?del.namn:'Spåret')}</b><span>${esc(l.text)}</span>`;
+    bubbla.style.left=(e.clientX-rc.left)+'px'; bubbla.style.top=(e.clientY-rc.top)+'px'; bubbla.hidden=false;
+    clearTimeout(bubblaTimer); bubblaTimer=setTimeout(()=>bubbla.hidden=true,4500);
+  }
+
+  /* ---------- uppspelningen ---------- */
+  // Den senaste spårningen körs om: maskinen kör sträckan och varje bit blir
+  // som den är nu när maskinen passerat. Bitar den bara kör förbi (till
+  // exempel det stängda) körs fortare och ändras inte.
+  let replay=null;
+  const rp={el:document.getElementById('replay'),titel:document.getElementById('rp-titel'),text:document.getElementById('rp-text'),stapel:document.getElementById('rp-stapel')};
+  function senasteSparning(){return HANDELSER.filter(h=>h.typ==='spara').sort((a,b)=>b.t-a.t)[0]||null;}
+  function startaReplay(){
+    const h=senasteSparning(); if(!h)return;
+    const bitar=h.bitar.map(b=>[b[0],b[1]]).sort((a,b)=>a[0]-b[0]);
+    const s0=bitar[0][0], s1=Math.max(...bitar.map(b=>b[1]));
+    const pa=s=>bitar.some(([a,b])=>s>=a&&s<b);
+    const stampad=bitar.reduce((m,[a,b])=>m+b-a,0), glapp=Math.max(0,s1-s0-stampad);
+    const T=stillaPreferens?4:Math.max(6,Math.min(18,stampad/125));
+    const v=(stampad+glapp/3)/T;
+    // Det maskinen ska köra visas som det var före, nedtonat, så att det syns
+    // när det blir nytt bakom maskinen.
+    const utan=tillstand(h);
+    for(let i=0;i<N;i++)satBit(i,utan[i]);
+    iBitar(bitar,(i,s)=>{if(pa(s+DS/2))satBit(i,utan[i],-.65);});
+    grupper();
+    replay={h,s:s0,s0,s1,v,pa,stampad,klart:0,slut:false,nya:[]};
+    bubbla.hidden=true; maskin.visible=true; hero.classList.add('spelar');
+    rp.titel.textContent='Spårat '+dagOrd(h.t)+' '+(h.kalla==='efterhand'?'ca ':'')+hhmm(h.t);
+    const spar=h.spar.includes('klassiskt')&&h.spar.includes('skejt')?'Klassiskt och skejt':h.spar.includes('klassiskt')?'Klassiskt':'Skejt';
+    rp.text.textContent=spar+' · '+km(stampad); rp.el.hidden=false; rp.stapel.style.width='0';
+    // Kameran glider från översikten ner bakom maskinen under den första sekunden.
+    replay.franPos=kam.position.clone(); replay.franTitt=(tillbaka>0?tittaPa:mal).clone(); replay.intro=0;
+    const [fx,fy]=punkt(s0+6), [bx,by]=punkt(s0-6); riktning.set(fx-bx,0,-(fy-by)).normalize();
+    sken.material.opacity=.05;
+  }
+  function avslutaReplay(){
+    if(!replay)return;
+    for(let i=0;i<N;i++)satBit(i,ST[i]); grupper();
+    replay=null; maskin.visible=false; rp.el.hidden=true; hero.classList.remove('spelar');
+    jaga.copy(kam.position); tillbaka=1; sken.material.opacity=SKEN;
+  }
+  document.getElementById('spela').onclick=startaReplay;
+  document.getElementById('rp-hoppa').onclick=avslutaReplay;
+  const jaga=new THREE.Vector3(), tittaPa=new THREE.Vector3(), mal2=new THREE.Vector3(), riktning=new THREE.Vector3(0,0,-1);
+  const jagaPos=new THREE.Vector3(), jagaTitt=new THREE.Vector3(), tmp=new THREE.Vector3();
+  let tillbaka=0;
+
+  /* ---------- loopen ---------- */
+  let sist=performance.now(), synlig=true;
+  new IntersectionObserver(e=>{synlig=e[0].isIntersecting;},{threshold:0}).observe(hero);
+  new ResizeObserver(()=>storlek()).observe(canvas);
+  document.getElementById('kontroller').hidden=false; document.getElementById('nere').hidden=false;
+  function ruta(t){
+    requestAnimationFrame(ruta);
+    const dt=Math.min(.1,(t-sist)/1000); sist=t;
+    if(!synlig||document.hidden)return;
+    ritaSno(dt);
+    const w=canvas.clientWidth, h=canvas.clientHeight;
+    if(replay){
+      const r=replay, gammal=r.s;
+      r.s+=r.v*dt*(r.pa(r.s)?1:3);
+      // Bitarna maskinen passerat blir som de är nu.
+      iBitar([[gammal,Math.min(r.s,r.s1)]],(i,s)=>{if(r.pa(s+DS/2)){r.nya.push({i,t});r.klart+=DS;}});
+      // Nyspårat lyser vitt bakom maskinen och mattas av på en och en halv sekund.
+      r.nya=r.nya.filter(n=>{const a=(t-n.t)/1500; satBit(n.i,ST[n.i],Math.max(0,1-a)*.9); return a<1;});
+      grupper();
+      const s=Math.min(r.s,r.s1), m=punkt(s), f=punkt(s+6), bk=punkt(s-6);
+      const p=V(m[0],m[1]); maskin.position.copy(p); maskin.lookAt(V(f[0],f[1]).setY(p.y));
+      maskin.userData.fyr.visible=(t%900)<450;
+      // Kameran står snett bakom och ovanför maskinen. Den följer maskinen
+      // exakt men vrider sig mjukt, så att den inte rycker i varje kurva.
+      tmp.set(f[0]-bk[0],0,-(f[1]-bk[1])).normalize();
+      riktning.lerp(tmp,1-Math.exp(-dt*2.6)).normalize();
+      jagaPos.copy(p).addScaledVector(riktning,-78).add(tmp.set(-riktning.z,0,riktning.x).multiplyScalar(-14)); jagaPos.y=p.y+36;
+      jagaTitt.copy(p).addScaledVector(riktning,36); jagaTitt.y=p.y-6;
+      r.intro=Math.min(1,r.intro+dt/1.4); const e=r.intro*r.intro*(3-2*r.intro);
+      kam.position.lerpVectors(r.franPos,jagaPos,e); tittaPa.lerpVectors(r.franTitt,jagaTitt,e); kam.lookAt(tittaPa);
+      rp.stapel.style.width=Math.min(100,r.klart/r.stampad*100).toFixed(1)+'%';
+      if(r.s>=r.s1&&!r.slut){r.slut=true; setTimeout(avslutaReplay,1600); r.s=r.s1; r.v=0;}
+      placeraEtiketter(w,h,false);
+    }else{
+      // Vaggar ungefär ±0,2 radianer, en gång på en och en halv minut.
+      if(!stillaPreferens&&t>ledig){vagg+=dt*.07; K.theta+=Math.sin(vagg)*dt*.0145;}
+      kamPa(K.theta,K.phi,K.r,mal2);
+      if(tillbaka>0){
+        // Mjukt tillbaka till hela spåret efter uppspelningen.
+        tillbaka=Math.max(0,tillbaka-dt*.55);
+        const k=1-Math.exp(-dt*3); jaga.lerp(mal2,k); tittaPa.lerp(mal,k);
+        kam.position.copy(jaga); kam.lookAt(tittaPa);
+        if(tillbaka===0||jaga.distanceTo(mal2)<1){tillbaka=0;}
+      }else{kam.position.copy(mal2); kam.lookAt(mal);}
+      placeraEtiketter(w,h,tillbaka===0);
+    }
+    renderer.render(scene,kam);
+  }
+  requestAnimationFrame(ruta);
+  window.__spar={scene,kam,K,startaReplay,avslutaReplay,trad:trad.length,renderer};
+}
+</script>
+</body>
+</html>
