@@ -202,13 +202,28 @@ a{color:inherit}
 .banner.ok{background:linear-gradient(90deg,#0e2a20,#101f2c);border-color:#34d39944}
 
 /* forecast window */
-.timeline{display:flex;gap:4px;margin-top:14px;height:40px;border-radius:9px;overflow:hidden;border:1px solid var(--border)}
-.tseg{flex:1;display:flex;align-items:flex-end;justify-content:center;font-size:.6rem;color:#ffffffaa;padding-bottom:3px;position:relative}
-.tseg.good{background:linear-gradient(180deg,#0e3a2a,#10533a)} .tseg.ok{background:linear-gradient(180deg,#1b3250,#24476f)}
-.tseg.no{background:linear-gradient(180deg,#2a1a1a,#3a2020)}
+/* En ruta per timme utan mellanrum: 48 rutor med glipor åt upp halva bredden
+   på en telefon. Etiketten ligger ovanpå rutan så att den inte gör den bredare. */
+.timeline{display:flex;margin-top:14px;height:40px;border-radius:9px;overflow:hidden;border:1px solid var(--border)}
+.tseg{flex:1 1 0;min-width:0;position:relative}
+.tseg b{position:absolute;z-index:1;left:3px;bottom:3px;font-size:.62rem;font-weight:500;color:#ffffffc0;white-space:nowrap;pointer-events:none}
+.tseg.mark{box-shadow:inset 1px 0 0 #ffffff45}
+.tseg.good{background:linear-gradient(180deg,#0e3a2a,#10533a)} .tseg.ok{background:linear-gradient(180deg,#3a3010,#5a4712)}
+.tseg.no{background:linear-gradient(180deg,#2a1a1a,#3a2020)} .tseg.na{background:#0c1626}
 .legend{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;color:var(--muted);font-size:.78rem}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.kf-win{display:flex;justify-content:space-between;align-items:baseline;gap:4px 12px;flex-wrap:wrap;padding:9px 12px;border-radius:10px;
+  background:#0e2a20;border:1px solid #34d39938;margin-top:8px;font-size:.9rem;font-weight:600}
+.kf-win.marginal{background:#2b2410;border-color:#fbbf2438}
+.kf-win.none{background:#0c1626;border-color:var(--border);color:var(--muted);font-weight:500}
+.kf-win .d{color:var(--muted);font-size:.8rem;font-weight:500;font-variant-numeric:tabular-nums}
+.kf-dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--off)}
+.kf-dot.go{background:var(--run)} .kf-dot.marginal{background:var(--limit)} .kf-dot.stop{background:var(--alarm)}
+/* width:0 + min-width:100%: tabellen får inte göra hela sidan bredare än
+   telefonen. Är den för bred rullar den i sidled inne i kortet. */
+.kf-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;width:0;min-width:100%}
+.kf-day td{color:var(--muted2);font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding-top:12px;border-top:1px solid var(--border-hi)}
 
 canvas{max-width:100%}
 /* Chart.js ritar efter FÖRÄLDERNS storlek. Ligger canvasen direkt i kortet
@@ -1016,9 +1031,7 @@ function vOverview(){
   <div class="grid g-2" style="margin-top:14px">
     <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — senaste 12 h</h3><div class="chartbox"><canvas id="cTw"></canvas></div></div>
     <div class="card"><h3>${icon('clock','#7dd3fc',15)} Körfönster från prognosen</h3>
-      <div class="row" style="margin-top:8px"><span class="chip s-run"><span class="d"></span>Går att köra nu</span></div>
-      <p class="muted small" style="line-height:1.6;margin:11px 0 0">Gynnsamma förhållanden håller i sig <b style="color:var(--text)">till ca 09:00 imorgon</b>, därefter stiger våttemperaturen över startgränsen under eftermiddagen. Nästa fönster: natten mot torsdag.</p>
-      ${timelineHTML()}
+      ${fcBrief()}
       <button class="linkbtn" style="margin-top:12px" onclick="go('forecast')">Mer om körfönstret</button>
     </div>
   </div>
@@ -1127,8 +1140,10 @@ function vOverviewR(){
     <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur vid väderstationen</h3>${histSeg()}
       ${histPts.length>1?'<div class="chartbox"><canvas id="cTw"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}</div>
     <div class="card"><h3>${icon('clock','#7dd3fc',15)} Går det att köra?</h3>
-      <div class="row" style="margin-top:8px">${cold===null?'<span class="chip s-off"><span class="d"></span>Inget värde</span>':cold?'<span class="chip s-run"><span class="d"></span>Kallt nog just nu</span>':'<span class="chip s-limit"><span class="d"></span>För varmt just nu</span>'}</div>
-      <p class="muted small" style="line-height:1.6;margin:11px 0 0">Bedömt på väderstationens våttemperatur i det här ögonblicket, mot startgränsen ${num(FTHRESH)} °C. Hur det blir framåt står i prognosappen — prognosen är inte inkopplad här än.</p>
+      <div class="row" style="margin-top:8px">${bridgeOld()?'<span class="chip s-off"><span class="d"></span>Inget färskt värde</span>'+agoHTML(lastData):cold===null?'<span class="chip s-off"><span class="d"></span>Inget värde</span>':cold?'<span class="chip s-run"><span class="d"></span>Kallt nog just nu</span>':'<span class="chip s-limit"><span class="d"></span>För varmt just nu</span>'}</div>
+      <p class="muted small" style="line-height:1.6;margin:11px 0 0">Bedömt på väderstationens våttemperatur i det här ögonblicket, mot startgränsen ${num(FTHRESH)} °C. Framåt:</p>
+      ${fcBrief()}
+      <button class="linkbtn" style="margin-top:12px" onclick="go('forecast')">Körfönstret</button>
     </div>
   </div>
 
@@ -2415,30 +2430,368 @@ function vAlarms(){
   </div>`;
 }
 
-function vForecast(){
-  return topbar('Prognos','Körfönster')+`<div class="view">
-   ${real?'<div class="banner">'+icon('bell','#f87171')+'<div style="flex:1"><b>Exempel — inte riktig data.</b> <span class="muted small">Prognosen är inte inkopplad i den här appen än. Allt på sidan är påhittat; se prognosappen.</span></div></div>':''}
-   <div class="card">
-     <div class="row"><span class="chip s-run"><span class="d"></span>Går att köra nu</span><span class="muted small">Våttemp −6,3 °C · startgräns −2,5 °C</span></div>
-     <p class="muted" style="line-height:1.6;margin-top:12px">Förhållandena är gynnsamma och håller i sig <b style="color:var(--text)">till ca 09:00 imorgon</b>. Under eftermiddagen stiger våttemperaturen över startgränsen. Nästa fönster öppnar natten mot torsdag.</p>
-     ${timelineHTML()}
-   </div>
-   <div class="grid g-2" style="margin-top:14px">
-     <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — prognos 48 h</h3><div class="chartbox"><canvas id="cFc"></canvas></div></div>
-     <div class="card"><h3>${icon('drop','#7dd3fc',15)} Vattenmagasin — så länge räcker det</h3>
-       <div class="val" style="font-size:1.7rem;font-weight:700;margin-top:6px">≈ ${fmtDur(damDaysAt(damUttakM3h())*24)} <small class="muted" style="font-size:.85rem">vid nuvarande uttag</small></div>
-       <div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}" style="margin-top:10px"><i style="width:${Math.min(100,damPct())}%"></i></div>
-       <p class="muted small" style="line-height:1.6;margin-top:12px">Snöproduktion pågår oftast bara några dygn, max en vecka, innan vattnet är slut. Grafen hjälper till att planera: kör hårt medan fönstret är öppet och magasinet räcker.</p>
-       <div class="note" style="margin-top:10px">Kopplas ihop med prognosmaskinen i snowgun-forecast — samma våttemperatur­modell och startgräns.</div>
-     </div>
-   </div>
-  </div>`;
+/* ============================================================
+   KÖRFÖNSTER — prognosen, räknad som i Snöprognos
+   Samma väderdata (Open-Meteo, samma punkt), samma våttemperatur
+   (psykrometrisk, Buck 1996), samma startgräns, kvalitetslinje, kapacitet,
+   vindgränser och sidodrift som i snowgun-forecast/index.html (avsnitt 2–7).
+   Ändras något där ska det ändras här också.
+
+   Det som skiljer: spåret och brunnarna är Snökolls egna (TRACK, WELLS), och
+   med enheter vid brunnarna räknas tvärvinden där de står — som Snöprognos
+   gör med utplacerade kanoner. Ingen kalibrering mot väderstationen: den
+   visar 0,3–1,7 grader för varmt och ojämnt, så en fast rättning vore fel.
+   Prognosen sparas aldrig i telefonen. Den hämtas när vyn öppnas och var
+   30:e minut, och det står alltid när den hämtades.
+   ============================================================ */
+// Snöprognos förval (DEFAULTS). Vattnet och kvaliteten går att ändra i vyn.
+const KF={fanBase:FTHRESH, lanceBase:-4.0, windWarn:5, windStop:9, trailWidth:8,
+  fanHeight:5, fanDist:30, lanceHeight:7, lanceDist:8};
+// Spårets mittpunkt, samma punkt som Snöprognos använder för Sparbanksspåret.
+const KF_PLATS={lat:TRACK.centre[0], lon:TRACK.centre[1]};
+const KF_ORD=['','torr puder','torr snö','torr snö','lätt allround','allroundsnö','allroundsnö','fuktig snö','blöt snö','bassnö','blöt bassnö'];
+// Per telefon, som inställningarna i Snöprognos. Inga mätvärden.
+let kfVal={q:5, vt:1.5};
+try{const s=JSON.parse(localStorage.getItem('snokollKorf')||'{}');
+  if(s.q>=1&&s.q<=10)kfVal.q=Math.round(s.q); if(Number.isFinite(s.vt)&&s.vt>=0&&s.vt<=15)kfVal.vt=s.vt;}catch(e){}
+function kfSet(k,v){
+  v=parseFloat(String(v).replace(',','.')); if(!Number.isFinite(v))return render();
+  if(k==='q')kfVal.q=Math.max(1,Math.min(10,Math.round(v)));
+  if(k==='vt')kfVal.vt=Math.max(0,Math.min(15,Math.round(v*10)/10));
+  try{localStorage.setItem('snokollKorf',JSON.stringify(kfVal))}catch(e){}
+  render();
 }
 
-function timelineHTML(){
-  const segs=[['good','nu'],['good',''],['good','06'],['ok','09'],['ok',''],['no','14'],['no',''],['no','18'],['ok','22'],['good','02'],['good',''],['good','06']];
-  return `<div class="timeline">${segs.map(([c,l])=>`<div class="tseg ${c}">${l}</div>`).join('')}</div>
-    <div class="legend"><span><i style="background:#10533a"></i>Gynnsamt</span><span><i style="background:#24476f"></i>Marginellt</span><span><i style="background:#3a2020"></i>Över gräns</span></div>`;
+/* --- våttemperatur: psykrometrisk jämvikt, mättnadsångtryck enligt Buck 1996 --- */
+const satVP=T=>6.1121*Math.exp((18.678-T/234.5)*T/(257.14+T));
+function wetBulb(T,rh,P){
+  if(!Number.isFinite(T)||!Number.isFinite(rh))return NaN;
+  P=Number.isFinite(P)?P:1013.25;
+  const e=Math.max(0.01,rh/100*satVP(T));
+  const res=Tw=>satVP(Tw)-6.53e-4*(1+0.000944*Tw)*P*(T-Tw)-e;
+  let lo=T-45,hi=T; if(res(lo)>0)return lo;
+  for(let i=0;i<60;i++){const m=(lo+hi)/2; if(res(m)<0)lo=m; else hi=m;}
+  return (lo+hi)/2;
+}
+
+/* --- gränser och kapacitet --- */
+// Torrare snö kräver kallare: 0,4 grader per steg under 10 (bassnö).
+const qualityOffset=q=>(10-q)*0.40;
+// Varmt vatten skjuter startgränsen nedåt, 0,15 grader per grad över 0,5.
+const waterOffset=w=>Math.max(0,w-0.5)*0.15;
+function thresholds(){
+  const w=waterOffset(kfVal.vt), q=qualityOffset(kfVal.q);
+  return {base:KF.fanBase-w, target:KF.fanBase-w-q, lance:KF.lanceBase-w, lanceTarget:KF.lanceBase-w-q, quality:q, water:w};
+}
+// Andel av vad kanonen klarar, mättar mot 100 % ungefär 5 grader under gränsen.
+// Säger hur mycket av maxflödet som går, inte hur mycket snö det blir per vatten.
+function capacity(wb,th,vt){
+  if(!Number.isFinite(wb)||wb>th)return 0;
+  const base=100*(1-Math.exp(-(th-wb)/1.9)), pen=1-Math.min(0.35,Math.max(0,vt-0.5)*0.015);
+  return Math.max(0,Math.min(100,base*pen));
+}
+function achievableQuality(wb,vt){
+  const m=KF.fanBase-waterOffset(vt)-wb; if(m<0)return null;
+  return Math.max(1,Math.min(10,Math.round(10-m/0.40)));
+}
+
+/* --- vind och sidodrift --- */
+const toRad=d=>d*Math.PI/180, normDeg=d=>((d%360)+360)%360;
+const DIRS16=['N','NNO','NO','ONO','O','OSO','SO','SSO','S','SSV','SV','VSV','V','VNV','NV','NNV'];
+const dirName=d=>Number.isFinite(d)?DIRS16[Math.round(normDeg(d)/22.5)%16]:'–';
+// Tvärvinden mot en sträcka med bäringen b. Vindriktningen är varifrån det blåser.
+const crossOf=(wind,dir,b)=>Math.abs(wind*Math.sin(toRad(normDeg(normDeg(dir+180)-b))));
+// Snön faller ungefär 1,2 m/s. Fläktens fana landar med tyngdpunkten före
+// svansen (0,6), lansen släpper från huvudets höjd (0,9).
+function driftDistance(cross,typ){
+  const lans=typ==='lans', hang=Math.max(1,lans?KF.lanceHeight:KF.fanHeight)/1.2;
+  return {hang, centre:cross*hang*(lans?0.9:0.6), tail:cross*hang};
+}
+const aimCorrection=(c,d)=>Math.atan2(c,Math.max(3,d))*180/Math.PI;
+
+// Spårets sträckor i meter kring mitten. Platt jord räcker på två kilometer.
+const kfXY=p=>[(p[1]-TRACK.centre[1])*111320*Math.cos(toRad(TRACK.centre[0])),(p[0]-TRACK.centre[0])*111320];
+let kfSegs=null;
+function trackSegs(){
+  if(kfSegs)return kfSegs;
+  kfSegs=[];
+  for(let i=1;i<TRACK.pts.length;i++){
+    const a=kfXY(TRACK.pts[i-1]), b=kfXY(TRACK.pts[i]), len=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    if(len>=1)kfSegs.push({a,b,len,bearing:normDeg(Math.atan2(b[0]-a[0],b[1]-a[1])*180/Math.PI)});
+  }
+  return kfSegs;
+}
+function segDist(p,s){
+  const dx=s.b[0]-s.a[0], dy=s.b[1]-s.a[1];
+  const t=Math.max(0,Math.min(1,((p[0]-s.a[0])*dx+(p[1]-s.a[1])*dy)/(dx*dx+dy*dy)));
+  return Math.hypot(p[0]-(s.a[0]+t*dx),p[1]-(s.a[1]+t*dy));
+}
+// Riktningarna på den bit av spåret en enhet vid brunnen når: närmaste
+// sträckan och därifrån åt båda hållen så länge spåret är inom räckhåll.
+// Inte allt inom radien — slingan viker tillbaka, och returbenet ska inte
+// räknas som om kanonen siktade på det (Snöprognos gunCoverage).
+function wellBearings(no,typ){
+  const w=WELLS.find(x=>x.no===no), S=trackSegs(); if(!w||!S.length)return null;
+  const p=kfXY([w.lat,w.lon]), r=typ==='lans'?KF.lanceDist+12:KF.fanDist;
+  let idx=0,bd=Infinity; S.forEach((s,i)=>{const d=segDist(p,s); if(d<bd){bd=d;idx=i;}});
+  const out=[S[idx].bearing];
+  for(let i=idx-1;i>=0&&segDist(p,S[i])<=r;i--)out.push(S[i].bearing);
+  for(let i=idx+1;i<S.length&&segDist(p,S[i])<=r;i++)out.push(S[i].bearing);
+  return out;
+}
+// Enheterna som räknas: de som hörs och står vid en känd brunn.
+function kfUnits(){
+  if(bridgeOld())return [];
+  return running().filter(c=>WELLS.some(w=>w.no===c.brunn)).map(c=>({c,b:wellBearings(c.brunn,c.typ)})).filter(u=>u.b);
+}
+let kfProf=null, kfProfKey=null;
+function windProfile(){
+  const u=kfUnits(), key=u.map(x=>x.c.typ+x.c.brunn).join();
+  if(kfProf&&key===kfProfKey)return kfProf;
+  kfProfKey=key;
+  kfProf=u.length?{mode:'enheter', sets:u.map(x=>x.b), units:u}
+    :{mode:'spar', rows:trackSegs().map(s=>({b:s.bearing,w:s.len}))};
+  return kfProf;
+}
+// Med enheter: värsta riktningen inom varje enhets räckvidd, medianen över
+// enheterna. Annars medianen längs spåret, viktad efter längd.
+function crossStats(wind,dir){
+  const p=windProfile();
+  const rows=p.mode==='enheter'?p.sets.map(set=>({c:Math.max(...set.map(b=>crossOf(wind,dir,b))),w:1}))
+    :p.rows.map(r=>({c:crossOf(wind,dir,r.b),w:r.w}));
+  rows.sort((a,b)=>a.c-b.c);
+  const half=rows.reduce((a,r)=>a+r.w,0)/2; let acc=0, median=rows[rows.length-1].c;
+  for(const r of rows){acc+=r.w; if(acc>half){median=r.c;break;}}
+  return {median, min:rows[0].c, max:rows[rows.length-1].c, mode:p.mode, count:rows.length};
+}
+
+/* --- bedömning av en tidpunkt (Snöprognos assess) --- */
+const fmt1=v=>num(v,1);
+// Gränserna med två decimaler när det behövs: −2,65 avrundat till −2,7 ser
+// ut att ligga under en våttemperatur på −2,66 som faktiskt räcker.
+const fmtG=v=>Number.isFinite(v)?v.toLocaleString('sv-SE',{minimumFractionDigits:1,maximumFractionDigits:2}):'–';
+function assess(pt){
+  const th=thresholds(), wc=crossStats(pt.wind,pt.dir), drift=driftDistance(wc.median,'kanon');
+  const fanCap=capacity(pt.wb,th.base,kfVal.vt), lanceCap=capacity(pt.wb,th.lance,kfVal.vt);
+  let state='go'; const reasons=[];
+  if(!(pt.wb<=th.base)){state='stop'; reasons.push(`våttemp ${fmt1(pt.wb)} °C är över startgränsen ${fmtG(th.base)} °C`);}
+  else if(pt.wb>th.target){state='marginal'; reasons.push(`${fmt1(pt.wb)} °C räcker till kvalitet ${achievableQuality(pt.wb,kfVal.vt)} men målet är ${kfVal.q}`);}
+  else if(pt.wb>th.base-0.5){state='marginal'; reasons.push(`våttemp ${fmt1(pt.wb)} °C ligger precis på gränsen`);}
+  const gust=Number.isFinite(pt.gust)?pt.gust:pt.wind;
+  if(gust>=KF.windStop||pt.wind>=KF.windStop){state='stop'; reasons.push(`vinden ${fmt1(pt.wind)} m/s (byar ${fmt1(gust)}) är över stoppgränsen ${KF.windStop} m/s`);}
+  else if(pt.wind>=KF.windWarn&&state!=='stop'){state='marginal'; reasons.push(`${fmt1(pt.wind)} m/s kräver att kanonerna riktas om`);}
+  // Driver snön längre i sidled än halva spårbredden hamnar den utanför.
+  if(state!=='stop'&&drift.centre>KF.trailWidth/2){if(state==='go')state='marginal';
+    reasons.push(`snön driver ca ${Math.round(drift.centre)} m i sidled, spåret är ${KF.trailWidth} m brett`);}
+  if(state==='stop'&&wc.min<wc.max*0.5)reasons.push(`tvärvinden varierar ${fmt1(wc.min)}–${fmt1(wc.max)} m/s längs spåret`);
+  return {state, reasons, wc, drift, fanCap, lanceCap, th};
+}
+const KF_WORD={go:'Går att köra', marginal:'Marginellt', stop:'Vänta'};
+const KF_CHIP={go:'s-run', marginal:'s-limit', stop:'s-alarm'};
+const kfChip=s=>`<span class="chip ${KF_CHIP[s]}"><span class="d"></span>${KF_WORD[s]}</span>`;
+const kfCap=s=>s?s.charAt(0).toUpperCase()+s.slice(1):'';
+
+/* --- hämtning ---
+   timeformat=unixtime: ISO-tider utan tidszon tolkas som lokal tid fast
+   Open-Meteo menar UTC, och då hamnar hela prognosen en till två timmar fel.
+   Kvartsdata i tre dygn, timdata därefter i tio. */
+const FC_VARS='temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,surface_pressure';
+const FC_EVERY=30*60000, FC_RETRY=2*60000, FC_OLD=2*3600000;
+let fc={pts:[], at:0, err:'', busy:false, tried:0}, fcToken=0;
+function fcUrl(kind){
+  const q=new URLSearchParams({latitude:KF_PLATS.lat.toFixed(4), longitude:KF_PLATS.lon.toFixed(4),
+    wind_speed_unit:'ms', timeformat:'unixtime', models:'best_match'});
+  if(kind==='h'){q.set('hourly',FC_VARS);q.set('forecast_days','10');}
+  else{q.set('minutely_15',FC_VARS);q.set('forecast_days','3');}
+  return 'https://api.open-meteo.com/v1/forecast?'+q;
+}
+function fcBlock(b){
+  if(!b||!b.time)return [];
+  return b.time.map((t,i)=>{
+    const temp=b.temperature_2m[i], rh=b.relative_humidity_2m[i], pres=b.surface_pressure?b.surface_pressure[i]:undefined;
+    return {x:t*1000, temp, rh, pressure:pres, wind:b.wind_speed_10m[i],
+      gust:b.wind_gusts_10m?b.wind_gusts_10m[i]:null, dir:b.wind_direction_10m[i], wb:wetBulb(temp,rh,pres)};
+  }).filter(d=>Number.isFinite(d.temp));
+}
+async function fcFetch(){
+  const tok=++fcToken; fc.busy=true; fc.tried=Date.now();
+  try{
+    const [rH,rF]=await Promise.all([fetch(fcUrl('h'),{cache:'no-store'}),fetch(fcUrl('f'),{cache:'no-store'}).catch(()=>null)]);
+    if(!rH||!rH.ok)throw new Error('Vädertjänsten svarade '+(rH?rH.status:'inte'));
+    const h=fcBlock((await rH.json()).hourly); if(!h.length)throw new Error('Prognosen kom tom');
+    let f=[]; if(rF&&rF.ok){try{f=fcBlock((await rF.json()).minutely_15);}catch(e){}}
+    if(tok!==fcToken)return;
+    const cut=f.length?f[f.length-1].x:-Infinity;
+    fc.pts=f.concat(h.filter(d=>d.x>cut)); fc.at=Date.now(); fc.err='';
+  }catch(e){
+    if(tok!==fcToken)return;
+    console.error(e); fc.err='Ingen kontakt med vädertjänsten.';
+  }finally{
+    if(tok===fcToken){fc.busy=false; if(current==='forecast'||current==='overview')safeRender(true);}
+  }
+}
+// Anropas vid varje ritning av vyerna som visar prognosen.
+function fcEnsure(){
+  if(fc.busy)return;
+  const now=Date.now();
+  if(fc.at&&now-fc.at<FC_EVERY)return;
+  if(fc.tried&&now-fc.tried<FC_RETRY)return;
+  fcFetch();
+}
+const fcOld=()=>!fc.at||Date.now()-fc.at>FC_OLD;
+function fcNow(){
+  const now=Date.now(); let best=null, bd=Infinity;
+  for(const d of fc.pts){const df=Math.abs(d.x-now); if(df<bd){bd=df;best=d;}}
+  return bd<=3*3600000?best:null;
+}
+// Timpunkterna från innevarande timme och n timmar framåt.
+function fcHours(n){
+  const h0=new Date(); h0.setMinutes(0,0,0); const a=+h0, b=a+n*3600000;
+  return fc.pts.filter(d=>d.x>=a&&d.x<=b&&new Date(d.x).getMinutes()===0);
+}
+
+/* --- körfönster: sammanhängande perioder som går att köra --- */
+function findWindows(from,to){
+  const out=[]; let open=null;
+  for(const pt of fc.pts){
+    if(pt.x<from||pt.x>to)continue;
+    const a=assess(pt), ok=a.state!=='stop';
+    if(ok&&!open)open={start:pt.x,end:pt.x,marginal:a.state==='marginal',minWb:pt.wb};
+    else if(ok){open.end=pt.x; if(a.state==='marginal')open.marginal=true; open.minWb=Math.min(open.minWb,pt.wb);}
+    else if(open){out.push(open);open=null;}
+  }
+  if(open)out.push(open);
+  // Glapp under en timme är inte värda att bryta produktionen för.
+  const merged=[];
+  for(const w of out){const p=merged[merged.length-1];
+    if(p&&w.start-p.end<75*60000){p.end=w.end;p.marginal=p.marginal||w.marginal;p.minWb=Math.min(p.minWb,w.minWb);}
+    else merged.push({...w});}
+  return merged.filter(w=>w.end-w.start>=60*60000);
+}
+function durText(ms){const m=Math.round(ms/60000), h=Math.floor(m/60), r=m%60; return h?(r?`${h} h ${r} min`:`${h} h`):`${r} min`;}
+function daysAhead(ts){const s=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime(); return Math.round((s(new Date(ts))-s(new Date()))/864e5);}
+function dayPrefix(ts){
+  const d=new Date(ts), n=daysAhead(ts);
+  if(n===0)return d.getHours()>=18||d.getHours()<5?'i natt':'i dag';
+  if(n===1)return d.getHours()<5?'i natt':'i morgon';
+  if(n===2)return 'i övermorgon';
+  return d.toLocaleDateString('sv-SE',{weekday:'long',day:'numeric',month:'short'});
+}
+const kfWhen=ts=>hhmm(new Date(ts));
+function winLabel(w){
+  const now=Date.now(), end=daysAhead(w.end)===daysAhead(w.start)?kfWhen(w.end):kfWhen(w.end)+' '+WD[new Date(w.end).getDay()];
+  return w.start<=now+20*60000?`Kör nu → ${end}`:`${kfCap(dayPrefix(w.start))} ${kfWhen(w.start)} → ${end}`;
+}
+const kfWins=()=>{const now=Date.now(); return fc.pts.length?findWindows(now,now+10*864e5):[]};
+
+/* --- tidslinjen: en ruta per timme, sämsta läget inom timmen --- */
+const KF_RANK={go:0,marginal:1,stop:2}, KF_SEG={go:'good',marginal:'ok',stop:'no'};
+function timelineHTML(hours=48){
+  const h0=new Date(); h0.setMinutes(0,0,0);
+  let segs='';
+  for(let i=0;i<hours;i++){
+    const a=+h0+i*3600000, b=a+3600000, d=new Date(a);
+    const pts=fc.pts.filter(p=>p.x>=a&&p.x<b);
+    let st=null, wb=null;
+    for(const p of pts){const s=assess(p).state; if(st===null||KF_RANK[s]>KF_RANK[st])st=s; if(wb===null||p.wb>wb)wb=p.wb;}
+    const h=d.getHours(), lab=i===0?'nu':(h%6===0&&i>2&&i<hours-2)?(h===0?WD[d.getDay()]:String(h).padStart(2,'0')):'';
+    segs+=`<div class="tseg ${st?KF_SEG[st]:'na'}${lab&&i?' mark':''}" title="${WD[d.getDay()]} ${hhmm(d)}${st?' · '+KF_WORD[st]+', våttemp upp till '+fmt1(wb)+' °C':' · ingen prognos'}">${lab?`<b>${lab}</b>`:''}</div>`;
+  }
+  return `<div class="timeline">${segs}</div>
+    <div class="legend"><span><i style="background:#10533a"></i>Går att köra</span><span><i style="background:#5a4712"></i>Marginellt</span><span><i style="background:#3a2020"></i>Vänta</span></div>`;
+}
+
+// Kort sammanfattning för översikten.
+function fcBrief(){
+  fcEnsure();
+  if(!fc.pts.length)return `<p class="muted small" style="line-height:1.6;margin:11px 0 0">${fc.err?esc(fc.err)+' Prognosen försöker igen om en stund.':'Hämtar prognosen …'}</p>`;
+  const pt=fcNow(), a=pt?assess(pt):null, w=kfWins()[0], now=Date.now();
+  const txt=!w?'Inget körfönster inom tio dygn — för varmt eller för blåsigt.'
+    :w.start<=now+20*60000?`Prognosen håller <b style="color:var(--text)">till ${kfWhen(w.end)}${daysAhead(w.end)?' '+WD[new Date(w.end).getDay()]:''}</b> (${durText(w.end-now)}${w.marginal?', delvis marginellt':''}).`
+    :`Nästa fönster: <b style="color:var(--text)">${dayPrefix(w.start)} ${kfWhen(w.start)}</b>, ${durText(w.end-w.start)}.`;
+  return `<div class="row" style="margin-top:10px">${a?kfChip(a.state):''}<span class="muted small">enligt prognosen${a?' · våttemp '+fmt1(pt.wb)+' °C':''}</span>${fcOld()?agoHTML(fc.at):''}</div>
+    <p class="muted small" style="line-height:1.6;margin:10px 0 0">${txt}</p>${timelineHTML(24)}`;
+}
+
+function vForecast(){
+  fcEnsure();
+  const head=topbar('Prognos','Körfönster',`<button class="linkbtn" onclick="fcFetch();render()"${fc.busy?' disabled':''}>${fc.busy?'Hämtar …':'Hämta nu'}</button>`);
+  if(!fc.pts.length)return head+`<div class="view"><div class="card"><p class="muted" style="margin:0">${fc.err?esc(fc.err)+' Kontrollera nätet och tryck <b>Hämta nu</b>.':'Hämtar prognosen …'}</p></div></div>`;
+  const pt=fcNow(), a=pt?assess(pt):null, th=thresholds(), wins=kfWins().slice(0,5), now=Date.now(), old=fcOld();
+  const stamp=`Prognos från Open-Meteo, hämtad ${hhmm(new Date(fc.at))}${fc.err?' · '+esc(fc.err)+' Visar den senast hämtade.':''}`;
+  // Väderstationens mätning bredvid, inte inräknad.
+  const st=real&&wx&&Number.isFinite(wx.tw)?(bridgeOld()?`Väderstationen mätte ${fmt1(wx.tw)} °C ${agoHTML(lastData)}`:`Väderstationen mäter ${fmt1(wx.tw)} °C`):'';
+  let why='';
+  if(a){
+    if(a.state==='go'){const q=achievableQuality(pt.wb,kfVal.vt);
+      why=`${Math.round(a.fanCap)} % kapacitet på fläkt`+(a.lanceCap>0?`, ${Math.round(a.lanceCap)} % på lans`:', ännu för varmt för lans')+(q?` · räcker till kvalitet ${q}`:'')+'.';}
+    else why=a.reasons.slice(0,2).map(r=>kfCap(r)+'.').join(' ');
+  }
+  const corr=a?aimCorrection(a.drift.centre,KF.fanDist):0, lansD=a?driftDistance(a.wc.median,'lans'):null;
+  const prof=windProfile();
+  const unitRows=a&&prof.mode==='enheter'?prof.units.map(u=>{
+    const c=Math.max(...u.b.map(b=>crossOf(pt.wind,pt.dir,b))), dr=driftDistance(c,u.c.typ).centre, ok=dr<=KF.trailWidth/2;
+    return `<tr><td><b>${esc(u.c.namn)}</b></td><td class="r">${u.c.brunn}</td><td class="r">${fmt1(c)}</td><td class="r">${Math.round(dr)} m</td><td>${ok?'<span class="kf-dot go"></span> i spåret':dr<=KF.trailWidth?'<span class="kf-dot marginal"></span> i kanten':'<span class="kf-dot stop"></span> utanför'}</td></tr>`;}).join(''):'';
+  const hrs=fcHours(24);
+  let lastDay=null;
+  // Dagen som en egen rad: i tidskolumnen gjorde den tabellen för bred för en telefon.
+  const hourRows=hrs.map(p=>{const s=assess(p), d=new Date(p.x), nd=d.getDate()!==lastDay; lastDay=d.getDate();
+    return `${nd?`<tr class="kf-day"><td colspan="8">${d.toLocaleDateString('sv-SE',{weekday:'long',day:'numeric',month:'long'})}</td></tr>`:''}<tr title="${esc(s.reasons.map(kfCap).join(' · ')||'Alla villkor uppfyllda')}"><td>${hhmm(d)}</td><td class="r"><b style="color:var(--ice)">${fmt1(p.wb)}</b></td><td class="r">${fmt1(p.temp)}</td><td class="r">${num(p.rh,0)}</td><td class="r">${num(p.wind,0)}${Number.isFinite(p.gust)?' ('+num(p.gust,0)+')':''} ${dirName(p.dir)}</td><td class="r">${fmt1(s.wc.median)}</td><td class="r">${Math.round(s.fanCap)}</td><td><span class="kf-dot ${s.state}" title="${KF_WORD[s.state]}"></span></td></tr>`;}).join('');
+  const p2=pumps&&pumps.dep12||{}, pumpsGo=real&&!bridgeOld()&&Number.isFinite(p2.vattenTemp)&&cannons.some(c=>c.state==='conn'&&c.q>0);
+  const inp='background:#0c1626;border:1px solid var(--border-hi);border-radius:10px;color:var(--text);padding:9px 11px;font:inherit;font-size:.9rem;width:100%;min-width:0;margin-top:5px';
+  const w0=wins[0], winH=w0&&w0.start<=now+20*60000?(w0.end-now)/3600000:null, damH=damDaysAt(damUttakM3h())*24;
+  return head+`<div class="view">
+   <div class="card${old?' old':''}">
+     <div class="row">${a?kfChip(a.state):'<span class="chip s-off"><span class="d"></span>Ingen prognos för nu</span>'}<span class="muted small">${a?'våttemp '+fmt1(pt.wb)+' °C enligt prognosen · startgräns '+fmtG(th.base)+' °C':''}</span>${old?agoHTML(fc.at):''}</div>
+     ${why?`<p class="muted" style="line-height:1.6;margin:12px 0 0">${why}</p>`:''}
+     <div class="section-title" style="margin:16px 2px 2px">Körfönster de närmaste tio dygnen</div>
+     ${wins.length?wins.map(w=>`<div class="kf-win${w.marginal?' marginal':''}"><span>${winLabel(w)}</span><span class="d">${durText(w.end-w.start)} · lägst ${fmt1(w.minWb)} °C${w.marginal?' · delvis marginellt':''}</span></div>`).join('')
+       :'<div class="kf-win none"><span>Inget körfönster inom tio dygn</span><span class="d">för varmt eller för blåsigt</span></div>'}
+     ${timelineHTML(48)}
+     <p class="muted small" style="margin:10px 0 0">${stamp}</p>
+   </div>
+
+   <div class="grid g-kpi" style="margin-top:14px">
+     <div class="card kpi${old?' old':''}"><h3>${icon('temp','#7dd3fc',15)} Våttemp nu</h3><div class="val">${a?fmt1(pt.wb):'–'}<small> °C</small></div><div class="foot">${a?'luft '+fmt1(pt.temp)+' °C, '+num(pt.rh,0)+' %':''}${st?'<br>'+st:''}</div></div>
+     <div class="card kpi"><h3>${icon('sliders','#7dd3fc',15)} Startgräns</h3><div class="val">${fmtG(th.base)}<small> °C</small></div><div class="foot">kvalitet ${kfVal.q}: ${fmtG(th.target)} °C · lans ${fmtG(th.lance)} °C</div></div>
+     <div class="card kpi${old?' old':''}"><h3>${icon('fan','#7dd3fc',15)} Kapacitet</h3><div class="val">${a?Math.round(a.fanCap):'–'}<small> % fläkt</small></div><div class="foot">${a?Math.round(a.lanceCap)+' % lans · av maxflödet, inte snö per vatten':''}</div></div>
+     <div class="card kpi${old?' old':''}"><h3>${icon('track','#7dd3fc',15)} Vind</h3><div class="val">${a?num(pt.wind,0):'–'}<small> m/s ${a?dirName(pt.dir):''}</small></div><div class="foot">${a?'byar '+num(pt.gust,0)+' · tvärs spåret '+fmt1(a.wc.median)+' m/s':''}</div></div>
+   </div>
+
+   <div class="grid g-2" style="margin-top:14px">
+     <div class="card${old?' old':''}"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur — 48 h</h3><div class="chartbox"><canvas id="cFc"></canvas></div>
+       <div class="legend"><span><i style="background:#38bdf8"></i>Våttemp</span><span><i style="background:#8ba0bd"></i>Luft</span><span><i style="background:#fbbf24"></i>Startgräns ${fmtG(th.base)}</span><span><i style="background:#60a5fa"></i>Kvalitet ${kfVal.q}: ${fmtG(th.target)}</span></div></div>
+     <div class="card${old?' old':''}"><h3>${icon('track','#7dd3fc',15)} Vind och sidodrift — 48 h</h3><div class="chartbox"><canvas id="cWind"></canvas></div>
+       <div class="legend"><span><i style="background:#fbbf24"></i>Medelvind</span><span><i style="background:#fbbf2488"></i>Byar</span><span><i style="background:#38bdf8"></i>Tvärs spåret</span></div>
+       ${a?`<p class="muted small" style="line-height:1.6;margin:12px 0 0">${a.wc.median<0.4?'Vinden ligger i stort sett längs spåret. Kanonerna kan riktas rakt på spåret.'
+         :`Vinden från <b style="color:var(--text)">${dirName(pt.dir)}</b> trycker <b style="color:var(--text)">${fmt1(a.wc.median)} m/s tvärs spåret</b> (${prof.mode==='enheter'?'median vid '+a.wc.count+(a.wc.count===1?' enhet':' enheter'):'median längs spåret'}). Fanans tyngdpunkt landar ca <b style="color:var(--text)">${Math.round(a.drift.centre)} m</b> ur led, lansens ca ${Math.round(lansD.centre)} m; spåret är ${KF.trailWidth} m brett. Vrid kanonen ungefär <b style="color:var(--text)">${Math.round(corr)}°</b> mot vinden.`}
+         ${Number.isFinite(pt.gust)&&pt.gust>pt.wind*1.7&&pt.gust>6?' Byarna går upp i '+fmt1(pt.gust)+' m/s — så byig vind går inte att kompensera bort.':''}</p>`:''}
+       ${unitRows?`<div class="kf-scroll"><table class="kron-tab mt-tab" style="margin-top:12px"><tr><th>Enhet</th><th class="r">Brunn</th><th class="r">Tvärs m/s</th><th class="r">Driver</th><th>Snön landar</th></tr>${unitRows}</table></div>`:''}
+     </div>
+   </div>
+
+   <div class="card${old?' old':''}" style="margin-top:14px"><h3>${icon('clock','#7dd3fc',15)} Timme för timme</h3>
+     <div class="kf-scroll"><table class="kron-tab mt-tab"><tr><th>Tid</th><th class="r">Våt °C</th><th class="r">Luft</th><th class="r">RF %</th><th class="r">Vind (by)</th><th class="r">Tvärs</th><th class="r">Fläkt %</th><th></th></tr>${hourRows}</table></div>
+   </div>
+
+   <div class="grid g-2" style="margin-top:14px">
+     <div class="card"><h3>${icon('sliders','#7dd3fc',15)} Räknat med</h3>
+       <div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:10px">
+         <label class="small muted">Målkvalitet<select style="${inp}" onchange="kfSet('q',this.value)">${KF_ORD.slice(1).map((o,i)=>`<option value="${i+1}"${kfVal.q===i+1?' selected':''}>${i+1} — ${o}</option>`).join('')}</select></label>
+         <label class="small muted">Vattentemperatur, °C<input type="number" inputmode="decimal" step="0.1" min="0" max="15" style="${inp}" value="${kfVal.vt}" onchange="kfSet('vt',this.value)"></label>
+       </div>
+       ${pumpsGo?`<p class="muted small" style="line-height:1.55;margin:10px 0 0">TT01 i pumphuset visar ${fmt1(p2.vattenTemp)} °C nu, med pumparna igång. <button class="linkbtn" onclick="kfSet('vt',${p2.vattenTemp})">Använd ${fmt1(p2.vattenTemp)} °C</button></p>`:''}
+       <p class="muted small" style="line-height:1.6;margin:10px 0 0">Sparas i den här telefonen. Startgränsen är ${fmt1(KF.fanBase)} °C för fläkt och ${fmt1(KF.lanceBase)} °C för lans, skjuten ${fmtG(th.water)} grader nedåt av vattnet. Målkvaliteten lägger till 0,4 grader per steg under 10 (${fmt1(th.quality)} nu). Vind ${KF.windWarn} m/s kräver omriktning, ${KF.windStop} m/s stoppar.</p>
+     </div>
+     <div class="card${damUtanUttag()?' old':''}"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin — så länge räcker det</h3>
+       ${damUtanUttag()?`<p class="muted small" style="margin:10px 0 0">Uttaget saknas sedan mätningen ${fmtDT(dam.t0)}.</p>`
+         :`<div class="val" style="font-size:1.7rem;font-weight:700;margin-top:6px">≈ ${fmtDur(damH)} <small class="muted" style="font-size:.85rem">vid nuvarande uttag</small></div>`}
+       <div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}" style="margin-top:10px"><i style="width:${Math.min(100,damPct())}%"></i></div>
+       <p class="muted small" style="line-height:1.6;margin-top:12px">${winH!==null&&!damUtanUttag()?`Fönstret är öppet ${durText(winH*3600000)} till; vattnet räcker ${damH<winH?'<b style="color:var(--limit)">kortare</b>':'längre'}. `:''}Kör hårt medan fönstret är öppet och magasinet räcker.</p>
+     </div>
+   </div>
+   <div class="note" style="margin-top:14px">Samma beräkning som i Snöprognos. Prognosen gäller tio meter över öppen mark; väderstationen vid brunn 7 visar 0,3–1,7 grader för varmt och räknas inte in. Kapaciteten är en allmän mättande kurva (ca 90 % fyra grader under gränsen), inte Sufags data. Sidodriften är tvärvinden gånger tiden snön hänger i luften (${KF.fanHeight} m fallhöjd för fläkt, ${KF.lanceHeight} m för lans, 1,2 m/s). ${prof.mode==='enheter'?'Tvärvinden räknas där enheterna står: värsta riktningen på den bit spåret de når, medianen över enheterna.':'Tvärvinden räknas längs hela spåret, viktad efter längd, tills enheter hörs vid brunnarna.'} Appen visar bara — inställningar görs i styrsystemet.</div>
+  </div>`;
 }
 
 /* ---------- unit detail (modal-ish, reuse main) ---------- */
@@ -2555,14 +2908,20 @@ function drawCharts(){
       chOpts(ts,'m³/h',tickHours(ts,2),{min:lo,max:PUMP_MAX+4,ticks:{color:'#8ba0bd',font:{size:11},stepSize:10,includeBounds:false}}));
   }
   if(current==='forecast'){
-    // framåt: varannan timme i 48 h, från nästa jämna tvåtimmarsslag
-    // Jämna slag i LOKAL tid. Räknat i millisekunder hamnar de på jämna
-    // UTC-timmar, alltså udda svenska, och då blev axeln utan etiketter.
-    const f=new Date(); f.setMinutes(0,0,0); f.setHours(f.getHours()+1); if(f.getHours()%2)f.setHours(f.getHours()+1);
-    const ts=Array.from({length:25},(_,i)=>{const t=new Date(f); t.setHours(f.getHours()+2*i); return t});
-    const d=interp([-6.3,-6.6,-6.1,-5.2,-3.9,-2.1,-0.8,-1.9,-3.6,-5.4,-6.2,-6.5,-6.1],ts.length);
+    // Prognosens timpunkter 48 h framåt från innevarande timme (lokal tid,
+    // så att etiketterna hamnar på jämna svenska klockslag).
+    const pts=fcHours(48); if(pts.length<2)return;
+    const ts=pts.map(p=>new Date(p.x)), th=thresholds(), n=ts.length, r1=v=>Number.isFinite(v)?+v.toFixed(1):null;
     const tick=(v,i)=>{const t=ts[i];if(!t||t.getHours()%6!==0)return null;return t.getHours()===0?WD[t.getDay()]:hhmm(t)};
-    chart('cFc',ts,[series(d,'Våttemp','#38bdf8'),flat(ts.length,FTHRESH,'Startgräns','#fbbf2499')],chOpts(ts,'°C',tick));
+    chart('cFc',ts,[series(pts.map(p=>r1(p.wb)),'Våttemp','#38bdf8'),
+      Object.assign(series(pts.map(p=>r1(p.temp)),'Luft','#8ba0bd'),{fill:false,borderWidth:1,borderDash:[4,4]}),
+      flat(n,r1(th.base),'Startgräns','#fbbf24aa'),
+      flat(n,r1(th.target),'Kvalitet '+kfVal.q,'#60a5faaa')],chOpts(ts,'°C',tick));
+    chart('cWind',ts,[Object.assign(series(pts.map(p=>r1(p.wind)),'Medelvind','#fbbf24'),{fill:false}),
+      Object.assign(series(pts.map(p=>r1(p.gust)),'Byar','#fbbf2488'),{fill:false,borderWidth:1,borderDash:[4,4]}),
+      series(pts.map(p=>r1(crossStats(p.wind,p.dir).median)),'Tvärs spåret','#38bdf8'),
+      flat(n,KF.windWarn,'Omriktning','#fbbf2466'),
+      Object.assign(flat(n,KF.windStop,'Stopp','#f8717199'),{borderDash:[]})],chOpts(ts,'m/s',tick,{beginAtZero:true}));
   }
   if(current==='unit'){
     const c=cannons.find(x=>x.id===unitId); if(!c)return;

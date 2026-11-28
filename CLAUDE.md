@@ -64,7 +64,8 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   historik går att trycka på (`histAttr`, `openHist`).
 - **Appen** loggar in med Google, visar riktig data och går att installera på
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
-  siffror: öppna ringar, dyssteg och strypning. Körfönstret är fortfarande ett exempel (märkt så), och
+  siffror: öppna ringar, dyssteg och strypning. Körfönstret är riktig
+  prognos (se nedan), och
   dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönet
   och snorkeln är inmätta mot vattenytan (24 november): 100 % är snorkeln,
   3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Måttbandet läses
@@ -77,6 +78,22 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   gemensamt. Loggen i Damm-koll visar avläsningar, pumppass och mätningar,
   och varje flik går att ladda ner för Excel. Säg "mätning", inte
   "kalibrering", i det som syns — ordet förvirrade.
+- **Körfönstret är inte längre ett exempel** (28 november). Det hämtar
+  prognosen från Open-Meteo för spårets mittpunkt, samma punkt och samma
+  anrop som Snöprognos, och räknar som Snöprognos (`index.html` där,
+  avsnitt 2–7): psykrometrisk våttemperatur, startgräns −2,5 °C för fläkt
+  och −4 för lans skjuten nedåt av vattnet, kvalitetslinjen 0,4 °C per steg,
+  kapaciteten (`capacity()`), vindgränserna 5 och 9 m/s och sidodriften.
+  Ändras räkningen där ska den ändras här också. Provat 28 november:
+  gränser, våttemperatur, kapacitet och körfönster blev desamma som i
+  Snöprognos. Tvärvinden räknas vid brunnarna där enheterna hörs (värsta
+  riktningen inom räckvidden, medianen över enheterna), annars längs hela
+  spåret. Kvalitet och vattentemperatur ställs per telefon (`snokollKorf`),
+  förval som i Snöprognos (5 och 1,5 °C); TT01 erbjuds bara när pumparna
+  går, eftersom vattnet i pumphuset står varmt annars. Prognosen sparas
+  aldrig i telefonen: den hämtas när Körfönster eller Översikt öppnas och
+  var 30:e minut, och korten blir streckade när den är över två timmar
+  gammal. Väderstationen visas bredvid men räknas aldrig in.
 - **FT01 (flöde ut) är `dep12/k125`**, utpekad 25 november när pumparna
   startade. Den visade 50–53 % av dammens minskning 24–27 november
   (måttband och flytpunkt). Appen visar den orättad och märkt så. **Räkna
