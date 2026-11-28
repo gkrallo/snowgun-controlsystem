@@ -92,8 +92,13 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   eftersom FT01 troligen inte går att lita på). Bryggan 11 räknar varje
   timmes vatten ur styrsystemets statistik till `/vattenTimme` (nyckel =
   timmens början i UTC); appen drar summan sedan senaste måttbandsmätningen
-  (`damDrawnSince`), och nuvarande uttag är summan av `q`. Siffrorna är
-  kanonernas beräknade flöde — måttbandet avgör om de stämmer.
+  (`damDrawnSince`), och nuvarande uttag är summan av `q`. Båda räknas som
+  90 % av kanonernas beräknade flöde (`UTTAG_FAKTOR`, sedan 28 november),
+  eftersom summan var 108–115 % av dammens minskning 24–27 november.
+  Loggen jämför två måttbandsmätningar med det. FT01 används inte förrän
+  Kristian felsökt den. **Bryggan 11 är inte installerad på styrdatorn**
+  (28 november): utan `/vattenTimme` står dammen kvar på senaste mätningen
+  och visas som gammal ("Uttaget saknas sedan mätningen").
 - **Pushlarm** är utlagda sedan 26 november 16:20 (`docs/forslag-pushlarm.md`,
   "Byggt 26 november"). Läggs ut med `firebase deploy --only functions`.
   Funktionen körs som projektets standardkonto

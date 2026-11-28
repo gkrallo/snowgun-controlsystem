@@ -11,6 +11,9 @@ föll bort på kvartsgränsen), journalen går tillbaka till 30 oktober 08:45
 och gav 82 inkopplingar. SGC400-3 var senast inkopplad vid en annan brunn
 än 10 och räknas vid brunnen från 09:53.
 
+- **Version 11 är inte installerad** (28 november; version 10 går). Appens
+  damm väntar på den. Stegen står i `LAS-MIG-FORST.txt` i zipfilen
+  `brygga-styrdatorn-2026-11-26-v11.zip`.
 - Version 11 räknar kanonernas vatten timme för timme ur styrsystemets
   statistik och skickar det till `/vattenTimme` (nyckel = timmens början i
   UTC, värde m³), för dammens uttag. Första starten räknar hela säsongen,

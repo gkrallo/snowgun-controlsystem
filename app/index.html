@@ -1010,7 +1010,7 @@ function vOverview(){
     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} I drift</h3><div class="val">${run}<small> / ${cannons.length} enheter</small></div><div class="foot">${cannons.filter(c=>c.state==='limit').length} strypta · ${nOff} ${nOff===1?'avstängd':'avstängda'}</div></div>
     <div class="card kpi" style="cursor:pointer" onclick="go('water')"><h3>${icon('drop','#7dd3fc',15)} Vattenuttag</h3><div class="val">${totalWater()}<small> / ${PUMP_TARGET} m³/h</small></div><div class="bar ${ps==='over'||ps==='at'?'red':ps==='near'?'amber':''}"><i style="width:${Math.min(100,wpct)}%"></i></div><div class="foot ${ps==='ok'?'':ps==='near'?'warn':'down'}">${PUMP_TXT[ps]} · tak ${PUMP_MAX}</div></div>
     <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${tw.toFixed(1)}<small> °C</small></div><div class="foot up">▼ sjunker · bra för produktion</div></div>
-    <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">≈ ${fmtDur(damDaysAt(damUttakM3h())*24)} kvar vid nuvarande uttag</div></div>
+    <div class="card kpi${damUtanUttag()?' old':''}" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">${damUtanUttag()?'Uttaget saknas sedan mätningen '+fmtDT(dam.t0):'≈ '+fmtDur(damDaysAt(damUttakM3h())*24)+' kvar vid nuvarande uttag'}</div></div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
@@ -1120,7 +1120,7 @@ function vOverviewR(){
     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} Med kontakt</h3><div class="val">${con}<small> / ${cannons.length} enheter</small></div><div class="foot">Om de kör går inte att läsa ur datan än</div></div>
     <div class="card kpi${bridgeOld()?' old':''}${HC}"${histAttr('tryckUt','Tryck efter högtryckspumpen (PT02)','bar')}><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">${bridgeOld()?agoHTML(lastData):'efter högtryckspumpen · FT01 '+num(p2.k125)+' m³/h'+(cannons.some(c=>Number.isFinite(c.q)&&c.state==='conn')?' · kanonerna '+num(sum(cannons.filter(c=>c.state==='conn'&&Number.isFinite(c.q)),c=>c.q))+' m³/h':'')}</div></div>
     <div class="card kpi${bridgeOld()?' old':''}${HC}"${histAttr('tw','Våttemperatur vid väderstationen','°C')}><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null||bridgeOld()?'':cold?'up':'warn'}">${bridgeOld()?agoHTML(lastData):cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx&&!bridgeOld()?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
-    <div class="card kpi" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">Egen beräkning — nivån mäts inte</div></div>
+    <div class="card kpi${damUtanUttag()?' old':''}" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">${damUtanUttag()?'Uttaget saknas sedan mätningen '+fmtDT(dam.t0):'Egen beräkning — nivån mäts inte'}</div></div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
@@ -1595,6 +1595,11 @@ const damFillSince=(t0,now=Date.now())=>{const a=meterAt(t0),b=meterAt(now);retu
 let vattenTimme={}, vattenTimmeOk=false;
 function applyVattenTimme(v,nekad){vattenTimme=(v&&typeof v==='object')?v:{};vattenTimmeOk=!nekad&&!!v;liveRefresh();}
 const timKey=k=>Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8),+k.slice(8,10));
+/* Kanonernas räknade vatten var 108–115 % av dammens minskning 24–27
+   november (måttbandet och flytpunkten med lådan). Dammens uttag räknas därför
+   som 90 % av det. Det är en mätning; nästa körning med måttband före och
+   efter visar om det håller (loggen räknar ut det). FT01 används inte. */
+const UTTAG_FAKTOR=0.9;
 /* Vattnet ur dammen mellan t0 och nu. Timmen som t0 ligger i räknas till
    den del som är efter t0, som om kanonerna gått jämnt hela timmen. */
 function damDrawnSince(t0){
@@ -1605,8 +1610,11 @@ function damDrawnSince(t0){
     if(b<=t0)continue;
     s+=a>=t0?v:v*(b-t0)/3600e3;
   }
-  return s;
+  return s*UTTAG_FAKTOR;
 }
+// Utan timvattnet (bryggan före version 11) räknas inget uttag alls, och
+// dammen står kvar på senaste mätningen. Det får inte se aktuellt ut.
+const damUtanUttag=()=>real&&!vattenTimmeOk;
 // Sista timmen med vatten, för att kunna säga hur färskt uttaget är.
 const vattenTimmeSenast=()=>{const k=Object.keys(vattenTimme).filter(x=>/^\d{10}$/.test(x)).sort().pop();return k?timKey(k)+3600e3:null;};
 
@@ -1624,9 +1632,9 @@ function damVolNow(now=Date.now()){
 let damTape=Math.round(tapeAt(hFromVol(dam.V0),dam.horn));  // måttbandsreglagets läge
 
 /* flöden */
-// snökanonernas uttag (m³/h). I drift deras beräknade flöde, de som hörs
-// nu; i ?demo exemplets eau.
-const damUttakM3h=()=>real?+sum(running().filter(c=>Number.isFinite(c.q)),c=>c.q).toFixed(1):totalWater();
+// snökanonernas uttag (m³/h). I drift deras beräknade flöde × UTTAG_FAKTOR,
+// de som hörs nu; i ?demo exemplets eau.
+const damUttakM3h=()=>real?+(sum(running().filter(c=>Number.isFinite(c.q)),c=>c.q)*UTTAG_FAKTOR).toFixed(1):totalWater();
 const damInflowM3d=()=>{const p=pumpInfo();return p.on?p.rate*24:0;};  // påfyllningen, m³/dygn (regn tillkommer)
 const damNetM3h=()=>damInflowM3d()/24 - damUttakM3h() - dam.leak/24;
 const floorVol=()=>volAt(dam.floorH);               // lägsta driftnivå (pumpintag)
@@ -1753,12 +1761,12 @@ function vDam(){
   else if(net<-0.01){const t=usableVol(V)/(-net); proj=`Sjunker ≈ ${fmtDur(t)} till lägsta driftnivå`; projEta=etaStr(t);}
   else proj='I det närmaste i balans';
   return topbar('Vattenbalans','Damm-koll — magasinet vid Råda ås')+`<div class="view">
-   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Volymen räknas ur byggritningen. Krönet och snorkeln är inmätta mot vattenytan ${KANT.datum}. ${real?(vattenTimmeOk?'<b style="color:var(--text)">Uttaget är kanonernas eget beräknade vatten</b>, timme för timme ur styrsystemets statistik, inte FT01. Ingen kanon mäter flödet, så mät med måttbandet efter varje körning — glider modellen och måttbandet isär är det kanonernas flöde som inte stämmer.':'<b style="color:var(--text)">Uttaget har inte kommit från bryggan än</b> (version 11), så beräkningen tar bara hänsyn till påfyllning och läckage — mät med måttbandet efter varje körning.'):'Uttaget kommer från driftdatan;'} Vattenmätaren och måttbandet matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
+   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Volymen räknas ur byggritningen. Krönet och snorkeln är inmätta mot vattenytan ${KANT.datum}. ${real?(vattenTimmeOk?'<b style="color:var(--text)">Uttaget är 90 % av kanonernas eget beräknade vatten</b>, timme för timme ur styrsystemets statistik, inte FT01. Ingen kanon mäter flödet. 24–27 november räknade kanonerna 108–115 % av det dammen minskade, därav 90 %. Mät gärna med måttbandet före och efter en körning: loggen visar då om det stämmer.':'<b style="color:var(--text)">Uttaget har inte kommit från bryggan än</b> (version 11), så beräkningen tar bara hänsyn till påfyllning och läckage — mät med måttbandet efter varje körning.'):'Uttaget kommer från driftdatan;'} Vattenmätaren och måttbandet matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
    ${dammErr?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${dammErr}</b></div></div>`:''}
    ${real&&!kalibList().length?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>Ingen mätning med måttband är sparad än.</b> <span class="muted small">Volymen nedan är ett exempel tills någon mätt vid snorkeln och sparat mätningen.</span></div></div>`:''}
 
    <div class="grid g-kpi">
-     <div class="card kpi"><h3>${icon('drop','#7dd3fc',15)} Aktuell volym</h3><div class="val">${Math.round(V).toLocaleString('sv-SE')}<small> m³</small></div><div class="bar ${pct>101?'amber':pct<30?'red':'green'}"><i style="width:${Math.min(100,pct)}%"></i></div><div class="foot">${pct}% av snorkelnivån (${Math.round(V100).toLocaleString('sv-SE')} m³)</div></div>
+     <div class="card kpi${damUtanUttag()?' old':''}"><h3>${icon('drop','#7dd3fc',15)} Aktuell volym</h3><div class="val">${Math.round(V).toLocaleString('sv-SE')}<small> m³</small></div><div class="bar ${pct>101?'amber':pct<30?'red':'green'}"><i style="width:${Math.min(100,pct)}%"></i></div><div class="foot">${pct}% av snorkelnivån (${Math.round(V100).toLocaleString('sv-SE')} m³)</div></div>
      <div class="card kpi"><h3>${icon('sliders','#7dd3fc',15)} Nivå & måttband</h3><div class="val">${h.toFixed(2)}<small> m djup</small></div><div class="foot">måttbandet vid snorkeln: ${Math.max(0,Math.round(tapeAt(h,'SN')))} cm (fullt ≈ ${Math.round(tapeAt(H_SNORKEL,'SN'))} cm)</div></div>
      <div class="card kpi"><h3>${icon('gauge','#7dd3fc',15)} Nettoflöde nu</h3><div class="val ${net<0?'down':'up'}">${net>=0?'+':''}${net.toFixed(1)}<small> m³/h</small></div><div class="foot">${proj}${projEta?' · '+projEta:''}</div></div>
      <div class="card kpi"><h3>${icon('clock','#7dd3fc',15)} Drifttid vid nuvarande uttag</h3><div class="val">≈ ${fmtDur(damDaysAt(uttak)*24)}</div><div class="foot">uttag ${uttak.toFixed(0)} m³/h${pumpInfo().on?' · påfyllningen går':' · påfyllningen står'}</div></div>
@@ -1848,7 +1856,7 @@ function mbCard(h){
     ${calForm.msg?`<p class="mt-msg ${calForm.err?'fel':''}">${calForm.msg}</p>`:''}
     <p class="muted small" style="margin-top:12px"><b style="color:var(--text)">Vad händer när jag sparar?</b> Mätningen blir dammens nya utgångsläge för alla i gruppen. Sedan räknar appen vidare själv — plus det vattenmätaren fyller på, minus läckaget — tills nästa mätning. Att bara dra i reglaget sparar ingenting.</p>
     <p class="muted small" style="margin-top:8px">${s
-      ?`Senaste mätningen: <b style="color:var(--text)">${fmtDT(s.ts)}, ${fmtCm(s.cm)} cm</b>${s.namn?' ('+esc(s.namn)+')':''}, alltså ${fmtHel(dam.V0)} m³. Sedan dess: påfyllt ${fmtHel(damFillSince(s.ts))} m³, läckage ${fmtHel((Date.now()-s.ts)/864e5*dam.leak)} m³, uttag ${fmtHel(damDrawn())} m³${real&&vattenTimmeSenast()?' (till '+fmtDT(vattenTimmeSenast())+')':''}. Alla mätningar finns i loggen.`
+      ?`Senaste mätningen: <b style="color:var(--text)">${fmtDT(s.ts)}, ${fmtCm(s.cm)} cm</b>${s.namn?' ('+esc(s.namn)+')':''}, alltså ${fmtHel(dam.V0)} m³. Sedan dess: påfyllt ${fmtHel(damFillSince(s.ts))} m³, läckage ${fmtHel((Date.now()-s.ts)/864e5*dam.leak)} m³, ${damUtanUttag()?'uttaget saknas (bryggan på styrdatorn behöver version 11)':'uttag '+fmtHel(damDrawn())+' m³'+(real?' (90 % av kanonernas räknade vatten'+(vattenTimmeSenast()?', till '+fmtDT(vattenTimmeSenast()):'')+')':'')}. Alla mätningar finns i loggen.`
       :`Ingen mätning sparad än.${real?'':' (I ?demo sparas den bara i minnet.)'}`}</p>`;
 }
 // Reglaget och fältet följer varandra utan att hela vyn ritas om — annars
@@ -2017,7 +2025,13 @@ function lackage(){
   const K=kalibList(); if(K.length<2||!avlasList().length)return '';
   const a=K[K.length-2], s=K[K.length-1], d=(s.ts-a.ts)/864e5; if(d<1)return '';
   const va=volAt(clampH(hFromTape(a.cm,a.punkt))), vb=volAt(clampH(hFromTape(s.cm,s.punkt))), f=meterAt(s.ts)-meterAt(a.ts), borta=va+f-vb;
-  return `<p class="muted small" style="margin-top:8px"><b style="color:var(--text)">Mellan de två senaste mätningarna</b> (${num(d,1)} dygn) fyllde mätaren ${fmtHel(f)} m³ och nivån ändrades ${vb>=va?'+':'−'}${fmtHel(Math.abs(vb-va))} m³. Då försvann <b style="color:var(--text)">${fmtHel(borta)} m³, ${num(borta/d,1)} m³/dygn</b>: läckage, avdunstning och bräddning, minus regn. Har kanonerna gått emellan ingår uttaget också. Måttbandet ger ca ±10 m³.</p>`;
+  // Med timvattnet dras kanonernas uttag av, så att resten är läckaget.
+  const k=real&&vattenTimmeOk?damDrawnSince(a.ts)-damDrawnSince(s.ts):null, rest=k!=null?borta-k:borta;
+  const B=t=>`<b style="color:var(--text)">${t}</b>`, LAK='läckage, avdunstning och bräddning, minus regn';
+  const text=k!=null&&k>=1
+    ?`Då försvann ${fmtHel(borta)} m³. Kanonerna tog ${fmtHel(k)} m³ (90 % av sitt räknade vatten), och kvar blir ${B(fmtHel(rest)+' m³, '+num(rest/d,1)+' m³/dygn')}: ${LAK}. Blir det mycket mer eller mindre än några m³ per dygn stämmer inte faktorn för kanonerna.`
+    :`Då försvann ${B(fmtHel(borta)+' m³, '+num(borta/d,1)+' m³/dygn')}: ${LAK}.${k==null?' Har kanonerna gått emellan ingår uttaget också.':''}`;
+  return `<p class="muted small" style="margin-top:8px">${B('Mellan de två senaste mätningarna')} (${num(d,1)} dygn) fyllde mätaren ${fmtHel(f)} m³ och nivån ändrades ${vb>=va?'+':'−'}${fmtHel(Math.abs(vb-va))} m³. ${text} Måttbandet ger ca ±10 m³.</p>`;
 }
 // En fil som Excel öppnar direkt: semikolon, decimalkomma och en BOM så att
 // å, ä och ö blir rätt. Filen gäller fliken som är vald, alla säsonger.
@@ -2287,11 +2301,11 @@ function drawMapUnits(){
     const lv=real?cannons.filter(c=>mapUnitState(c).live&&Number.isFinite(c.q)):cannons;
     const q=real?(lv.length?sum(lv,c=>c.q):null):totalWater(), pct=damPct();
     const pc=pct<30?'#f87171':pct<50?'#fbbf24':'#34d399';
-    const html=()=>`<div class="mk"><div class="mlab pump e" style="left:4px">Σ ${num(q)} <small>m³/h</small><br><small>Dammen</small> <span style="color:${pc}">${pct} %</span></div></div>`;
+    const html=()=>`<div class="mk"><div class="mlab pump e" style="left:4px">Σ ${num(q)} <small>m³/h</small><br><small>Dammen</small> <span style="color:${damUtanUttag()?'#6f7f96':pc}">${damUtanUttag()?'≤ ':''}${pct} %</span></div></div>`;
     const p2=pumps&&pumps.dep12||{};
     const pop=`<b>Pumphuset</b><br>Kanonernas flöde, summa: ${num(q)} m³/h<br>`+
       (real?`FT01 visar ${num(p2.k125)} m³/h (troligen för lite)<br>`:'')+
-      `Dammen ${pct} % · egen beräkning, nivån mäts inte<br>`+
+      `Dammen ${pct} % · egen beräkning, nivån mäts inte${damUtanUttag()?'. Uttaget sedan mätningen '+fmtDT(dam.t0)+' saknas':''}<br>`+
       `<a href="#" onclick="go('water');return false">Vatten</a> · <a href="#" onclick="go('dam');return false">Damm-koll</a>`;
     want.pump={ll:[lat,lon],html,pop};
   }

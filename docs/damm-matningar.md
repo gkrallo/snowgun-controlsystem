@@ -353,5 +353,23 @@ och framåt- och bakåträkningen skilde 0,2 cm. Antennen låg på 127,672.
 räknas fortfarande ritningens 1:1,5, så full damm är fortfarande ungefär
 34 cm. Under 120 cm är slänten inte mätt. Volymen räknas fortfarande ur
 ritningen. 120 cm motsvarar nu 2,84 m och 3 308 m³ (förut 2,89 m och
-3 376 m³). FT01 visas fortfarande orättad. Faktorerna för FT01 och kanonerna
-väntar tills en körning till är mätt med måttband vid start och stopp.
+3 376 m³). FT01 visas fortfarande orättad.
+
+### Uttaget räknas ur kanonerna, inte FT01 (28 november)
+
+Kristian vill att dammen räknas ur påfyllningen och kanonernas och lansarnas
+vatten, utan FT01, tills han felsökt mätaren. Mätningar med måttband och
+låda är bökiga och ska inte behövas för att se ungefär hur mycket som finns.
+
+- **Uttaget är 90 % av kanonernas räknade vatten** (`UTTAG_FAKTOR`),
+  eftersom summan var 108–115 % av dammens minskning 24–27 november.
+  Påfyllningen är vattenmätaren och läckaget 2 m³ per dygn, som förut.
+- Vattnet kommer timme för timme från bryggan 11 (`/vattenTimme`). **Den är
+  inte installerad på styrdatorn**, så appen drog inget uttag alls efter
+  mätningen 27/11 och visade 80 % fast kanonerna gått natten till 28/11.
+  Nu visas dammen som gammal, "Uttaget saknas sedan mätningen", tills
+  timvattnet finns. Bryggan 11 räknar hela säsongen bakåt vid första
+  starten, så uttaget sedan mätningen kommer med direkt.
+- Loggen drar kanonernas uttag mellan två mätningar med måttband och visar
+  det som blir kvar per dygn. Blir det mycket mer eller mindre än några m³
+  per dygn stämmer inte 90 %.
