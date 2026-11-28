@@ -3641,7 +3641,7 @@ function vRtk(){
     :bar.rutor?`Barmarken har ${bar.rutor.size.toLocaleString('sv-SE')} mätta rutor ur ${bar.pass} pass och hämtas från Snöprognos.`
     :bar.hamtar?'Hämtar barmarken …':esc(bar.fel)+' <button class="linkbtn" onclick="barOm()">Försök igen</button>';
   return topbar('Snödjup','Mätprov — pucken mot barmarken')+`<div class="view">
-   <div class="banner ok">${icon('track','#34d399',20)}<div style="flex:1"><b>Stämmer pucken med barmarken?</b> <span class="muted small">Barmarken är räknad mot Swepos. Livemätningen kommer via den egna basen och onocoy, i ett annat referenssystem. Lägg pucken med RTK-fix på mark som finns i barmarken och mät: skillnaden ska bli densamma överallt, och blir då en fast rättning för säsongen. ${barTxt}</span></div></div>
+   <div class="banner ok">${icon('track','#34d399',20)}<div style="flex:1"><b>Stämmer pucken med barmarken?</b> <span class="muted small">Barmarken är räknad mot Swepos. Livemätningen kommer via den egna basen och onocoy, och de två behöver inte stämma på centimetern. Lägg pucken med RTK-fix på mark som finns i barmarken och mät: skillnaden ska bli densamma överallt, och blir då en fast rättning för säsongen. ${barTxt}</span></div></div>
    ${kontrollErr?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${kontrollErr}</b></div></div>`:''}
    <div class="dam-grid">
      <div class="card dam-ctrl" id="rtkpuck">

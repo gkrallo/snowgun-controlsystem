@@ -55,14 +55,25 @@ och visas i Snökoll för inloggade.
 
 Barmarken är efterberäknad mot Swepos fasta koordinater för LIDK
 (SWEREF 99, `docs/ppk-lidk.conf` i Snöprognos). Loop Back ger som förval
-ITRF2020 vid dagens datum; onocoy skriver att andra ramar kan finnas för
-området ("Reference Frame (Self-Streaming)" i konsolen). Skillnaden är fast
-men inte noll: uppskattningsvis decimetrar i sidled och flera centimeter i
-höjd. Hur pucken räknar sin antennhöjd i realtid ingår också i skillnaden.
+ITRF2020 vid dagens datum, som ligger decimetrar från SWEREF 99 i sidled
+och glider 2–3 cm om året här.
 
-Den ska **mätas**, inte antas: pucken med RTK-fix läggs på punkter som
-finns i barmarken, och skillnaden blir en fast förskjutning för säsongen.
-Ändra inte puckens antenninställningar eller basens koordinater efter det.
+**Kristian valde ETRS89 den 28 november**, under Advanced Settings →
+"Reference Frame (Self-streaming)" på stationens NTRIP-uppgifter i onocoys
+konsol (beskrivningen där är "LVSK"). SWEREF 99 är Sveriges variant av
+ETRS89, så skillnaden mot barmarken bör bli liten, och ramen följer med
+marken. Valet påverkar bara de egna mottagarna, inte det andra får från
+stationen. Vilken variant av ETRS89 onocoy använder, och vilken epok, är
+inte antecknat.
+
+Skillnaden är ändå inte säkert noll: olika varianter av ETRS89 skiljer
+centimetrar, landhöjningen ingår olika, och hur pucken räknar sin
+antennhöjd i realtid ingår också. Den ska **mätas**, inte antas: pucken med
+RTK-fix läggs på punkter som finns i barmarken, och skillnaden blir en fast
+förskjutning för säsongen.
+
+**Ändra inte ramen, puckens antenninställningar eller basens koordinater
+efter att kontrollpunkterna är mätta.** Görs det ändå måste de mätas om.
 
 ## Mätprov (byggt och utlagt 28 november, inte provat med riktig puck)
 

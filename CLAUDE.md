@@ -238,9 +238,11 @@ kodgranskningen" nedan.
   i appen, i repot eller under `app/`. Ingen nyckel finns sparad någonstans.
   Första steget är byggt: vyn **Mätprov** (`rtk`), som läser pucken över
   Bluetooth, jämför med barmarken och sparar kontrollpunkter under
-  `/pist/kontroll`. Barmarken är räknad mot Swepos och livemätningen kommer
-  i onocoys referensram: skillnaden ska mätas, och **ingen rättning läggs på
-  förrän Kristian bestämt den**. Barmarken läses tills vidare från
+  `/pist/kontroll`. Barmarken är räknad mot Swepos (SWEREF 99) och
+  livemätningen kommer i den ram som är vald hos onocoy: **ETRS89**, valt
+  av Kristian 28 november, och den får inte ändras efter att
+  kontrollpunkterna är mätta. Skillnaden ska mätas, och **ingen rättning
+  läggs på förrän Kristian bestämt den**. Barmarken läses tills vidare från
   Snöprognos (`BAR_URL`), så att den finns på ett ställe; `BAR_ORIGO` och
   `BAR_M` måste vara samma tal som där. Reglerna och appen med Mätprov
   lades ut 28 november kväll (reglerna först) och är kontrollerade utifrån:
