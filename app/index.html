@@ -895,12 +895,15 @@ function chip(st){const[c,l]=STATE[st]||['s-off',esc(st)];return `<span class="c
 // urkopplad kanon vore lika fel som "Hörs". 11 betyder troligen OK och visas
 // som "Hörs" — vi vet inte om enheten kör.
 const LAGE={1:['s-alarm','Fel'],2:['s-off','Stoppad'],6:['s-run','Kör']};
-/* Snömängd = vatten × 2,2, som styrsystemet räknar ("Flows m³/h: Water 41,
-   Snow 90,2", och statistiken för Råda 2023 med 2,20 överallt). Det motsvarar
-   snö på ungefär 455 kg/m³ utan svinn, oavsett väder och snökvalitet — i
-   verkligheten kanske 1,7–2,6. Bryggan summerar bara vattnet, så faktorn
-   kan bytas här när snöytan mätts med pucken och den egna kvoten är känd. */
-const SNO_FAKTOR=2.2;
+/* Snömängd = vatten × 1,5, uppmätt. Styrsystemet räknar med 2,2 ("Flows m³/h:
+   Water 41, Snow 90,2", och statistiken för Råda 2023 med 2,20 överallt),
+   alltså snö på ungefär 455 kg/m³ utan svinn. Högen vid brunn 5 (kanon 8)
+   mättes med pucken 27 november: 190 ± 15 m³ snö, plus troligen 10–20 m³ i
+   skogskanten, på 133 m³ räknat vatten. Det blir 1,4–1,6 (Kristian valde 1,5
+   den 28 november). Faktorn gäller kanonernas räknade vatten, som var
+   108–115 % av dammens minskning 24–27 november. Den bygger på en hög och
+   en mätning. Bryggan summerar bara vattnet, så faktorn kan bytas här. */
+const SNO_FAKTOR=1.5;
 const sno=v=>Number.isFinite(v)?v*SNO_FAKTOR:null;
 /* Lamporna på styrsystemets skärm (bryggan 7). I SGC400 ligger de som bitar
    i kolumn 450–455, 500–503 och 709; bryggan skickar de tända som
@@ -927,7 +930,7 @@ function snoPanel(c){
     <div class="card kpi"><h3>❄ Snö i säsongen</h3><div class="val">${num(sno(c.vs),0)}<small> m³</small></div>
       <div class="foot">${num(c.vs,0)} m³ vatten, alla brunnar</div></div>
   </div>
-  <p class="muted small" style="margin:8px 2px 0;line-height:1.6">Snö = vatten × ${num(SNO_FAKTOR)}, som styrsystemet räknar — ingen kanon mäter snö. Räkneverket vid brunnen börjar om när enheten kopplas till en annan brunn. Bryggan räknar själv sedan 26 november 09:53; tiden före är hämtad i efterhand ur styrsystemets statistik och journalens inkopplingar. Kurvan börjar 09:53. Tryck på snön vid brunnen för den.</p>`;
+  <p class="muted small" style="margin:8px 2px 0;line-height:1.6">Snö = vatten × ${num(SNO_FAKTOR)}, uppmätt med pucken på högen vid brunn 5 den 27 november. Styrsystemet räknar med 2,2. Ingen kanon mäter snö. Räkneverket vid brunnen börjar om när enheten kopplas till en annan brunn. Bryggan räknar själv sedan 26 november 09:53; tiden före är hämtad i efterhand ur styrsystemets statistik och journalens inkopplingar. Kurvan börjar 09:53. Tryck på snön vid brunnen för den.</p>`;
 }
 function lampPanel(c){
   if(c.bits==null)return missing('Lamporna (ringar, hydrant, kompressor …) kommer när bryggan på styrdatorn är version 7.');
@@ -1468,14 +1471,28 @@ const kronH=id=>H_YTA+kantPkt(id).cm/100;            // krönet över botten, m
 const overSnorkel=id=>kantPkt(id).cm-KANT.snorkel;   // krönet över snorkelns kant, cm
 const H_LAG=Math.min(...KANT.pkt.map(p=>kronH(p.id)));  // lägsta inmätta krönet, 3,46 m (SO och NV)
 const H_VARN=H_SNORKEL+0.05;                         // varning: 5 cm över snorkeln, 3,42 m
-// Var måttbandets 0 ligger. I hörnen är det krönet. Vid snorkeln räknas det
-// bakåt från måttbandet 24 november (40 cm ner till ytan). Det skiljer 4 cm
-// i höjd mot GPS:en där, troligen för att slänten är flackare upptill än
-// ritningens 1:1,5. Det är måttbandet man mäter med, så det får gälla.
-const bandNoll=id=>{const p=kantPkt(id); return p.band!=null?H_YTA+p.band/(SF*100):kronH(id);};
-const tapeAt=(h,id)=>(bandNoll(id)-h)*SF*100;        // cm längs duken från krönet ner till ytan
-const hFromTape=(cm,id)=>bandNoll(id)-cm/(SF*100);
-const tapeMax=id=>Math.floor(bandNoll(id)*SF*100);   // från krönet ända ner till botten
+// Måttbandet mot höjden. I hörnen räknas från krönet med ritningens 1:1,5.
+// Vid snorkeln utgår det från måttbandet 24 november: 40 cm ner till ytan,
+// H_YTA. Ovanför 40 cm räknas 1:1,5. Det skiljer 4 cm i höjd mot GPS:en
+// där, troligen för att duken är flackare överst, men det är måttbandet man
+// mäter med, så det får gälla.
+// Under 40 cm är slänten brantare. Flytpunkten 27 november, med måttbandet
+// på 120 cm, visade att ytan sjunkit 48–50 cm sedan 24 november. Det blir
+// 80 cm längs duken per 49 cm i höjd, ungefär 1:1,3, där ritningen ger
+// 44 cm. Under 120 cm är slänten inte mätt, så samma lutning antas.
+// Volymen räknas fortfarande ur ritningen. Bara måttbandet räknas om.
+const SF_NED=80/49;                                  // cm längs duken per cm i höjd, under 40 cm vid snorkeln
+const tapeAt=(h,id)=>{                               // cm längs duken från krönet ner till ytan
+  const p=kantPkt(id);
+  if(p.band==null)return (kronH(id)-h)*SF*100;
+  return h>=H_YTA?p.band-(h-H_YTA)*SF*100:p.band+(H_YTA-h)*SF_NED*100;
+};
+const hFromTape=(cm,id)=>{
+  const p=kantPkt(id);
+  if(p.band==null)return kronH(id)-cm/(SF*100);
+  return cm<=p.band?H_YTA+(p.band-cm)/(SF*100):H_YTA-(cm-p.band)/(SF_NED*100);
+};
+const tapeMax=id=>Math.floor(tapeAt(0,id));          // från krönet ända ner till botten
 
 // nivåmarkörer (h i m, etikett, färg) — uppifrån och ned
 const DAMLV=[
@@ -1712,13 +1729,14 @@ function kronFakta(){
       ${rad('Yta innanför krönet',Math.round(36.5*44.5).toLocaleString('sv-SE')+' m²',KRON.yta.toLocaleString('sv-SE')+' m²')}
       ${rad('Bräddning under krönet','50 cm, bräddrör',cmUnder+' cm, snorkeln')}
       ${rad('Volym till bräddningen',Math.round(volAt(3.00)).toLocaleString('sv-SE')+' m³',Math.round(V100).toLocaleString('sv-SE')+' m³')}
-      ${rad('Slänt','1:1,5','inte mätt')}
+      ${rad('Slänt vid snorkeln','1:1,5','1:1,3 från 40 till 120 cm på måttbandet')}
       ${rad('Djup','3,5 m','inte mätt')}
     </table>
     <p class="muted small" style="line-height:1.6;margin:12px 0 0"><b style="color:var(--text)">Snorkeln sitter högre än appen trodde.</b> Förut räknade den med ritningens bräddrör plus 20 cm: 3,20 m och ${Math.round(volAt(3.20)).toLocaleString('sv-SE')} m³. Mätt mot vattenytan ${KANT.datum} sitter snorkelns kant ${cmUnder} cm under krönets medel, på ${num(H_SNORKEL,2)} m. Då rymmer dammen ${Math.round(V100-volAt(3.20))} m³ mer, och det stämmer med vattenmätaren på påfyllningen. Det som såg ut som läckage var alltså troligen en större damm.</p>
     <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Måtten i plan stämmer med ritningen.</b> Räknat med de inmätta måtten blir det bara ${Math.round(volKron(H_SNORKEL)-V100)} m³ mer till snorkeln, så volymen räknas fortfarande ur ritningen.</p>
     <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Höjden skiljer mer.</b> 10 cm i höjd är ca ${Math.round(areaAt(H_SNORKEL)*0.1)} m³ vid snorkeln. Krönet ligger så här många cm över snorkelns kant: ${lista}. Tar snorkeln inte undan, till exempel om den fryser, bräddar dammen först i SO och NV. Därför varnar appen redan 5 cm över snorkeln. Det kan finnas lägre ställen mellan hörnen, som inte är mätta. De fyra hörnens medel räknas som ritningens 3,50 m.</p>
-    <p class="muted small" style="line-height:1.6;margin:10px 0 0">Planen: band-ATV med pucken längs krönet ${KRON.datum}. Höjderna: GPS:en i en låda ${KANT.datum}, först stående på krönets kant och sedan flytande vid vattenlinjen på samma ställe. Båda är efterberäknade mot Swepos, med 100 % fix. Höjderna stämmer på ±2 cm. Botten är inte mätt, så volymen bygger på ritningens djup.</p>`;
+    <p class="muted small" style="line-height:1.6;margin:10px 0 0">Planen: band-ATV med pucken längs krönet ${KRON.datum}. Höjderna: GPS:en i en låda ${KANT.datum}, först stående på krönets kant och sedan flytande vid vattenlinjen på samma ställe. Båda är efterberäknade mot Swepos, med 100 % fix. Höjderna stämmer på ±2 cm. Botten är inte mätt, så volymen bygger på ritningens djup.</p>
+    <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Slänten är brantare än ritningen under 40 cm.</b> Lådan flöt vid snorkeln igen 27 november, när måttbandet visade 120 cm. Ytan hade då sjunkit 48–50 cm sedan 24 november, alltså 49 cm i höjd på 80 cm längs duken. Med ritningens 1:1,5 hade det varit 44 cm. Under 40 cm räknar appen därför måttbandet med 1:1,3. Under 120 cm är slänten inte mätt.</p>`;
 }
 
 function vDam(){

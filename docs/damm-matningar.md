@@ -283,6 +283,75 @@ hittade dem inte efteråt.
 
 Vid 100 % ska måttbandet visa ungefär 34 cm vid snorkeln.
 
-**Öppet:** gick påfyllningen mellan 13 och 24 november? Om den stängdes när
-ytan nådde snorkeln har ytan sjunkit 3,5 cm på elva dygn, ungefär 55 m³
-eller drygt 5 m³ per dygn. Det vore första riktiga måttet på läckaget.
+### Läckaget 13–24 november
+
+Påfyllningen har stått still sedan avläsningen 13 november 15:29
+(Kristian, 27 november). Inget togs ut förrän pumparna startade 25
+november. Ytan stod vid snorkelns kant 13 november (foto) och 3–4 cm under
+den 24 november (ögonmått). Det är 3,5 cm på 11,2 dygn, med ytan cirka
+1 590 m² vid den nivån. Alltså **cirka 55 m³, 5 m³ per dygn**: läckage och
+avdunstning, minus regn. Båda nivåerna är uppskattade med ögat, så
+felmarginalen är ungefär ±2 m³ per dygn.
+
+Appen räknar med 2 m³ per dygn, som var ett exempel. Kristian bestämde
+27 november att vänta med att ändra det tills mätningarna nedan är gjorda.
+
+**Ett säkrare mått** fås med två mätningar med måttband medan allt står
+still: ingen påfyllning och inga kanoner. Mät nu medan anläggningen väntar
+på kyla, och igen efter några dygn. Loggen under Måttband räknar ut det
+själv. 5 m³ per dygn är 0,3 cm per dygn i höjd, 0,6 cm längs duken, så
+fyra–fem dygn behövs för att det ska synas över mätfelet.
+
+### 24–27 november: måttbandet mot uttaget
+
+- Måttbandet: 40 cm (24/11 19:35) och 120 cm (27/11 12:56). Påfyllningen
+  stod still.
+- Med slänten 1:1,5 sjönk ytan 44,4 cm, och dammen minskade 679 m³. Med
+  1:2 sjönk den 35,8 cm och minskade 551 m³.
+- FT01 visade 377 m³ under samma tid.
+- Kanonernas räknade flöde visade cirka 823 m³. Av det är 616 m³ ur
+  `flodeSum`. Resten är tiden före bryggan 7 och är uppskattad ur FT01 med
+  kvoten 0,46.
+- Läckaget, cirka 14 m³ på 2,7 dygn, är litet här.
+
+Med slänten 1:1,5 visar FT01 alltså 55 % av det som togs ur dammen, och
+kanonernas summa 121 %. Flytpunkten nedan visar att ytan sjönk mer än så.
+
+### Flytpunkten 27 november: ytan sjönk 48–50 cm
+
+Kristian lät lådan flyta vid snorkeln 27/11 12:55–12:58
+(`SFE_Facet_261127_115138.ubx`), samtidigt som måttbandet lästes till
+120 cm. Mätningen efterberäknades 28/11 mot LIDK dygn 331. Under de tre
+minuterna lådan låg still hade alla 693 punkter fix. Spridningen var 1,1 cm,
+och framåt- och bakåträkningen skilde 0,2 cm. Antennen låg på 127,672.
+
+- **Ytan sjönk 48–50 cm** sedan 24/11. Det är 50,2 cm mot flytpunkten vid
+  snorkeln (128,174) och 47,7 cm mot medianen av alla åtta flytpunkter
+  (128,149). Lådan flöt på samma ställe båda gångerna, 0,7 m längre ut.
+- **Krönet vid snorkeln ligger 67–68 cm över ytan** 27/11. Den siffran beror
+  inte på flytpunkterna 24/11, men krönpunkten hade fix bara i
+  bakåträkningen (128,385, framåt 128,376).
+- **Slänten är brantare än 1:1,5 mellan 40 och 120 cm.** De 80 cm längs duken
+  motsvarar 48–50 cm i höjd, alltså 1,6–1,7 cm längs duken per cm i höjd
+  (1:1,2–1:1,35). Med ritningens 1:1,5 blir det 1,80 och 44,4 cm. Överst är
+  duken i stället flackare: 40 cm mot 18–21 cm. Från krönet ner till ytan
+  27/11 blir det 120 cm mot 67–68 cm, nära 1:1,5 (66,6 cm). Duken är alltså
+  inte en rak slänt, eller så ligger flytpunkterna 24/11 några cm fel.
+- **Dammen minskade 729–765 m³** (679 enligt appen med 1:1,5). Efter
+  läckaget, 5–14 m³, var **uttaget 715–760 m³**.
+- **FT01 visade 377 m³, alltså 50–53 % av uttaget.** Mätaren visar ungefär
+  hälften, som misstänkt.
+- **Kanonernas räknade flöde var 108–115 % av uttaget.** Bara 616 m³ av de
+  823 räknade bryggan själv; resten är uppskattat ur FT01. Under tiden med
+  `flodeSum` (26/11 08:10 till 27/11 01:05 UTC) visade FT01 282 m³, alltså
+  togs 535–570 m³ ur dammen, och kanonerna räknade 616.
+- Förutsättningen är att lådan bar samma sak båda gångerna: 1 kg mer i lådan
+  sänker den 2,4 cm.
+
+**I appen från 28 november (Kristian):** under 40 cm räknas måttbandet med
+80 cm längs duken per 49 cm i höjd, ungefär 1:1,3 (`SF_NED`). Över 40 cm
+räknas fortfarande ritningens 1:1,5, så full damm är fortfarande ungefär
+34 cm. Under 120 cm är slänten inte mätt. Volymen räknas fortfarande ur
+ritningen. 120 cm motsvarar nu 2,84 m och 3 308 m³ (förut 2,89 m och
+3 376 m³). FT01 visas fortfarande orättad. Faktorerna för FT01 och kanonerna
+väntar tills en körning till är mätt med måttband vid start och stopp.

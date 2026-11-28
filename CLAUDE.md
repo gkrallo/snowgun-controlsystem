@@ -68,19 +68,24 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönet
   och snorkeln är inmätta mot vattenytan (24 november): 100 % är snorkeln,
   3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Måttbandet läses
-  bara vid snorkeln, se `docs/damm-matningar.md`. Avläsningarna av
+  bara vid snorkeln, se `docs/damm-matningar.md`. Under 40 cm på måttbandet
+  räknas slänten 1:1,3 (`SF_NED`), inte ritningens 1:1,5. Det mättes med
+  lådan som flöt 27 november: 120 cm längs duken, och ytan hade sjunkit
+  48–50 cm. Avläsningarna av
   vattenmätaren (start, stopp, emellan) förs i appen i stället för i Excel,
   och påfyllningen räknas ur dem. Mätningarna med måttband sparas
   gemensamt. Loggen i Damm-koll visar avläsningar, pumppass och mätningar,
   och varje flik går att ladda ner för Excel. Säg "mätning", inte
   "kalibrering", i det som syns — ordet förvirrade.
 - **FT01 (flöde ut) är `dep12/k125`**, utpekad 25 november när pumparna
-  startade. Mätaren misstänks visa ungefär hälften. Appen visar den orättad
-  och märkt så; **räkna inte dammens uttag på den** förrän faktorn
-  kontrollerats mot måttbandet (se `docs/kolumnmappning.md`).
+  startade. Den visade 50–53 % av dammens minskning 24–27 november
+  (måttband och flytpunkt). Appen visar den orättad och märkt så. **Räkna
+  inte dammens uttag på den** förrän en körning till är mätt med måttband
+  vid start och stopp (se `docs/damm-matningar.md`).
 - **Kanonernas flöde är räknat, inte mätt** (bryggan 7): "Real water flow"
   = teoretiskt × √(tryck ÷ börtryck), 0 när kanonen står. Det summeras och
-  läggs bredvid FT01 (45 % av summan 26 november). Teoretiskt flöde står
+  läggs bredvid FT01 (45 % av summan 26 november). Summan var 108–115 % av
+  dammens minskning 24–27 november. Teoretiskt flöde står
   kvar när kanonen står och får aldrig summeras. Flödet ligger i `q`, inte
   i `eau` (som bara är ?demo).
 - **Dammens uttag dödräknas ur kanonerna** (Kristians beslut 26 november,
@@ -106,8 +111,9 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   utläggning. `functions/` är det enda i repot som kräver npm; appen är
   fortfarande en fil utan bygge. Kräver Blaze (Kristians beslut) och
   nyckeln för webbnotiser i `window.notisNyckel`. Larmen styr ingenting.
-- **Snömängden är vatten × 2,2**, som styrsystemet räknar — ingen kanon
-  mäter snö. Bryggan 8 summerar bara vattnet, per enhet sedan den kom till
+- **Snömängden är vatten × 1,5**, uppmätt med pucken på högen vid brunn 5
+  (kanon 8) 27 november: 190 ± 15 m³ snö på 133 m³ räknat vatten.
+  Styrsystemet räknar med 2,2. Ingen kanon mäter snö. Bryggan 8 summerar bara vattnet, per enhet sedan den kom till
   brunnen (nollas vid byte av brunn, sågtand) och per säsong från 1 augusti,
   i `brygga-state.json`. Vattnet före bryggan 8 läggs till en gång med
   `-Bakat` (version 9) ur styrsystemets statistik per kanon och journalens
@@ -117,8 +123,9 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   stämpeln vid nästa sparning. Rapporten `bakat_*.txt` på styrdatorn är
   därför också ett spärr — `-Bakat` vägrar om den finns. **`-TaBort` stoppar
   inte en brygga som går**; processen måste avslutas för hand.
-  Faktorn står på ett ställe i appen (`SNO_FAKTOR`)
-  och ska bytas mot den egna när snöytan mätts med pucken.
+  Faktorn står på ett ställe i appen (`SNO_FAKTOR`). Den bygger på en hög
+  och en mätning (Kristian valde 1,5 den 28 november), se
+  `docs/kolumnmappning.md`.
 - **Lamporna** (ringar 1–4, hydrant, kompressor, fläkt …) skickas från
   bryggan 7 som tända bitar och sparas i historiken bara när de ändras.
   Bara ring 1 och 2 är (troligen) parade; appen visar ringarna som tolkade

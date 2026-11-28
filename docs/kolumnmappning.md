@@ -101,7 +101,7 @@ trycket kanonen mäter. Läsningen 08:40 mot formeln
 | 8 | 5 | 7,3 | 7,1 | 19,9 | 21 | 7,11 |
 | 9 | 8 | 7,6 | 9,5 | 16,8 | 10,8 | 9,48 |
 
-### Snömängden är vattnet × 2,2
+### Styrsystemet räknar snön som vattnet × 2,2
 
 Ingen kanon mäter eller rapporterar snö. Styrsystemets skärm ("Flows m³/h:
 Water 41, Snow 90,2" 26 november) och statistiken (`bilan_exploitation2`,
@@ -125,6 +125,31 @@ Bryggan 8 summerar vattnet per enhet sedan den kom till brunnen
 (`vattenSasong`). Appen multiplicerar med `SNO_FAKTOR`. Den egna faktorn
 kan tas fram när snöytan mätts med pucken: snödjup × yta mot vattnet för
 samma körningar.
+
+#### Första mätningen: högen vid brunn 5 (27 november)
+
+- Kanon 8 (`SGC400-6`) har stått vid brunn 5 sedan 30 oktober. När högen
+  mättes, 27/11 13:04–13:24, var vattnet vid brunnen 133 m³. Kanonen hade
+  stått sedan strax efter midnatt.
+- Av vattnet är ungefär 40 m³ efterräknat från tiden före bryggan 8,
+  troligen natten 25–26 november när pumparna startade. Resten kom 26/11
+  10:00 till 27/11 01:00, i −2 till −5 grader våttemperatur. Högen var
+  alltså 1–2 dygn gammal, och det var minusgrader hela tiden.
+- Kristian drog pucken över högen. Snöprognos-sessionen räknade ut
+  **190 ± 15 m³ snö** på 444 m², med största djupet 126 cm. Till det kommer
+  troligen 10–20 m³ i skogskanten, som inte mättes. Underlaget ligger i
+  `snowgun-forecast`, i `matdata/ppk-2026-11-27-hog5/`.
+- **Snö per m³ räknat vatten blev 1,4–1,6**: 1,43 med det som mättes, och
+  1,5–1,6 med skogskanten. Styrsystemet räknar med 2,2, så appen visar
+  ungefär 30 % för mycket snö.
+- Mot det vatten som faktiskt gick åt blir faktorn 1,55–1,8, alltså snö på
+  550–650 kg/m³. Kanonernas räknade flöde var 108–115 % av dammens minskning
+  (`docs/damm-matningar.md`), så vattnet var 116–123 m³.
+- Detta är en hög, en kanon och en mätning. Kanon 8 har gjort 89 m³ till
+  sedan dess (222,6 m³ på morgonen 28/11). En ny mätning av samma hög ger
+  alltså en andra punkt.
+
+Kristian valde 28 november att byta `SNO_FAKTOR` från 2,2 till 1,5.
 
 ### Lamporna (ringar, hydrant, kompressor …)
 
