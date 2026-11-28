@@ -27,6 +27,9 @@ const GRANS = {
   // Samma som "hörd" i appen är en kvart, men ett larm ska komma fortare.
   kontakt: 5 * MIN,
   sqlVanta: 3 * MIN,
+  // Styrsystemet skriver var 20:e sekund. Tio minuter utan nytt värde, fast
+  // bryggan går och kan läsa, betyder att programmet är stängt eller hängt.
+  gssStar: 10 * MIN,
   // Ett okvitterat larm påminner en gång.
   paminn: 60 * MIN,
   // En kanon som står kvar efter ett pass (flyttad, avstängd) ska inte ligga
@@ -116,9 +119,26 @@ function bedom(live, aktivaIn, minneIn, nu) {
       avsluta('sql', 'Bryggan läser styrsystemet igen', 'Värdena i appen är aktuella igen.');
     }
 
+    // --- Styrsystemet självt (28 november 2026) ---
+    // Bryggan går och kan läsa, men styrsystemet skriver inga nya värden.
+    // Då är allt i /live gammalt fast hjärtslaget är färskt, och förut kom
+    // inget larm alls: kanonerna såg ut att köra i all evighet.
+    // Bara med bryggans eget mått (meta.gssAlder, sekunder, från version 13).
+    // Det är räknat på styrdatorns egen klocka. Att jämföra gssTid med
+    // molnets klocka skulle larma alla om styrdatorns klocka går fel.
+    const gssStar = meta.sqlOk !== false && Number.isFinite(meta.gssAlder) && meta.gssAlder * 1000 >= GRANS.gssStar;
+    if (gssStar) {
+      starta('gss', 'gss', 'Styrsystemet står',
+        'Bryggan går, men styrsystemet har inte skrivit nya värden sedan ' + klocka(meta.ts - meta.gssAlder * 1000) +
+        '. Värdena i appen står still, och inga kanonlarm kommer fram förrän det skriver igen.');
+    } else if (meta.sqlOk !== false) {
+      avsluta('gss', 'Styrsystemet skriver igen', 'Värdena i appen är aktuella igen.');
+    }
+
     // --- Kanoner och lansar ---
-    // Går inte att läsa databasen är också enheternas värden gamla.
-    if (meta.sqlOk !== false) {
+    // Går inte att läsa databasen, eller står styrsystemet, är också
+    // enheternas värden gamla.
+    if (meta.sqlOk !== false && !gssStar) {
       const gss = naiv(meta.gssTid);
       for (const [key, e] of Object.entries(live.enheter || {})) {
         if (!e || BORTTAGEN.test(key)) continue;

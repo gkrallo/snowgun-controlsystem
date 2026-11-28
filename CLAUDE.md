@@ -36,10 +36,13 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
 `snowgun-forecast/matdata/granskning-2026-11-28.md`) är Snökolls fynd rättade
 och incheckade, med prov. **När det här skrevs var ingenting utlagt och
 bryggan 13 inte installerad** — kontrollera med `git log origin/main..` och
-`/live/meta/version` innan du utgår från något annat. Kvar som frågor till
-Kristian: förslagssidorna på den skarpa adressen (S3), Vattenråd (K8),
-dammens fält för läckage och reservtakt (K7), `?demo` (K6) och översiktens
-två besked om det går att köra. Se "Mönster efter kodgranskningen" nedan.
+`/live/meta/version` innan du utgår från något annat. Reglerna lades ut 28
+november kväll. Kristian bestämde samma kväll: förslagssidorna bara på
+förhandslänken (`forslag/`), Vattenråd märks som skiss, dammens läckage och
+reservtakt är fasta värden lika för alla, och ett pushlarm när styrsystemet
+står. Kvar som fråga: översiktens besked om det går att köra (kanonernas
+egna givare ska gälla när de går, prognosen är för mobilisering). Se
+"Mönster efter kodgranskningen" nedan.
 
 - **Bryggan** (`bridge/brygga.ps1`, version 12 på styrdatorn sedan 28
   november 11:20, med TT01 vid drift och snökvaliteten per enhet; version
@@ -166,6 +169,8 @@ två besked om det går att köra. Se "Mönster efter kodgranskningen" nedan.
   `functions/vakt.js`: varje notis läggs i kön `/larmlage/ko` i samma
   skrivning som läget, och kön töms först när minst en telefon fått den.
   Annars provas den igen nästa minut, i upp till en timme (28 november).
+  Larmet "Styrsystemet står" (28 november) går när `meta/gssAlder` är över
+  tio minuter, alltså bara med bryggan 13; då bedöms inte kanonerna.
   Tomma listor sparas inte i Realtime Database — spara en egen markering
   (som `larmSedd`) när "tomt" ska gå att skilja från "aldrig sparat". `functions/` är det enda i repot som kräver npm; appen är
   fortfarande en fil utan bygge. Kräver Blaze (Kristians beslut) och
@@ -391,13 +396,14 @@ de gamla exempelsiffrorna.
 - `app/sw.js`, `app/manifest.json`, `app/kanon-*.png` — det som gör appen
   installerbar. `sw.js` sparar aldrig mätvärden och rör inte sidorna under
   `/__/` (Firebases inloggning).
-- `app/pist.html` (förslag 1), `app/pist-mobil.html` (förslag 2, med
-  uppdrag och pass) och deras manifest — förarvyn för pistmaskinen.
-  `app/planering.html` (förslag 3) — när ska vi schakta, pista och spåra,
-  efter SLF:s handbok. Klickbara förslag med påhittad data
-  (`docs/forslag-forarvy.md`). `app/forslag.html` är startsidan som delas
-  med förarna via en förhandslänk i Firebase Hosting. Egna sidor så att
-  `index.html` inte behöver röras. Skriver inget till Firebase.
+- `forslag/` — klickbara förslag med påhittad data: `pist.html` (förslag 1),
+  `pist-mobil.html` (förslag 2, med uppdrag och pass), `planering.html`
+  (förslag 3, när ska vi schakta, pista och spåra, efter SLF:s handbok) och
+  startsidan `forslag.html`. **Ligger inte under `app/` och läggs aldrig på
+  snow.pettersson.app** (Kristian, 28 november): bara på förhandslänken, med
+  `firebase hosting:channel:deploy forslag --expires 30d --config
+  firebase.forslag.json` (`docs/forslag-forarvy.md`). Skriver inget till
+  Firebase. Nya förslag läggs här, aldrig i `app/`.
 - `bridge/` — bryggan och autostarten. Samma krav på UTF-8 med BOM som
   sonden. `brygga-config.json` och de krypterade lösenorden följer inte med
   till git. `-Sjalvtest` och `-ProvaMoln` ska gå igenom efter varje ändring.

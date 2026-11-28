@@ -223,3 +223,50 @@ test('K1: ett minne från före rättningen (bara larmKanda) räknas som läst',
   const r = bedom(live(T0, {}, { larm: [a, b] }), {}, { larmKanda: ['A1'] }, T0);
   assert.deepStrictEqual(r.skicka.map(s => s.text), ['M n: ny']);
 });
+
+test('styrsystemet står: ett larm efter tio minuter, kanonerna bedöms inte, tyst när det skriver igen', () => {
+  const steg = [];
+  // Kanonen kör. Sedan slutar styrsystemet skriva: bryggan läser samma rad om
+  // och om igen, och åldern växer med en minut i minuten.
+  for (let i = 0; i < 30; i++) {
+    const nu = T0 + i * MIN, star = i >= 3 && i < 25;
+    const l = live(nu, { 'SGC400-3': kanon(star ? T0 + 3 * MIN : nu, 6) });
+    l.meta.gssAlder = star ? 20 + (i - 3) * 60 : 20;
+    l.meta.gssTid = lok(nu - l.meta.gssAlder * 1000);
+    steg.push([nu, l]);
+  }
+  const r = korning(steg);
+  assert.deepStrictEqual(r.alla.map(s => [s.titel, s.tyst, (s.nu - T0) / MIN]),
+    [['Styrsystemet står', false, 13], ['Styrsystemet skriver igen', true, 25]]);
+  assert.match(r.alla[0].text, /inte skrivit nya värden sedan \d\d:\d\d/);
+  assert.deepStrictEqual(r.aktiva, {});
+});
+
+test('styrsystemet står: en kanon som "stannar" i de gamla värdena larmar inte', () => {
+  const steg = [];
+  for (let i = 0; i < 20; i++) {
+    const nu = T0 + i * MIN;
+    const l = live(nu, { 'SGC400-3': kanon(nu, i < 3 ? 6 : 1) });
+    l.meta.gssAlder = i < 3 ? 20 : 900 + i * 60;
+    steg.push([nu, l]);
+  }
+  assert.deepStrictEqual(korning(steg).alla.map(s => s.titel), ['Styrsystemet står']);
+});
+
+test('styrsystemet står: utan bryggans mått (version 12) larmas inte, hur gammal gssTid än är', () => {
+  const steg = [];
+  for (let i = 0; i < 20; i++) {
+    const nu = T0 + i * MIN, l = live(nu, {});
+    l.meta.gssTid = lok(nu - 3 * 3600e3);
+    steg.push([nu, l]);
+  }
+  assert.strictEqual(korning(steg).alla.length, 0);
+});
+
+test('styrsystemet står: når bryggan inte databasen gäller det larmet, och det här rörs inte', () => {
+  const nu = T0, l = live(nu, {});
+  l.meta.sqlOk = false; l.meta.gssAlder = 5000;
+  const r = bedom(l, { gss: { typ: 'gss', titel: 'Styrsystemet står', text: 'x', sedan: nu - 5 * MIN, skickad: nu - 5 * MIN } }, { larmSedd: true }, nu);
+  assert.ok(r.aktiva.gss, 'larmet står kvar');
+  assert.ok(!r.skicka.some(s => s.titel === 'Styrsystemet skriver igen'));
+});

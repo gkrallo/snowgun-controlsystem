@@ -505,3 +505,43 @@ test('filen har inga riktiga mätvärden i kommentarerna som granskningen pekade
     assert.ok(!appHtml.includes(bit), 'står kvar: ' + bit);
   assert.doesNotMatch(appKod, /\bdamTape\b|\bUCOL_REAL\b/);
 });
+
+/* ---------- Kristians beslut 28 november ---------- */
+
+test('K8: Vattenråd är märkt som skiss överallt där den nås', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu()));
+  const rad = app.visa('advisor');
+  assert.match(rad, /Vattenrådgivare — skiss/);
+  assert.match(rad, /SKISS — ställ inte in anläggningen efter de här siffrorna än/);
+  assert.match(app.visa('water'), /Vattenråd \(skiss\)<\/button>/);
+  assert.match(app.visa('water'), /Öppna vattenrådgivaren \(skiss\)/);
+  assert.match(app.kor("document.getElementById('nav').innerHTML"), /Vattenråd \(skiss\)/);
+});
+
+test('K7: läckage och reservtakt är fasta värden, inte fält i telefonen', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu()));
+  const dam = app.visa('dam');
+  assert.doesNotMatch(dam, /id="dam_rate"|id="dam_leak"|damNum/);
+  assert.match(dam, /Räknat med 2 m³\/dygn i läckage och avdunstning, och med 213 m³\/dygn i påfyllning/);
+  assert.match(dam, /Värdena är lika för alla/);
+  assert.equal(app.kor('dam.leak'), 2);
+  assert.equal(app.kor('dam.floorH'), 0.5);
+  assert.equal(app.kor('typeof damNum'), 'undefined');
+});
+
+test('pushlarmet "Styrsystemet står" ersätter appens egen rad', () => {
+  const app = medKlocka(), nu = app.nu();
+  app.kor('applyLive')(liveVid(nu, { gssAlder: 900 }));
+  assert.match(app.visa('alarms'), /Styrsystemet skriver inga nya värden/);
+  app.kor('applyLarmlage')({ gss: { typ: 'gss', titel: 'Styrsystemet står', text: 'Bryggan går, men styrsystemet har inte skrivit nya värden sedan 11:45.', sedan: nu - 60000 } });
+  const larm = app.visa('alarms');
+  assert.match(larm, /Styrsystemet står/);
+  assert.doesNotMatch(larm, /Styrsystemet skriver inga nya värden/);
+  assert.match(larm, /Jag tar det/);
+  // Nästa hjärtslag lägger inte tillbaka appens egen rad.
+  app.kor('applyLive')(liveVid(nu, { gssAlder: 960 }));
+  assert.doesNotMatch(app.visa('alarms'), /Styrsystemet skriver inga nya värden/);
+  assert.match(app.visa('alarms'), /styrsystemet som slutar skriva nya värden/);
+});
