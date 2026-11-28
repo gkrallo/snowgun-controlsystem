@@ -5,7 +5,7 @@
    Se test/app-ram.mjs för hur appen laddas. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { laddaApp, appKod, onclick, korOnclick } from './app-ram.mjs';
+import { laddaApp, appKod, appHtml, onclick, korOnclick } from './app-ram.mjs';
 
 const NU = Date.now();
 // Styrsystemets klocka: lokal tid utan zon, som bryggan skickar den.
@@ -435,4 +435,73 @@ test('K12: en vald vecka fylls på med det som kommit sedan den hämtades', asyn
   // Med 24 h vald hämtas aldrig något extra.
   app.kor('setHistRange(24)'); app.fram(48 * 60); app.tick(); await vanta();
   assert.deepEqual(hamtat, [168, 8]);
+});
+
+/* ---------- S7 och städlistan ---------- */
+
+test('S7: ett namn som börjar med = blir text i Excel-filen, inte en formel', () => {
+  const app = medKlocka(), nu = app.nu(), filer = [];
+  app.ctx.Blob = class { constructor(delar) { filer.push(delar.join('')); } };
+  app.ctx.URL = { createObjectURL: () => 'blob:prov', revokeObjectURL() { } };
+  app.kor('applyLive')(liveVid(nu));
+  app.kor('applyDamm')({
+    avlas: { '-Oa1': { ts: nu - 7200e3, m3: 100, typ: 'start', uid: 'u', namn: '=HYPERLINK("http://exempel.se";"klicka")' },
+             '-Oa2': { ts: nu - 3600e3, m3: 109, typ: 'stopp', uid: 'u', namn: 'Anna Andersson' } },
+    kalib: { '-Ok1': { ts: nu - 3600e3, cm: 100, punkt: 'SN', uid: 'u', namn: '+46701234567' } }
+  });
+  app.kor("loggFlik='avl'"); app.kor('loggExcel()');
+  app.kor("loggFlik='mb'"); app.kor('loggExcel()');
+  assert.equal(filer.length, 2);
+  const celler = filer.join('\r\n').split('\r\n').flatMap(rad => rad.split(';'));
+  assert.ok(!celler.some(c => /^"?[=+@]/.test(c)), 'ingen cell börjar med = + eller @');
+  assert.match(filer[0], /"'=HYPERLINK\(""http:\/\/exempel\.se"";""klicka""\)"/);
+  assert.match(filer[0], /Anna Andersson/);
+  assert.match(filer[1], /'\+46701234567/);
+  // Tal ska fortfarande vara tal: inget citattecken framför en mätarställning.
+  assert.match(filer[0], /;109,000;/);
+});
+
+test('städning: inga texter i appen pekar på gamla bryggversioner', () => {
+  const app = medKlocka(), nu = app.nu();
+  // Det äldsta bryggan kunde skicka: en enhet utan flöde, brunn, lampor och vatten.
+  const l = liveVid(nu);
+  l.enheter = { 'SGC400-3': { typ: 'S ACCESS 300', senastHord: sv(nu - 30000), t: -5, rh: 80, tw: -6 } };
+  app.kor('applyLive')(l);
+  const allt = VYER.map(v => app.visa(v)).join('\n') + (app.kor("openUnit('K5')"), app.main());
+  assert.doesNotMatch(allt, /version \d+|bryggans version|bryggan \d+/i);
+  assert.match(allt, /saknas i datan från bryggan/);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('städning: de råa bitarna visas bara för administratörer', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu()));
+  app.visa('overview'); app.kor("openUnit('K5')");
+  assert.doesNotMatch(app.main(), /Tända bitar just nu/);
+  assert.match(app.main(), /Ringar och lampor/);
+  app.kor('setAdmin(true,"admin@example,com")'); app.kor("openUnit('K5')");
+  assert.match(app.main(), /Tända bitar just nu[^<]*<\/p>\s*<div[^>]*>453:0,1,11</);
+});
+
+test('städning: vattenrådets kolumn Nu visar enhetens flöde', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu()));
+  const html = app.visa('advisor');
+  assert.match(html, /class="adv-cur">8,3<small> m³\/h/);
+  assert.doesNotMatch(html, /är tom/);
+});
+
+test('städning: kartans knapp går till Körfönster, och larmlistan står före inställningarna', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu(), {}, {}));
+  assert.match(app.visa('map'), /onclick="go\('forecast'\)">Körfönster</);
+  app.ctx.notisNyckel = 'x';
+  const larm = app.visa('alarms');
+  assert.ok(larm.indexOf('Inga aktiva larm') > 0 && larm.indexOf('Inga aktiva larm') < larm.indexOf('Larm till den här telefonen'));
+});
+
+test('filen har inga riktiga mätvärden i kommentarerna som granskningen pekade ut', () => {
+  for (const bit of ['190 ± 15', '133 m³ räknat', '679 mot 683', '462–464', '0,44–0,48', '119–123', '5,1 m³/h', '35.21', '0,3–1,7'])
+    assert.ok(!appHtml.includes(bit), 'står kvar: ' + bit);
+  assert.doesNotMatch(appKod, /\bdamTape\b|\bUCOL_REAL\b/);
 });
