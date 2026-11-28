@@ -187,6 +187,9 @@ footer b{color:var(--dov)}
   .sponsorer{grid-template-columns:repeat(6,1fr)}
 }
 @media (max-width:380px){ .ruta b{font-size:1.45rem} .rutor{gap:7px} .ruta{padding:9px 8px 10px} }
+/* Smala telefoner (360 px och mindre): märkningen "påhittad data" bryts på
+   två rader i stället för att klippas vid kanten. */
+@media (max-width:420px){ .proto{white-space:normal;max-width:8.6em;text-align:center;border-radius:12px;line-height:1.3} }
 @media (prefers-reduced-motion:reduce){ .spela{animation:none} }
 </style>
 </head>
