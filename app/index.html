@@ -540,6 +540,8 @@ function applyLive(v){
       // när vatten går: flödet räknas ur uppmätt tryck och är 0 när den står.
       brunn:Number.isFinite(e.brunn)?e.brunn:null,
       lage:Number.isFinite(e.k415)?e.k415:(old&&e.flode>0?6:null),
+      // Inställningarna (bryggan 12): snökvalitet 1-10 och start-/stoppgräns i våttemperatur.
+      kval:Number.isFinite(e.kvalitet)?e.kvalitet:null, startT:Number.isFinite(e.startTemp)?e.startTemp:null, stoppT:Number.isFinite(e.stoppTemp)?e.stoppTemp:null,
       // Finns inte i datan än. null och inte 0: noll vore ett påstående.
       eau:null, air:null, steg:null, stryp:0});
   }
@@ -920,17 +922,34 @@ const LAGE={1:['s-alarm','Fel'],2:['s-off','Stoppad'],6:['s-run','Kör']};
    en mätning. Bryggan summerar bara vattnet, så faktorn kan bytas här. */
 const SNO_FAKTOR=1.5;
 const sno=v=>Number.isFinite(v)?v*SNO_FAKTOR:null;
-/* Lamporna på styrsystemets skärm (bryggan 7). I SGC400 ligger de som bitar
-   i kolumn 450–455, 500–503 och 709; bryggan skickar de tända som
-   "453:0,1,5;454:0,4". Vilken bit som är vilken lampa läses ut genom att
-   jämföra med skärmbilder, och står här först när det är gjort. Hittills
-   bara ringarna: när kanonerna gick 26 november med ring 1 och 2 öppna var
-   453 bit 0 och 1 tända och släckta när de stod. Ring 3 och 4 som bit 2 och
-   3 är en gissning från mönstret — aldrig sett. sure:false visas som tolkat. */
+/* Lamporna. Facit är Sufags egna kolumnbeskrivningar, som sonden läste på
+   styrdatorn 28 november (version 3, del 7).
+   Det äldre kortet (SGC300) har en kolumn per lampa, och bryggan skickar de
+   tända som "25,37,42,43,44,65=3". Alla namn nedan är Sufags, kolumn för
+   kolumn: säkra. 26 november, gående, var 25, 37, 42, 43 och 44 tända
+   (automatik, 2 ringar, kompressor, fläkt, redo), som på skärmen.
+   SGC400 har lamporna som bitar i "Mot Etat 1-2" (453-454), "Défaut 1-2"
+   (450-451) och så vidare; bryggan skickar "453:0,1,5;454:0,4". Vad varje
+   bit är står inte i databasen. 453 bit 11 och 12 följer flödet som två
+   vattensteg: för kanon 8 26-28 november gav bara bit 11 cirka 5,1 m³/h,
+   bara bit 12 cirka 6,5 och båda cirka 8,3. Det är tolkat ur flödet, inte
+   jämfört med skärmens Ring 1-4, och visas så. 453 bit 0 och 1 är tända
+   hela tiden kanonen går; de visades förut som ring 1 och 2. */
 const LAMPOR={
-  SGC400:[{n:'Ring 1',b:'453:0',sure:false},{n:'Ring 2',b:'453:1',sure:false},
-          {n:'Ring 3',b:'453:2',sure:false,guess:true},{n:'Ring 4',b:'453:3',sure:false,guess:true}],
-  SGC300:[]
+  SGC300:{
+    ringar:[[35,0],[36,1],[37,2],[38,3],[39,4]],     // "0-4 rings open"
+    lampor:[{n:'Automatik',b:'25',s:'Man - Auto'},{n:'Startad',b:'29',s:'Gun started'},{n:'Ström',b:'30',s:'Power ON'},
+            {n:'Hydrant OK',b:'28',s:'Hydrant OK'},{n:'Hydrant öppen',b:'33',s:'Hydrant open'},{n:'Hydrant stängd',b:'34',s:'Hydrant closed'},
+            {n:'Pressostat',b:'27',s:'Pressostat'},{n:'Kompressor',b:'42',s:'Compressor ON'},{n:'Fläkt',b:'43',s:'Fan ON'},
+            {n:'Redo att starta',b:'44',s:'Ready to start (temp OK)'}],
+    fel:[{n:'Allmänt fel',b:'26'},{n:'Överreglering',b:'67'},{n:'Lågt lufttryck',b:'68'},{n:'Startfel',b:'69'},{n:'Stoppfel',b:'70'},
+         {n:'Slangen frusen',b:'71'},{n:'Slangen urkopplad',b:'72'},{n:'Lågt vattentryck',b:'73'},{n:'Hydrantfel',b:'74'},
+         {n:'Fläkten överbelastad',b:'75'},{n:'Kompressorn överbelastad',b:'76'},{n:'Överlastskydd',b:'77'},{n:'Fel 380 V',b:'78'},
+         {n:'Fel 4–20 mA',b:'79'},{n:'Hydranten urkopplad',b:'80'},{n:'Smutsigt filter',b:'81'}]
+  },
+  SGC400:{
+    steg:[{n:'Litet steg',b:'453:11'},{n:'Stort steg',b:'453:12'}]   // tolkat ur flödet
+  }
 };
 function bitSet(s){const o=new Set();if(!s||s==='0')return o;
   if(/:/.test(s)){for(const g of s.split(';')){const[c,l]=g.split(':');(l||'').split(',').forEach(b=>b!==''&&o.add(c+':'+b));}}
@@ -949,13 +968,26 @@ function snoPanel(c){
 }
 function lampPanel(c){
   if(c.bits==null)return missing('Lamporna (ringar, hydrant, kompressor …) kommer när bryggan på styrdatorn är version 7.');
-  const card=c.old?'SGC300':'SGC400', map=c.typ==='lans'?[]:LAMPOR[card], on=bitSet(c.bits), live=c.state==='conn'&&!bridgeOld();
-  const rings=map.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${map.map(l=>{const lit=on.has(l.b);
-      return `<span class="chip ${lit&&live?'s-run':'s-off'}" title="${l.guess?'Gissning: aldrig sett tänd':'Tolkat ur bit '+l.b}"><span class="d"></span>${l.n}${l.guess?' ?':''}</span>`}).join('')}</div>
-    <p class="muted small" style="margin:10px 0 0;line-height:1.6">Ring 1 och 2 är tolkade ur hur bitarna tändes när kanonerna gick 26 november; ring 3 och 4 (frågetecken) är en gissning som ingen sett än.</p>`
-    :`<p class="muted small" style="margin:10px 0 0">${c.typ==='lans'?'Lansarnas dyssteg':'Det äldre kortets ringar'} är inte utpekade än.</p>`;
-  return `<div class="card${live?'':' old'}" style="margin-top:14px"><h3>${icon('sliders','#7dd3fc',15)} Ringar och lampor</h3>${rings}
-    <p class="muted small" style="margin:12px 0 0;line-height:1.6">Övriga lampor — hydrant, vattenventil, kompressor, fläkt, automatik, fel — finns i styrsystemet men är inte parade med skärmen än. Tända bitar just nu:</p>
+  const on=bitSet(c.bits), live=c.state==='conn'&&!bridgeOld(), lit=b=>live&&on.has(b);
+  const ch=(t,b,title,kl='s-run')=>`<span class="chip ${lit(b)?kl:'s-off'}" title="${esc(title)}"><span class="d"></span>${t}</span>`;
+  const rad=x=>`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${x}</div>`;
+  // Inställningarna kommer med bryggan 12 (Sufags kolumner 704/702/703, på det äldre kortet 16/9).
+  const inst=Number.isFinite(c.kval)?`<p class="muted small" style="margin:10px 0 0;line-height:1.6">Snökvalitet <b style="color:var(--text)">${c.kval}</b> (1 torr – 10 blöt)${Number.isFinite(c.startT)?` · startar under ${num(c.startT,1)} °C`:''}${Number.isFinite(c.stoppT)?` · stannar över ${num(c.stoppT,1)} °C`:''} våttemperatur, som den är inställd i styrsystemet.</p>`:'';
+  let body;
+  if(c.typ==='lans')body=`<p class="muted small" style="margin:10px 0 0">Lansarnas dyssteg är inte utpekade än.</p>`;
+  else if(c.old){
+    const M=LAMPOR.SGC300, r=M.ringar.filter(([b])=>lit(String(b))).map(([,n])=>n), fel=M.fel.filter(f=>lit(f.b));
+    body=`<p class="muted small" style="margin:10px 0 0">Öppna ringar: <b style="color:var(--text)">${!live?'okänt just nu':r.length?r.join(', '):'ingen lampa tänd'}</b></p>
+      ${rad(M.lampor.map(l=>ch(l.n,l.b,'Skärmen: '+l.s)).join(''))}
+      ${fel.length?rad(fel.map(f=>ch(f.n,f.b,'Fellampa','s-alarm')).join('')):''}
+      <p class="muted small" style="margin:10px 0 0;line-height:1.6">Namnen är Sufags egna, kolumn för kolumn (styrsystemets beskrivningar, 28 november).</p>`;
+  }else{
+    const M=LAMPOR.SGC400;
+    body=`${rad(M.steg.map(l=>ch(l.n+' ?',l.b,'Tolkat ur flödet: bit '+l.b)).join(''))}
+      <p class="muted small" style="margin:10px 0 0;line-height:1.6">Två extra vattensteg ovanpå grundsteget, tolkade ur flödet: för kanon 8 gav bara det lilla steget cirka 5 m³/h, bara det stora cirka 6,5 och båda cirka 8,3. Inte jämfört med skärmens Ring 1–4 än. Vad SGC400:s övriga bitar betyder står inte i styrsystemets databas.</p>`;
+  }
+  return `<div class="card${live?'':' old'}" style="margin-top:14px"><h3>${icon('sliders','#7dd3fc',15)} Ringar och lampor</h3>${body}${inst}
+    <p class="muted small" style="margin:12px 0 0;line-height:1.6">Tända bitar just nu:</p>
     <div style="font-family:ui-monospace,Consolas,monospace;font-size:.78rem;color:var(--muted2);margin-top:6px;word-break:break-all">${esc(c.bits==='0'||c.bits===''?'inga':c.bits)}</div></div>`;
 }
 function uchip(c){
@@ -1163,13 +1195,25 @@ function vOverviewR(){
 // pumparna startade. Mätaren misstänks visa ungefär hälften; värdet visas
 // orättat tills det kontrollerats mot dammen.
 const FT01_T='Flöde ut, FT01 (visar troligen för lite)';
+/* TT01 mäter det strömmande vattnet. Står pumparna (FT01 under 2 m³/h; den
+   visar 0,1 när allt står) visar den vattnet som står i röret, och då blir
+   värdet grått. Bryggan 12 skickar senaste värdet medan vattnet gick
+   (vattenTempDrift, och -Tid med minuter i styrdatorns tid). */
+const pumpGar=p2=>!!p2&&Number.isFinite(p2.k125)&&p2.k125>=2;
+const tt01Still=p2=>real&&!!p2&&Number.isFinite(p2.vattenTemp)&&!pumpGar(p2);
+const tt01Drift=p2=>p2&&Number.isFinite(p2.vattenTempDrift)?{v:p2.vattenTempDrift,tid:parseT(p2.vattenTempDriftTid)}:null;
+function tt01Rad(p2){
+  if(!tt01Still(p2))return '';
+  const d=tt01Drift(p2);
+  return `<p class="muted small" style="margin:8px 0 0;line-height:1.55">TT01 ${num(p2.vattenTemp,1)} °C <b style="color:var(--text)">(senast vid drift ${d?num(d.v,1)+' °C, '+dm(d.tid):'inte känd än'})</b>. Pumparna står, så givaren visar vattnet som står i röret.</p>`;
+}
 function pumpSVG(){
   const p1=pumps&&pumps.dep11||{}, p2=pumps&&pumps.dep12||{}, L=k=>lines&&lines[k]?lines[k].tryck:null;
   const LO='#34d399', HI='#38bdf8';
   // h = historikens fält för de värden som har kurva (PT02); de går att trycka på.
-  const tag=(x,y,namn,v,enh,d=1,h,ht)=>`<g${h&&real?' style="cursor:pointer"'+histAttr(h,ht,enh):''}><rect x="${x-29}" y="${y}" width="58" height="36" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
+  const tag=(x,y,namn,v,enh,d=1,h,ht,dim)=>`<g${h&&real?' style="cursor:pointer"'+histAttr(h,ht,enh):''}><rect x="${x-29}" y="${y}" width="58" height="36" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
     <text x="${x}" y="${y+13}" text-anchor="middle" font-size="9.5" fill="#8296b5">${namn}</text>
-    <text x="${x}" y="${y+28}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#e9f0fa">${v===undefined?'?':num(v,d)}<tspan font-size="9.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
+    <text x="${x}" y="${y+28}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${dim?'#6f7f96':'#e9f0fa'}">${v===undefined?'?':num(v,d)}<tspan font-size="9.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
   const pump=(x,y,c,t)=>`<circle cx="${x}" cy="${y}" r="17" fill="#0c1a2b" stroke="${c}" stroke-width="2.5"/><path d="M${x-6} ${y-8}L${x+9} ${y}L${x-6} ${y+8}z" fill="${c}"/><text x="${x}" y="${y+33}" text-anchor="middle" font-size="10.5" font-weight="600" fill="#e9f0fa">${t}</text>`;
   return `<div class="pump-wide" style="overflow-x:auto;margin-top:12px"><svg viewBox="0 0 880 300" style="min-width:700px;width:100%;display:block" role="img" aria-label="Skiss av pumphuset: dammen, matarpumpen P1, filtret, högtryckspumpen P2, flödesmätaren och de två ledningarna ut mot spåret">
     <!-- dammen -->
@@ -1190,7 +1234,7 @@ function pumpSVG(){
     ${pump(400,110,HI,'P2 · högtryckspump')}
     ${tag(250,56,'PT01',p1.tryckUt,'bar')}
     ${tag(352,56,'PTS01',p2.tryckIn,'bar')}
-    ${tag(462,56,'TT01',p2.vattenTemp,'°C')}
+    ${tag(462,56,'TT01',p2.vattenTemp,'°C',1,null,null,tt01Still(p2))}
     ${tag(526,56,'PT02',p2.tryckUt,'bar',1,'tryckUt','Tryck efter högtryckspumpen (PT02)')}
     ${tag(590,56,'FT01',p2.k125,'m³/h',1,'k125',FT01_T)}
     ${tag(700,52,'PT04',L('L122'),'bar')}
@@ -1213,9 +1257,9 @@ function pumpSVG(){
    Rutorna är lite större än i den liggande, eftersom hela skissen ritas
    mindre på en smal skärm. */
 function pumpSVGtall(p1,p2,L,LO,HI,pump){
-  const tag=(x,y,namn,v,enh,d=1,h,ht)=>`<g${h&&real?' style="cursor:pointer"'+histAttr(h,ht,enh):''}><rect x="${x-33}" y="${y}" width="66" height="40" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
+  const tag=(x,y,namn,v,enh,d=1,h,ht,dim)=>`<g${h&&real?' style="cursor:pointer"'+histAttr(h,ht,enh):''}><rect x="${x-33}" y="${y}" width="66" height="40" rx="7" fill="#0c1a2b" stroke="#ffffff26"/>
     <text x="${x}" y="${y+14}" text-anchor="middle" font-size="10.5" fill="#8296b5">${namn}</text>
-    <text x="${x}" y="${y+31}" text-anchor="middle" font-size="14" font-weight="700" fill="#e9f0fa">${v===undefined?'?':num(v,d)}<tspan font-size="10.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
+    <text x="${x}" y="${y+31}" text-anchor="middle" font-size="14" font-weight="700" fill="${dim?'#6f7f96':'#e9f0fa'}">${v===undefined?'?':num(v,d)}<tspan font-size="10.5" font-weight="500" fill="#8ba0bd"> ${enh}</tspan></text></g>`;
   const lbl=(x,y,t,a='start')=>`<text x="${x}" y="${y}" text-anchor="${a}" font-size="12" font-weight="600" fill="#e9f0fa">${t}</text>`;
   const sub=(x,y,t,a='start')=>`<text x="${x}" y="${y}" text-anchor="${a}" font-size="10.5" fill="#8296b5">${t}</text>`;
   return `<div class="pump-tall" style="margin-top:12px"><svg viewBox="0 0 360 560" style="width:100%;max-width:420px;margin:0 auto;display:block" role="img" aria-label="Skiss av pumphuset uppifrån och ned: dammen, matarpumpen P1, filtret, högtryckspumpen P2, flödesmätaren och de två ledningarna ut mot spåret">
@@ -1234,7 +1278,7 @@ function pumpSVGtall(p1,p2,L,LO,HI,pump){
     <!-- högtryckssidan -->
     <path d="M200 277V430M90 430H310M90 430V510M310 430V510" stroke="${HI}" stroke-width="5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
     ${pump(200,260,HI,'')}${lbl(176,256,'P2','end')}${sub(176,271,'högtryckspump','end')}
-    ${tag(268,290,'TT01',p2.vattenTemp,'°C')}
+    ${tag(268,290,'TT01',p2.vattenTemp,'°C',1,null,null,tt01Still(p2))}
     ${tag(268,336,'PT02',p2.tryckUt,'bar',1,'tryckUt','Tryck efter högtryckspumpen (PT02)')}
     ${tag(268,382,'FT01',p2.k125,'m³/h',1,'k125',FT01_T)}
     ${tag(90,452,'PT03',L('L121'),'bar')}
@@ -1257,9 +1301,9 @@ function vWaterR(){
   const p2=pumps&&pumps.dep12||{};
   // FT01 mot kanonerna: bara meningsfullt när det faktiskt går vatten.
   const ft=Number.isFinite(p2.k125)?p2.k125:null, kvot=ft!=null&&tot>=3&&!bridgeOld()?ft/tot:null;
-  return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
+  return topbar('Driftövervakning','Vattenbalans — pump → enheter',vattenSw('water'))+`<div class="view">
   <div class="card${bridgeOld()?' old':''}"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset ${bridgeOld()?agoHTML(lastData):''}</h3>
-    ${pumps?pumpSVG():'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
+    ${pumps?pumpSVG()+tt01Rad(p2):'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
     <p class="muted small" style="line-height:1.6;margin:12px 0 0">Vattnet går från dammen till ledningarna: <b style="color:var(--text)">P1</b> lyfter det ur intagsbrunnen, genom filtret, och <b style="color:var(--text)">P2</b> trycker ut det i de två ledningarna mot spåret. Grönt är lågt tryck, blått högt. Namnen vid värdena är givarnas namn på skärmen i pumphuset. Tryck på PT02 för att se trycket bakåt i tiden.</p>
   </div>
   ${missing('<b>Flödesmätaren FT01</b> är styrsystemets kolumn 125. Den steg när pumparna startade 25 november och följde avläsningen på skärmen, medan kolumn 126 stod still. <b>Mätaren misstänks visa ungefär hälften</b> av det verkliga flödet, kanske ett skalningsfel sedan den byttes. Värdet visas som mätaren säger, utan rättning, och dammen räknar inte på det förrän det är kontrollerat mot måttbandet. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
@@ -1352,7 +1396,7 @@ function vWater(){
   const tot=totalWater(), pct=Math.round(tot/PUMP_MAX*100), head=Math.max(0,PUMP_TARGET-tot).toFixed(1);
   const ps=pumpState(tot), near=ps!=='ok', hot=ps==='over'||ps==='at';
   const gcol=hot?'#f87171':near?'#fbbf24':'#22d3ee';
-  return topbar('Driftövervakning','Vattenbalans — pump → enheter')+`<div class="view">
+  return topbar('Driftövervakning','Vattenbalans — pump → enheter',vattenSw('water'))+`<div class="view">
   <div class="card">
     <h3>${icon('gauge','#7dd3fc',15)} Pumphus</h3>
     <div class="pumpwrap" style="margin-top:14px">
@@ -2124,7 +2168,7 @@ function vAdvisor(){
     fast: ['Producera fort','Full effekt på de bästa enheterna tills pumpen är full — mest snö per timme, kortare bana.'],
     last: ['Få vattnet att räcka','Kör färre, kallaste enheter så magasinet håller fler dygn.'],
   };
-  return topbar('Vattenbalans','Vattenrådgivare')+`<div class="view">
+  return topbar('Vattenbalans','Vattenrådgivare',vattenSw('advisor'))+`<div class="view">
    <div class="banner ok">${icon('bolt','#34d399')}<div style="flex:1"><b>Förslag — inte styrning.</b> <span class="muted small">Appen räknar fram en fördelning utifrån våttemperatur och pumptak. Du ställer in den i styrsystemet; appen rör aldrig anläggningen.</span></div></div>
 
    ${real?missing('Räknat på de enheter som har kontakt just nu, med styrsystemets teoretiska flöde som fullt flöde. Vad varje enhet drar i dag går inte att läsa än, så kolumnen "Nu" är tom. Täckningen i kilometer är en grov tumregel.')+'<div style="height:14px"></div>':''}
@@ -2396,6 +2440,10 @@ function putMarkers(want,sides){
   }
 }
 
+// Rådgivaren har ingen egen knapp i telefonens rad. Växeln gör den nåbar
+// högst upp i Vatten, som växeln mellan kanoner och lansar under Enheter
+// (Kristian hittade den inte i telefonen 28 november).
+const vattenSw=id=>`<div class="seg"><button class="${id==='water'?'on':''}" onclick="go('water')">Vattenbalans</button><button class="${id==='advisor'?'on':''}" onclick="go('advisor')">Vattenråd</button></div>`;
 function vUnits(typ){
   const list=cannons.filter(c=>c.typ===typ);
   const t=typ==='kanon'?'Kanoner':'Lansar';
@@ -2780,7 +2828,8 @@ function vForecast(){
          <label class="small muted">Målkvalitet<select style="${inp}" onchange="kfSet('q',this.value)">${KF_ORD.slice(1).map((o,i)=>`<option value="${i+1}"${kfVal.q===i+1?' selected':''}>${i+1} — ${o}</option>`).join('')}</select></label>
          <label class="small muted">Vattentemperatur, °C<input type="number" inputmode="decimal" step="0.1" min="0" max="15" style="${inp}" value="${kfVal.vt}" onchange="kfSet('vt',this.value)"></label>
        </div>
-       ${pumpsGo?`<p class="muted small" style="line-height:1.55;margin:10px 0 0">TT01 i pumphuset visar ${fmt1(p2.vattenTemp)} °C nu, med pumparna igång. <button class="linkbtn" onclick="kfSet('vt',${p2.vattenTemp})">Använd ${fmt1(p2.vattenTemp)} °C</button></p>`:''}
+       ${pumpsGo?`<p class="muted small" style="line-height:1.55;margin:10px 0 0">TT01 i pumphuset visar ${fmt1(p2.vattenTemp)} °C nu, med pumparna igång. <button class="linkbtn" onclick="kfSet('vt',${p2.vattenTemp})">Använd ${fmt1(p2.vattenTemp)} °C</button></p>`
+         :real&&tt01Drift(p2)?`<p class="muted small" style="line-height:1.55;margin:10px 0 0">Pumparna står. TT01 i pumphuset visade ${fmt1(tt01Drift(p2).v)} °C senast vattnet gick (${dm(tt01Drift(p2).tid)}). <button class="linkbtn" onclick="kfSet('vt',${tt01Drift(p2).v})">Använd ${fmt1(tt01Drift(p2).v)} °C</button></p>`:''}
        <p class="muted small" style="line-height:1.6;margin:10px 0 0">Sparas i den här telefonen. Startgränsen är ${fmt1(KF.fanBase)} °C för fläkt och ${fmt1(KF.lanceBase)} °C för lans, skjuten ${fmtG(th.water)} grader nedåt av vattnet. Målkvaliteten lägger till 0,4 grader per steg under 10 (${fmt1(th.quality)} nu). Vind ${KF.windWarn} m/s kräver omriktning, ${KF.windStop} m/s stoppar.</p>
      </div>
      <div class="card${damUtanUttag()?' old':''}"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin — så länge räcker det</h3>

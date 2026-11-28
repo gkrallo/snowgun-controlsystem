@@ -24,6 +24,11 @@ Körningen tar ungefär en minut.
 > kolumnnummer. De fanns i säkerhetskopian i zip-filen men utan kolumn, och
 > är facit för lamporna och ringarna. Bara en liten systemtabell läses. Inte
 > provkörd mot en riktig SQL Server, av samma skäl som ovan.
+>
+> **Körd på styrdatorn 28 november 10:57** med `GSS_Login` (Windows-inloggningen
+> är avstängd i SQL Server). Rapporten, `db-sond-rapport_20261128-105703.txt`,
+> ligger i den här mappen utanför git. Del 7 gav 2 833 beskrivningar. Vad de
+> betydde står i `docs/kolumnmappning.md` under Lamporna.
 
 Resultatet blir en textfil, `db-sond-rapport_DATUM-TID.txt`, bredvid skriptet.
 **Den filen tar du med hem.** Den fångar allt vi behöver i ett svep:

@@ -11,6 +11,15 @@ föll bort på kvartsgränsen), journalen går tillbaka till 30 oktober 08:45
 och gav 82 inkopplingar. SGC400-3 var senast inkopplad vid en annan brunn
 än 10 och räknas vid brunnen från 09:53.
 
+- **Version 12 (28 november, inte installerad än)** minns vattentemperaturen
+  i pumphuset (TT01) från senast vattnet gick (FT01 minst 2 m³/h) och skickar
+  den som `pump/dep12/vattenTempDrift` och `vattenTempDriftTid` (styrdatorns
+  tid, minuter). Står pumparna visar TT01 vattnet som står i röret. Värdet
+  sparas i `brygga-state.json` (`driftTemp`, `driftTid`). Den skickar också
+  varje enhets snökvalitet och start-/stoppgräns (`kvalitet`, `startTemp`,
+  `stoppTemp`; SGC400 kolumn 704/702/703, äldre kortet 16/9), säkra ur
+  sonden 28 november. Stegen står i `LAS-MIG-FORST.txt` i
+  `brygga-styrdatorn-2026-11-28-v12.zip`.
 - **Läget 28 november:** version 11 går på styrdatorn sedan förmiddagen
   (Kristian), installerad enligt `LAS-MIG-FORST.txt` i
   `brygga-styrdatorn-2026-11-26-v11.zip`. `/vattenTimme` fick 53 timmar med

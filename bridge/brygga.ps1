@@ -40,6 +40,10 @@
   räknades som vid sin brunn sedan 1 augusti.
   Version 11 räknar kanonernas vatten timme för timme ur statistiken och
   skickar det till /vattenTimme, så att appen kan räkna dammens uttag.
+  Version 12 minns vattentemperaturen i pumphuset (TT01) från senast vattnet
+  gick, och skickar den bredvid: pump/dep12/vattenTempDrift och -Tid. Den
+  skickar också varje enhets snökvalitet och startgräns (och stoppgräns på
+  SGC400), ur Sufags kolumnbeskrivningar.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -70,7 +74,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "11"
+$VERSION = "12"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -288,7 +292,7 @@ function Newest($node) {
 # dödband skulle varje flimmer bli en sändning.
 function Band([string]$path) {
   $f = $path.Substring($path.LastIndexOf("/") + 1)
-  if ($f -match '^(t|tw|vattenTemp)$')              { return 0.2 }
+  if ($f -match '^(t|tw|vattenTemp|vattenTempDrift)$') { return 0.2 }
   if ($f -eq 'rh')                                  { return 2 }
   if ($f -match '^(tryck|tryckIn|tryckUt|tryckBor)$') { return 0.2 }
   if ($f -match '^(k125|k126|k408|flodeTeori|flode)$') { return 0.2 }
@@ -506,6 +510,29 @@ function Backfill-Compute($acc, $rows, $appeared, [datetime]$seasonStart) {
 # tänds eller släcks. Efter en omstart skrivs alla en gång till.
 $script:lastBits = @{}
 
+# TT01 sitter på det strömmande vattnet i pumphuset. När pumparna står visar
+# den vattnet som står still i röret, och det värms eller kyls av pumphuset.
+# Version 12 minns därför senaste värdet medan vattnet gick (FT01 minst
+# 2 m3/h; den visar 0,1 när allt står) och skickar det bredvid det mätta.
+# Tiden har minutupplösning, så att den inte blir en ändring var 20:e
+# sekund. Värdet sparas i brygga-state.json och överlever en omstart.
+$script:driftTemp = $null
+$script:driftTid = $null
+function Mark-DriftTemp($snap, [datetime]$now) {
+  if (-not $snap["pump"]) { return }
+  $d = $snap["pump"]["dep12"]
+  if (-not $d) { return }
+  $q = $d["k125"]; $vt = $d["vattenTemp"]
+  if ((IsNum $q) -and (IsNum $vt) -and ([double]$q -ge 2)) {
+    $script:driftTemp = [double]$vt
+    $script:driftTid = $now.ToString("yyyy-MM-ddTHH:mm")
+  }
+  if ($null -ne $script:driftTemp) {
+    $d["vattenTempDrift"] = $script:driftTemp
+    $d["vattenTempDriftTid"] = $script:driftTid
+  }
+}
+
 function Build-HistPatch($snap, [datetime]$slot) {
   $p = [ordered]@{}
   $pt = [ordered]@{ ts = @{ ".sv" = "timestamp" } }
@@ -627,10 +654,19 @@ function Read-Snapshot {
       # Läget: 6 kör (alla fem som gick 26 november), 11 klar, 2 stoppad,
       # 1 fel.
       k415        = V $r "415"
-      # Lamporna, som tända bitar (se Bits). Bara när gående och stående
-      # jämförts: 453 bit 0, 1, 12 och 454 bit 4, 8 tändes när kanonerna
-      # gick med ring 1 och 2 öppna (26 november).
+      # Lamporna, som tända bitar (se Bits). Sufags namn (sonden 28 november):
+      # 450-451 "Défaut 1-2", 452 "Alarme", 453-454 "Mot Etat 1-2", 455
+      # "Option", 500-501 ingångar (ETOR), 502-503 utgångar (STOR), 709
+      # "Options". Vad varje bit är står inte i databasen. 453 bit 11 och 12
+      # följer flödet som två vattensteg (5,1 / 6,5 / 8,3 m3/h för kanon 8),
+      # bit 0 och 1 är tända hela tiden kanonen går. Se docs\kolumnmappning.md.
       bitar       = Bits $r @("450", "451", "452", "453", "454", "455", "500", "501", "502", "503", "709")
+      # Inställningarna (version 12, säkra ur Sufags beskrivningar 28
+      # november): snökvalitet 1-10 (Dry-Wet), start- och stoppgräns i
+      # våttemperatur. Ändras sällan, så de kostar nästan inga sändningar.
+      kvalitet    = V $r "704"  # "Qualité de neige", 5 på alla 28 november
+      startTemp   = V $r "702"  # "T de demarrage", -2,5
+      stoppTemp   = V $r "703"  # "T arret", -2
       senastHord  = V $r "850"  # säker: senaste kontakt med kanonen
       # Brunnen enheten står vid ("Shelter" på skärmen Gun searching).
       # Säker: alla sju stämde mot skärmen 25 november (version 6).
@@ -658,9 +694,15 @@ function Read-Snapshot {
       flodeTeori = V $r "10"    # trolig: "Theoretic water flow", m3/h
       flode      = V $r "5"     # trolig: "Real water flow", m3/h
       tryck      = V $r "4"     # säker: "Water pressure", bar
-      # Lamporna (se Flags). 26 november, med ring 0 och 2, automatik, fläkt
-      # och kompressor tända på skärmen, var 25, 37, 42, 43, 44 = 1 och 65 = 3.
+      # Lamporna (se Flags), en kolumn per lampa. Säkra ur Sufags
+      # beskrivningar (sonden 28 november): 25 Auto, 26 General fault, 27
+      # Pressostat, 28 Hydrant OK, 29 Gun started, 30 Power ON, 33-34
+      # hydrant öppen/stängd, 35-39 "0-4 rings open", 42 Compressor ON, 43
+      # Fan ON, 44 Ready to start, 66-81 felen. 26 november, gående: 25, 37,
+      # 42, 43, 44 = 1 (Auto, 2 ringar, kompressor, fläkt, redo).
       flaggor    = Flags $r (@(25..81) + @(85, 86, 93, 96, 107))
+      kvalitet   = V $r "16"    # säker: "Snow quality COM" (version 12)
+      startTemp  = V $r "9"     # säker: "Start temperature COM" (version 12)
       senastHord = V $r "104"
       brunn      = V $r "108"   # säker: "Shelter", stämde 25 november
       uppdaterad = V $r "DateUpd"
@@ -1454,6 +1496,20 @@ if ($Sjalvtest) {
 
   Check "flöde och tryck har dödband" ((Band "enheter/SGC400-3/flode") -eq 0.2 -and (Band "enheter/SGC400-3/tryckBor") -eq 0.2)
 
+  # Vattentemperaturen vid drift (version 12)
+  $script:driftTemp = $null; $script:driftTid = $null
+  $s0 = [ordered]@{ pump = [ordered]@{ dep12 = [ordered]@{ vattenTemp = 6.0; k125 = 0.1 } } }
+  Mark-DriftTemp $s0 (Get-Date "2026-11-28 09:00:00")
+  Check "drift: inget att visa innan vattnet gått" (-not $s0["pump"]["dep12"].Contains("vattenTempDrift"))
+  $s1 = [ordered]@{ pump = [ordered]@{ dep12 = [ordered]@{ vattenTemp = 2.4; k125 = 30.5 } } }
+  Mark-DriftTemp $s1 (Get-Date "2026-11-28 09:10:41")
+  Check "drift: värdet medan vattnet går" ($s1["pump"]["dep12"]["vattenTempDrift"] -eq 2.4 -and $s1["pump"]["dep12"]["vattenTempDriftTid"] -eq "2026-11-28T09:10")
+  $s2 = [ordered]@{ pump = [ordered]@{ dep12 = [ordered]@{ vattenTemp = 6.3; k125 = 0.1 } } }
+  Mark-DriftTemp $s2 (Get-Date "2026-11-28 11:00:00")
+  Check "drift: står pumparna ligger senaste driften kvar" ($s2["pump"]["dep12"]["vattenTempDrift"] -eq 2.4 -and $s2["pump"]["dep12"]["vattenTempDriftTid"] -eq "2026-11-28T09:10" -and $s2["pump"]["dep12"]["vattenTemp"] -eq 6.3)
+  Check "drift: utan pumphuset händer inget" ($null -eq (Mark-DriftTemp ([ordered]@{}) (Get-Date)))
+  Check "drift: samma dödband som vattentemperaturen" ((Band "pump/dep12/vattenTempDrift") -eq 0.2)
+
   if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
   Write-Host ("Självtestet hittade " + $script:bad + " fel."); exit 1
 }
@@ -1487,6 +1543,7 @@ if (Test-Path $stateFile) {
     Acc-FromState $st.vatten
     $script:bakatStamp = $st.bakat
     if ($st.timmeFran) { $script:timmeFran = [datetime]::ParseExact($st.timmeFran, "yyyy-MM-ddTHH:mm:ss", $null) }
+    if ($null -ne $st.driftTemp) { $script:driftTemp = [double]$st.driftTemp; $script:driftTid = [string]$st.driftTid }
   } catch { $lastSlot = $null }
 }
 $script:timmeNasta = [datetime]::MinValue
@@ -1524,6 +1581,7 @@ function Save-State {
   $o = [ordered]@{ lastSlot = (SlotKey $lastSlot); vatten = (Acc-ToState) }
   if ($script:bakatStamp) { $o["bakat"] = $script:bakatStamp }
   if ($script:timmeFran) { $o["timmeFran"] = $script:timmeFran.ToString("yyyy-MM-ddTHH:mm:ss") }
+  if ($null -ne $script:driftTemp) { $o["driftTemp"] = $script:driftTemp; $o["driftTid"] = $script:driftTid }
   (ConvertTo-Json -InputObject $o -Depth 5 -Compress) | Set-Content -Path $stateFile -Encoding ASCII
 }
 
@@ -1547,6 +1605,7 @@ while ($true) {
   $now = Get-Date
   $ms = [int]($now - $t0).TotalMilliseconds
   if ($sqlOk) { try { Add-Water $snap $now } catch { Log ("Kunde inte räkna vattnet: " + $_.Exception.Message) } }
+  if ($sqlOk) { try { Mark-DriftTemp $snap $now } catch { Log ("Vattentemperaturen vid drift: " + $_.Exception.Message) } }
 
   try {
     $plan = Plan-Round $snap $sqlOk $now $ms

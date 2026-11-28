@@ -31,7 +31,7 @@ En rad per avgång: `11` = P1 (lågtryck, LPP01), `12` = P2 (högtryck, HPP01).
 |---|---|---|
 | 0 | avgångens nummer | säker |
 | 121 | tryck in, bar (PT01 = 0,1) | säker |
-| 122 | vattentemperatur, °C (TT01 = 11,8) | säker |
+| 122 | vattentemperatur, °C (TT01 = 11,8). Mäter strömmande vatten: när pumparna står visar den vattnet i röret (bryggan 12 skickar därför också senaste värdet vid drift) | säker |
 | 123 | tryck ut, bar (PT02 = 7,2; 0,1 för avgång 11) | säker |
 | 124 | temperatur ut, °C | säker (statistikens `temperature_refoulement`) |
 | 125 | uppmätt flöde ut, m³/h (FT01) — steg till 6–12 när pumparna startade 25 november och följde skärmen (8,6). **Mätaren misstänks visa ungefär hälften.** | säker att det är FT01; storleken okontrollerad |
@@ -169,8 +169,8 @@ Kvaliteten avgör alltså både hur mycket vatten kanonen tar och hur tät snön
 blir.
 
 Styrsystemets snö (× 2,2) tar ingen hänsyn till kvaliteten. Faktorn 1,5 är
-mätt vid troligen kvalitet 5 och −2 till −5 grader våttemperatur, på snö som
-legat 1–2 dygn. Vilken kolumn som är vilken visar sonden version 3.
+mätt vid kvalitet 5 (bekräftat av sonden 28 november: 5 på alla kanoner)
+och −2 till −5 grader våttemperatur, på snö som legat 1–2 dygn.
 
 #### Varför 1,5 och inte 2,2
 
@@ -252,15 +252,53 @@ läge, **22 "Wanted rings" och 23 "Open rings"** (ett tal, inga bitar), och
 ett tal och bitkolumnerna 450–455 och 500–503 vara ingångs- och felorden.
 Vilken kolumn som är vilket ord står inte i kopian.
 
-**Facit** ger sonden version 3 (del 7), som läser beskrivningarna med exakt
-tabell och kolumnnummer ur styrdatorns databas. Kör den nästa gång på plats
-och lägg in i `LAMPOR` först därefter. GSSystem självt är Visual Basic 6
-kompilerat till maskinkod och går inte att läsa som kod.
+**Facit, sonden version 3 (28 november).** Kristian körde sonden på
+styrdatorn. Del 7 gav Sufags beskrivning av 2 833 kolumner med exakt tabell
+och nummer. Rapporten ligger i `probe/db-sond-rapport_20261128-105703.txt`,
+utanför git.
 
-För att para resten behövs skärmbilder av Visualisation i andra lägen, med
-klockslag: en stoppad kanon, en med fel, en lans som går, och när ring 3
-eller 4 öppnas. Med bryggan 7 på styrdatorn behövs ingen `-Ra` — bitarna och
-tiden finns i historiken.
+- **Det äldre kortet (SGC300) är klart, kolumn för kolumn:**
+  - 25 Man – Auto, 26 General fault, 27 Pressostat, 28 Hydrant OK, 29 Gun
+    started, 30 Power ON, 31 fri/värme.
+  - 33 Hydrant open, 34 Hydrant closed.
+  - 35–39 "0–4 rings open".
+  - 42 Compressor ON, 43 Fan ON, 44 Ready to start, 45 General fault (strob).
+  - 46–48 är för Sufag swivel, inte ringar. 49–50 "5–6 rings open".
+  - 57 Local start, 60 PC Automatic, 61 PC Command, 65 "demande de marche".
+  - 66–81 felen (67 Over regulation … 81 Filter dirty).
+
+  Byte 1 börjar alltså på 25, som räknat. Appen visar dem med Sufags namn.
+- **SGC400 har namn på orden, inte på bitarna:**
+  - 450–451 "Défaut 1–2", 452 "Alarme", 453–454 "Mot Etat 1–2", 455 "Option".
+  - 500–501 "Etat ETOR" (ingångar), 502–503 "Etat STOR" (utgångar), 709
+    "Options".
+  - "Word 22 Wanted rings / 23 Open rings" hör till tabellen `Lenko_Com`, en
+    annan kanontillverkare. Den har 0 rader här.
+- **Vattenstegen i SGC400, tolkade ur flödet** (kanon 8, 26–28 november):
+  - Bit 11 och 12 i 453 växlar med flödet. Bara bit 11 ger cirka 5,1 m³/h,
+    bara bit 12 cirka 6,5 och båda cirka 8,3.
+  - Det är två steg ovanpå ett grundsteg, kopplade binärt som
+    `Combinaison Ev` i `Gun` (00001, 00010, 00011).
+  - Bit 0 och 1 är tända hela tiden kanonen går, och visades förut som
+    ring 1 och 2. Bit 2 och 3 tänds kort vid stopp, 13 och 14 vid start.
+  - Appen visar stegen som "Litet steg ?" och "Stort steg ?". Vilken av
+    skärmens Ring 1–4 de motsvarar avgörs med en skärmbild med klockslag
+    medan en kanon går.
+- **Inställningarna:**
+  - SGC400: 704 "Qualité de neige", 702 "T° de démarrage", 703 "T° arrêt",
+    705 "Débit max", 706 "Température d'eau", 707 "Num regard".
+  - Det äldre kortet: 16 "Snow quality COM" och 9 "Start temperature COM".
+  - 28 november var kvaliteten **5 på alla** och start/stopp −2,5/−2 °C. De
+    två Taurus-lansarna har −3/−2,5 och kvalitet 4–5.
+  - Bryggan 12 skickar dem, och appen visar dem i enhetens vy.
+- **Kanonmodellerna (`Gun`, 226 rader).** Sonden visar bara de tre första
+  (Taurus):
+  - "Enclenchement Ev1–4", alltså stegens startgränser i våttemperatur (−4,1,
+    −5,3, −6,5, −7,2 för TAURUS_2.0).
+  - "Offset qualité de neige 1–9", −20 till +20 i steg om 5 (troligen
+    tiondels grader, alltså ±0,5 °C per kvalitetssteg).
+  - Raden för S ACCESS 300 kom inte med. En läsning av just den raden skulle
+    ge kanonernas egna stegränser.
 
 **FT01 mot kanonerna:** de sex som gick (fem ovan och adress 1 med 5,8)
 gav 43,9 m³/h ihop; FT01 visade 19,8, alltså 45 %. Klockan 06:12 var
@@ -278,11 +316,12 @@ Två rader. n° 1 lever. n° 2 har inte hörts sedan 19 oktober 2022.
 |---|---|---|
 | 2, 3, 7 | lufttemperatur, fukt, våttemperatur | säker |
 | **4** | **"Water pressure", bar** (14,5; skärmen 14,6) | **säker** (26 november) |
-| **10** | **"Theoretic water flow", m³/h** | trolig — 5,8 som 5; n° 2, tyst sedan 2022, har 15,5 där och 0 i 5 utan tryck, som 411/406 på SGC400 |
-| **5** | **"Real water flow", m³/h** | trolig (samma skäl). Skärmen visade 4,7 teoretiskt och 5,4 real tidigare samma morgon, så de är inte alltid lika |
-| 9 | startgräns, °C (−2 som skärmen) | trolig |
-| 14 | "Flow max limit", m³/h (24,1; skärmen 24) | trolig |
-| 21 | 3,7–3,8 både stående och gående — inte flödet | **osäker** |
+| **10** | **"Theoric flow", m³/h** | säker (sonden 28 november) |
+| **5** | **"Real flow", m³/h** | säker (sonden 28 november). Skärmen visade 4,7 teoretiskt och 5,4 real samma morgon, så de är inte alltid lika |
+| 9 | "Start temperature COM", °C (−2,5 28 november) | säker (sonden 28 november) |
+| 14 | "Flow max COM", m³/h (24,1; skärmen 24) | säker |
+| 16 | "Snow quality COM" (5) | säker |
+| 21 | "Temperature of water COM", °C (3,5–3,8) — vattentemperaturen kortet räknar med | säker |
 | 88 | n° (= adress på det här kortet: n° 1 har adress 1, n° 2 adress 2) | säker |
 | 104 | senaste kontakt | säker |
 | **108** | **brunnen** ("Shelter"): n° 1 = 6, n° 2 = 7 | **säker** (25 november) |

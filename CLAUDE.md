@@ -33,7 +33,8 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
 - **Bryggan** (`bridge/brygga.ps1`, version 11 på styrdatorn sedan 28
-  november, förmiddagen) går på styrdatorn som en
+  november, förmiddagen; version 12 med TT01 vid drift ligger klar i
+  zipfilen men är inte installerad) går på styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
   inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
@@ -61,7 +62,10 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   inte för gammal data. Chippen säger "Hörs"/"Tyst" när läget inte är känt
   — "Kontakt" i blått lästes som att enheten körde — och "Kör" bara när
   läget säger det och enheten hörs just nu. Värden med
-  historik går att trycka på (`histAttr`, `openHist`).
+  historik går att trycka på (`histAttr`, `openHist`). TT01
+  (vattentemperaturen i pumphuset) mäter bara strömmande vatten: står
+  pumparna (FT01 under 2 m³/h) blir den grå, med "senast vid drift" under
+  skissen (`tt01Rad`, från bryggan 12).
 - **Appen** loggar in med Google, visar riktig data och går att installera på
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
   siffror: öppna ringar, dyssteg och strypning. Körfönstret är riktig
@@ -152,9 +156,15 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   `docs/kolumnmappning.md`.
 - **Lamporna** (ringar 1–4, hydrant, kompressor, fläkt …) skickas från
   bryggan 7 som tända bitar och sparas i historiken bara när de ändras.
-  Bara ring 1 och 2 är (troligen) parade; appen visar ringarna som tolkade
-  och resten som råa bitar. Lägg in en lampa i `LAMPOR` först när den
-  jämförts med skärmen, aldrig ur en gissning utan märkning.
+  Sonden version 3 (28 november) gav Sufags namn på varje kolumn. Det äldre
+  kortets lampor är därför säkra och visas med namn. SGC400 har bara namn på
+  orden ("Mot Etat 1–2" …), inte på bitarna. 453 bit 11 och 12 är två
+  vattensteg, tolkade ur flödet och märkta "?". Bit 0 och 1, som förut
+  visades som ring 1 och 2, är tända hela tiden kanonen går. Lägg in en
+  lampa i `LAMPOR` först när den jämförts med skärmen eller Sufags
+  beskrivningar, aldrig ur en gissning utan märkning. Snökvaliteten och
+  start-/stoppgränsen per enhet kommer med bryggan 12 (alla på 5, −2,5/−2
+  den 28 november).
 - **Väderstationen vid brunn 7 visar för varmt**, 0,3–1,7 grader och
   ojämnt, medan fukten i luften stämmer (jämfört med kanon 3 vid samma
   brunn 25 november). Troligen uppvärmd givare, inte en offset — lägg
