@@ -53,7 +53,7 @@
       "avlas": {
         "$id": {
           ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
-          ".validate": "newData.hasChildren(['ts', 'm3', 'typ', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
+          ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.hasChildren(['ts', 'm3', 'typ', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
           "ts":   { ".validate": "newData.isNumber() && newData.val() > 1735689600000 && newData.val() < now + 600000" },
           "m3":   { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() < 100000000" },
           "typ":  { ".validate": "newData.isString() && newData.val().matches(/^(start|stopp|avl)$/)" },
@@ -65,7 +65,7 @@
       "kalib": {
         "$id": {
           ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
-          ".validate": "newData.hasChildren(['ts', 'cm', 'punkt', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
+          ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.hasChildren(['ts', 'cm', 'punkt', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
           "ts":    { ".validate": "newData.isNumber() && newData.val() > 1735689600000 && newData.val() < now + 600000" },
           "cm":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
           "punkt": { ".validate": "newData.isString() && newData.val().matches(/^(SN|SV|NV|NO|SO)$/)" },
