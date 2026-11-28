@@ -3,7 +3,7 @@
    att visa driftdata utan nät. Mätvärdena kommer alltid direkt från Firebase
    och sparas aldrig här: gammal data får inte kunna se ny ut. */
 
-const VERSION = "snokoll-v5";
+const VERSION = "snokoll-v6";
 const SHELL = [
   "./",
   "./index.html",
@@ -33,6 +33,13 @@ self.addEventListener("activate", e => {
   );
 });
 
+// Under vilket namn en sida sparas, eller null om den inte ska sparas.
+function sparasSom(pathname) {
+  const namn = pathname.split("/").pop();
+  if (namn === "" || namn === "index.html") return "./index.html";
+  return /^[\w-]+\.html$/.test(namn) ? "./" + namn : null;
+}
+
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
@@ -44,11 +51,10 @@ self.addEventListener("fetch", e => {
     if (!LIBS.includes(url.hostname)) return;
     e.respondWith(
       caches.match(req).then(hit => hit || fetch(req).then(res => {
-        // Bara svar som säkert gick bra sparas. Chart.js och Leaflet hämtas med
-        // vanliga script-taggar, och då går det inte att se härifrån om svaret
-        // var en felsida - sparades den skulle graferna vara trasiga tills
-        // VERSION höjs. De hämtas därför från nätet varje gång; mätvärdena
-        // kräver ändå nät.
+        // Bara svar som säkert gick bra sparas. Sedan 28 november hämtas
+        // Chart.js och Leaflet med crossorigin (för kontrollsumman), och då
+        // går det att se härifrån om svaret var en felsida. Förut gick det
+        // inte, och de hämtades från nätet varje gång.
         if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
         return res;
       }))
@@ -64,11 +70,13 @@ self.addEventListener("fetch", e => {
   // sparade kopian används bara när nätet saknas.
   // Varje sida sparas under sitt eget namn (förarvyns förslag, startsidan för
   // förslagen). Annars blev den senast öppnade sidan den sparade startsidan,
-  // och Snökoll visade en förarvy när nätet saknades. Allt som inte är en
-  // namngiven .html-fil, som "/", är Snökoll själv.
+  // och Snökoll visade en förarvy när nätet saknades. "/" och "/index.html"
+  // är Snökoll själv. Allt annat som öppnas direkt i webbläsaren
+  // (manifest.json, en ikon) sparas inte alls: förut sparades det som
+  // Snökolls startsida, och appen visade den filen när nätet saknades.
   if (req.mode === "navigate") {
-    const namn = url.pathname.split("/").pop();
-    const sida = /^[\w-]+\.html$/.test(namn) ? "./" + namn : "./index.html";
+    const sida = sparasSom(url.pathname);
+    if (!sida) return;
     e.respondWith(
       fetch(req, { cache: "no-cache" })
         .then(res => {
@@ -116,13 +124,15 @@ self.addEventListener("push", e => {
 });
 
 // Trycket på notisen: till en öppen Snökoll om det finns en, annars öppnas
-// appen på larmsidan.
+// appen på larmsidan. Bara Snökoll själv räknas: förut togs första fönstret
+// på samma adress, också en förslagssida, och där visas inget larm.
 self.addEventListener("notificationclick", e => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || "./#larm";
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
     for (const c of list) {
-      if (new URL(c.url).origin === location.origin && "focus" in c) {
+      const u = new URL(c.url);
+      if (u.origin === location.origin && sparasSom(u.pathname) === "./index.html" && "focus" in c) {
         c.postMessage({ vy: "alarms" });
         return c.focus();
       }
