@@ -64,9 +64,13 @@ Den ska **mätas**, inte antas: pucken med RTK-fix läggs på punkter som
 finns i barmarken, och skillnaden blir en fast förskjutning för säsongen.
 Ändra inte puckens antenninställningar eller basens koordinater efter det.
 
-## Mätprov (byggt 28 november, inte provat med riktig puck)
+## Mätprov (byggt och utlagt 28 november, inte provat med riktig puck)
 
 Vyn `rtk` i `app/index.html`, nås från sidomenyn och från Översikt.
+Reglerna och appen lades ut 28 november kväll, reglerna först. Kontrollerat
+utifrån: sidan är samma fil som i repot, `/pist` svarar nej utan
+inloggning, och barmarken går att hämta från Snöprognos. Ingen har provat
+vyn inloggad än.
 
 - **Pucken:** ansluts med Bluetooth (Chrome på Android eller dator). Visar
   läget (RTK-fix, float, ingen korrektion), satelliter, höjdosäkerhet och

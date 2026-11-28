@@ -242,9 +242,12 @@ kodgranskningen" nedan.
   i onocoys referensram: skillnaden ska mätas, och **ingen rättning läggs på
   förrän Kristian bestämt den**. Barmarken läses tills vidare från
   Snöprognos (`BAR_URL`), så att den finns på ett ställe; `BAR_ORIGO` och
-  `BAR_M` måste vara samma tal som där. Inte provat med riktig puck. Inte
-  bestämt: skärmen i hytten (fast Android eller egna telefoner) och var
-  barmarken ska ligga.
+  `BAR_M` måste vara samma tal som där. Reglerna och appen med Mätprov
+  lades ut 28 november kväll (reglerna först) och är kontrollerade utifrån:
+  samma fil som i repot, `/pist` stängt för oinloggade, barmarken går att
+  hämta. Inte provat med riktig puck, och ingen har provat vyn inloggad.
+  Inte bestämt: skärmen i hytten (fast Android eller egna telefoner) och
+  var barmarken ska ligga.
 - **Inte gjort:** svar från leverantören och läs-only-kontot; faktorn för
   FT01; prova en omstart av styrdatorn; backup av styrdatorn.
 
