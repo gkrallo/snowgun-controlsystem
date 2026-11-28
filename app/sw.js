@@ -3,7 +3,7 @@
    att visa driftdata utan nät. Mätvärdena kommer alltid direkt från Firebase
    och sparas aldrig här: gammal data får inte kunna se ny ut. */
 
-const VERSION = "snokoll-v4";
+const VERSION = "snokoll-v5";
 const SHELL = [
   "./",
   "./index.html",
@@ -62,16 +62,22 @@ self.addEventListener("fetch", e => {
 
   // Själva sidan: nätet först, så att en ny version kommer fram direkt. Den
   // sparade kopian används bara när nätet saknas.
+  // Varje sida sparas under sitt eget namn (förarvyns förslag, startsidan för
+  // förslagen). Annars blev den senast öppnade sidan den sparade startsidan,
+  // och Snökoll visade en förarvy när nätet saknades. Allt som inte är en
+  // namngiven .html-fil, som "/", är Snökoll själv.
   if (req.mode === "navigate") {
+    const namn = url.pathname.split("/").pop();
+    const sida = /^[\w-]+\.html$/.test(namn) ? "./" + namn : "./index.html";
     e.respondWith(
       fetch(req, { cache: "no-cache" })
         .then(res => {
           // Bara ett giltigt svar får bli den sparade startsidan — annars kan
           // en felsida fastna som appens första sida.
-          if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put("./index.html", copy)); }
+          if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(sida, copy)); }
           return res;
         })
-        .catch(() => caches.match("./index.html"))
+        .catch(() => caches.match(sida))
     );
     return;
   }

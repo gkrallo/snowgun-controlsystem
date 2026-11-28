@@ -1,0 +1,1423 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Snökoll Pist — förarvyn</title>
+<meta name="theme-color" content="#050a13">
+<meta name="apple-mobile-web-app-title" content="Snökoll Pist">
+<link rel="manifest" href="./pist-manifest.json">
+<link rel="icon" href="./kanon-192.png">
+<!--
+  FÖRARVYN FÖR PISTMASKINERNA — KLICKBAR PROTOTYP (26 november 2026)
+
+  En egen sida i Snökoll, så att plattan i hytten kan starta rakt hit
+  (snow.pettersson.app/pist.html) och index.html inte behöver röras.
+
+  Allt som rör sig är PÅHITTAT: snödjupet, maskinernas lägen, när det
+  preparerats, Maskin 2:s markeringar, kanonernas lägen, vinden och var
+  slangarna går över spåret. Det som är riktigt är spåret och brunnarna
+  (kopierade ur Snöprognos) och flygbilden från Esri.
+
+  Sidan skriver ingenting till Firebase och loggar inte in. Var den ska
+  kopplas in senare står i avsnittet INKOPPLINGEN SENARE längre ner.
+
+  Förarvyn visar bara. Den kan aldrig styra anläggningen.
+
+  MapLibre GL hämtas från cdnjs, som Chart.js och Leaflet i index.html.
+  MapLibre i stället för Leaflet eftersom bara den kan luta och vrida kartan
+  som en bilnavigator.
+-->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* Samma färger som Snökoll, men bakgrunden ett snäpp mörkare: plattan sitter
+   i en mörk hytt, och en ljus skärm bländar föraren. */
+:root{
+  --bg:#050a13; --bg2:#0a1220; --panel:#0c1626e6; --panel-solid:#0e1a2c;
+  --panel-hi:#16263d; --border:#ffffff17; --border-hi:#ffffff2b;
+  --text:#eef4fc; --muted:#9db0c9; --muted2:#8296b5;
+  --ice:#38bdf8; --ice2:#22d3ee; --accent:#7dd3fc;
+  --run:#34d399; --limit:#fbbf24; --alarm:#f87171; --off:#6b7b92;
+  --tunn:#fbbf24; --bra:#2dd4bf; --over:#c084fc; --slang:#fb923c;
+  --jag:#22d3ee; --annan:#fbbf24;
+  --r:18px;
+  --num:"Barlow Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%}
+body{font-family:Barlow,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);
+  -webkit-font-smoothing:antialiased;overscroll-behavior:none}
+button{font:inherit;color:inherit}
+.hidden{display:none!important}
+
+/* ---------- ramen: kartan stor, panelen till höger, varvet under ----------
+   Liggande platta (1280 × 800) är huvudfallet. Stående och telefon längre ner. */
+#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) 380px;
+  grid-template-rows:58px minmax(0,1fr) 188px;grid-template-areas:"top top" "map panel" "band band"}
+#top{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 14px 0 16px;
+  background:linear-gradient(180deg,#0b1526,#081120);border-bottom:1px solid var(--border);z-index:5}
+#kartyta{grid-area:map;position:relative;overflow:hidden;background:#070d18}
+/* z-index 0 håller kartans markörer under korten ovanpå kartan. */
+#karta{position:absolute;inset:0;z-index:0}
+#panel{grid-area:panel;overflow-y:auto;background:linear-gradient(180deg,#0b1526,#08111f);
+  border-left:1px solid var(--border);padding:14px 14px 18px;display:flex;flex-direction:column;gap:14px}
+#band{grid-area:band;background:linear-gradient(180deg,#081120,#060c17);border-top:1px solid var(--border);
+  display:flex;flex-direction:column;min-width:0}
+
+/* ---------- toppen ---------- */
+.brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.logo{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;
+  background:radial-gradient(circle at 35% 30%,#1b3a5a,#0c1b2d);border:1px solid var(--border-hi);box-shadow:inset 0 1px 0 #ffffff22}
+.brand b{font-size:1.08rem;letter-spacing:.3px;line-height:1}
+.brand span{display:block;font-size:.72rem;color:var(--muted2);font-weight:500;letter-spacing:.6px;text-transform:uppercase;margin-top:3px}
+.chips{display:flex;gap:8px;flex:1 1 auto;min-width:0;overflow:hidden}
+.chip{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;border-radius:999px;padding:7px 12px;
+  background:#0d1a2b;border:1px solid var(--border);font-size:.84rem;font-weight:600;color:var(--muted)}
+.chip b{color:var(--text);font-weight:600}
+.chip .pt{width:9px;height:9px;border-radius:50%;background:var(--run);box-shadow:0 0 0 0 #34d39977;animation:puls 2s infinite}
+.chip.fix{cursor:pointer}
+.chip.annan .pt{background:var(--annan);animation:none}
+@keyframes puls{0%{box-shadow:0 0 0 0 #34d39966}70%{box-shadow:0 0 0 9px #34d39900}100%{box-shadow:0 0 0 0 #34d39900}}
+.verktyg{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+#klocka{font-family:var(--num);font-size:1.55rem;font-weight:600;letter-spacing:.5px;margin-right:6px;font-variant-numeric:tabular-nums}
+.ikonknapp{height:44px;min-width:44px;border-radius:12px;border:1px solid var(--border-hi);background:#0f1d31;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 12px;cursor:pointer;font-weight:600;font-size:.9rem}
+.ikonknapp:active{transform:translateY(1px)}
+.ikonknapp.pa{background:#173252;border-color:#38bdf866;color:#bae6fd}
+.ikonknapp svg{flex:0 0 auto}
+
+/* ---------- kartans överlägg ---------- */
+.hud{position:absolute;z-index:3;background:var(--panel);border:1px solid var(--border-hi);border-radius:var(--r);
+  box-shadow:0 14px 34px -14px #000d,0 2px 8px -4px #000a}
+.hud-k{font-size:.74rem;font-weight:600;letter-spacing:.9px;text-transform:uppercase;color:var(--muted)}
+#framat{left:14px;top:14px;width:min(330px,calc(100% - 120px));padding:12px 14px 10px;border-left:5px solid var(--bra);transition:border-color .3s}
+#framat .titel{display:flex;align-items:center;gap:10px;margin-top:4px}
+#framat .titel b{font-family:var(--num);font-size:2.05rem;font-weight:700;line-height:1;letter-spacing:.3px}
+#framat .titel i{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center}
+#fr-sub{color:var(--muted);font-size:.95rem;margin-top:3px;font-weight:500}
+#fr-profil{display:block;width:100%;height:58px;margin-top:8px}
+#fr-slang{display:flex;align-items:center;gap:9px;margin-top:8px;padding:8px 10px;border-radius:12px;
+  background:#3a1d0c;border:1px solid #fb923c66;color:#fed7aa;font-weight:600;font-size:.98rem}
+#fr-slang small{display:block;font-size:.78rem;font-weight:500;color:#fdba74}
+#fr-slang svg{flex:0 0 auto}
+#fr-slang.nara{animation:blink 1s steps(2,start) infinite}
+/* Horisonten tonas mot mörkt, som dimma: det långt bort är minst viktigt,
+   och skyltarna där ska inte konkurrera med vägen närmast. */
+#kartyta::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
+  background:linear-gradient(180deg,#050a13 0%,#050a13d9 7%,#050a1300 32%),
+    linear-gradient(0deg,#050a1399 0%,#050a1300 18%)}
+#kartyta.varv::after{display:none}
+@keyframes blink{50%{background:#7c2d12}}
+#under{left:14px;bottom:14px;padding:10px 16px 10px;min-width:170px;border-left:5px solid var(--bra);transition:border-color .3s}
+#under .stor{font-family:var(--num);font-size:4.1rem;font-weight:700;line-height:.95;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+#under .stor small{font-size:1.5rem;font-weight:600;color:var(--muted);margin-left:4px;letter-spacing:0}
+#under .sm{font-size:.78rem;color:var(--muted2);margin-top:2px}
+#hogerupp{right:14px;top:14px;display:flex;flex-direction:column;gap:8px;background:none;border:0;box-shadow:none}
+.rund{width:56px;height:56px;border-radius:50%;background:var(--panel);border:1px solid var(--border-hi);display:grid;place-items:center;
+  cursor:pointer;box-shadow:0 10px 24px -10px #000c;font-size:1.7rem;font-weight:600;line-height:1}
+.rund:active{transform:scale(.96)}
+#kompass svg{transition:transform .25s linear}
+#hogerned{right:14px;bottom:14px;padding:10px 12px;display:flex;align-items:center;gap:12px}
+#fart{font-family:var(--num);font-size:2rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+#fart small{font-size:.95rem;color:var(--muted);font-weight:600;margin-left:3px}
+.prov{display:flex;align-items:center;gap:5px;border-left:1px solid var(--border-hi);padding-left:12px}
+.prov span{font-size:.7rem;font-weight:700;letter-spacing:.8px;color:var(--muted2);text-transform:uppercase;margin-right:3px}
+.prov button{height:38px;min-width:42px;border-radius:10px;border:1px solid var(--border);background:#0f1d31;cursor:pointer;font-weight:700;font-size:.9rem;padding:0 8px}
+.prov button.pa{background:#173252;border-color:#38bdf899;color:#bae6fd}
+#provband{left:50%;transform:translateX(-50%);bottom:14px;top:auto;padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;color:#fde68a;background:#2a1f05cc;border-color:#fbbf2455;white-space:nowrap}
+#mkort{left:50%;transform:translateX(-50%);top:14px;padding:12px 14px;display:flex;align-items:center;gap:12px;max-width:calc(100% - 28px)}
+#mkort .mk-txt b{display:block;font-size:1.05rem}
+#mkort .mk-txt small{color:var(--muted)}
+#mkort button{height:44px;border-radius:12px;border:1px solid var(--border-hi);background:#0f1d31;padding:0 14px;font-weight:600;cursor:pointer}
+#mkort button.tabort{background:#3b1418;border-color:#f8717166;color:#fecaca}
+/* MapLibres egna knappar och text, i appens färger */
+.maplibregl-ctrl-attrib{background:#0b1526cc!important;color:var(--muted2)!important;font-size:10px}
+.maplibregl-ctrl-attrib a{color:var(--accent)!important}
+.maplibregl-ctrl-attrib-button{filter:invert(1) opacity(.7)}
+.maplibregl-ctrl-bottom-right{bottom:84px}
+
+/* ---------- markörerna på kartan ---------- */
+.mk-brunn{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-family:var(--num);font-weight:700;font-size:15px;
+  background:#0b1526e8;color:#e2e8f0;border:2px solid #9db0c9;box-shadow:0 2px 8px #000a;pointer-events:none}
+.mk-brunn.st{border-color:#fbbf24}
+.mk-enhet{display:flex;align-items:center;gap:6px;padding:4px 10px 4px 5px;border-radius:999px;background:#0b1526ee;
+  border:1.5px solid var(--off);color:#cbd5e1;font-weight:700;font-size:14px;white-space:nowrap;box-shadow:0 4px 14px #000b;pointer-events:none}
+.mk-enhet .ik{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#1e293b}
+.mk-enhet.kor{border-color:var(--run);color:#d1fae5}
+.mk-enhet.kor .ik{background:#064e3b;color:var(--run);box-shadow:0 0 0 0 #34d39966;animation:puls 2s infinite}
+.mk-enhet.fel{border-color:var(--alarm);color:#fecaca}
+.mk-enhet.fel .ik{background:#450a0a;color:var(--alarm)}
+.mk-enhet.tyst{border-style:dashed;opacity:.75}
+.mk-fana{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:#7c2d12;border:2px solid #fdba74;
+  color:#ffedd5;box-shadow:0 0 0 4px #fb923c33,0 6px 16px #000b;pointer-events:none}
+.mk-mark{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 6px 16px #000c;cursor:pointer;color:#0b1220}
+.mk-mark.ny{animation:pop .5s ease-out, glans 1.4s ease-out .5s 3}
+@keyframes glans{0%{box-shadow:0 0 0 0 #ffffffcc,0 6px 16px #000c}100%{box-shadow:0 0 0 22px #ffffff00,0 6px 16px #000c}}
+/* Hela varvet: bara ikonerna, så att kartan inte drunknar i text. */
+#kartyta.varv .mk-enhet .txt,#kartyta.varv .mk-prep,#kartyta.varv .mk-namn{display:none}
+#kartyta.varv .mk-enhet{padding:3px}
+#kartyta.varv .mk-brunn{width:20px;height:20px;font-size:12px}
+#kartyta.varv .mk-mark{width:30px;height:30px;border-radius:10px}
+#kartyta.varv .mk-mark svg{width:19px;height:19px}
+#kartyta.varv .mk-fana{width:24px;height:24px;border-radius:7px}
+#kartyta.varv .mk-maskin svg{width:24px;height:36px}
+#kartyta.varv .mk-avst{display:none}
+@keyframes pop{0%{transform:scale(.3)}70%{transform:scale(1.15)}100%{transform:scale(1)}}
+.mk-prep{padding:3px 9px;border-radius:8px;background:#e0f2fe;color:#0b1220;font-weight:700;font-size:12.5px;white-space:nowrap;
+  box-shadow:0 3px 10px #000a;pointer-events:none;letter-spacing:.2px;z-index:1}
+/* Ordningen när de hamnar på varandra: det som kan skada maskinen överst. */
+.mk-brunn{z-index:1}.mk-enhet{z-index:2}.mk-fana,.mk-mark{z-index:3}
+.mk-avst{padding:2px 8px;border-radius:7px;background:#0b1526d9;border:1px solid #ffffff40;color:#e2e8f0;font-family:var(--num);font-weight:600;font-size:15px;pointer-events:none}
+.mk-maskin{pointer-events:none;z-index:4}
+.mk-maskin.jag{z-index:5}
+.mk-maskin.jag svg{filter:drop-shadow(0 0 10px #22d3eeaa) drop-shadow(0 6px 8px #000)}
+.mk-maskin.annan svg{filter:drop-shadow(0 0 8px #fbbf2499) drop-shadow(0 6px 8px #000)}
+.mk-namn{padding:3px 9px;border-radius:999px;background:#2a1f05ee;border:1.5px solid var(--annan);color:#fde68a;font-weight:700;font-size:13px;pointer-events:none;white-space:nowrap}
+.spin{animation:snurr 1.2s linear infinite;transform-origin:50% 50%;transform-box:fill-box}
+@keyframes snurr{to{transform:rotate(360deg)}}
+
+/* ---------- panelen ---------- */
+.sek h2{margin:0 0 9px;font-size:.78rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sek h2 small{font-size:.72rem;letter-spacing:.3px;text-transform:none;color:var(--muted2);font-weight:600}
+.markgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.mknapp{min-height:66px;border-radius:16px;border:1.5px solid var(--border-hi);background:linear-gradient(180deg,#132339,#0e1a2c);
+  display:flex;align-items:center;gap:11px;padding:8px 12px;cursor:pointer;text-align:left;font-weight:700;font-size:1.02rem;line-height:1.15;
+  transition:transform .1s, background .2s}
+.mknapp:active{transform:scale(.97)}
+.mknapp .ik{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:0 0 auto;color:#0b1220}
+.mknapp.bred{grid-column:1/-1}
+.mknapp.blink{background:linear-gradient(180deg,#1f3b5e,#163252)}
+.tips{font-size:.8rem;color:var(--muted2);margin:8px 2px 0;line-height:1.45}
+.vader{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;align-items:end;padding:12px 14px;border-radius:16px;
+  background:linear-gradient(180deg,#112036,#0c1828);border:1px solid var(--border)}
+.vader .vt{font-family:var(--num);font-size:2.7rem;font-weight:700;line-height:.95;font-variant-numeric:tabular-nums}
+.vader .vt small{font-size:1.1rem;color:var(--muted);font-weight:600;margin-left:2px}
+.vader .vk{font-size:.74rem;font-weight:700;letter-spacing:.8px;color:var(--muted);text-transform:uppercase}
+.vader .vr{font-size:.88rem;color:var(--muted);line-height:1.45}
+.vader .vr b{color:var(--text);font-weight:600}
+.enheter{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+.enh{display:grid;grid-template-columns:34px 1fr auto auto;align-items:center;gap:10px;padding:8px 10px;border-radius:13px;
+  background:#0f1c2f;border:1px solid var(--border)}
+.enh .ik{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#1e293b;color:#9db0c9}
+.enh.kor .ik{background:#064e3b;color:var(--run)}
+.enh.fel .ik{background:#450a0a;color:var(--alarm)}
+.enh b{font-size:1rem;display:flex;align-items:center;gap:6px}
+.enh small{display:block;color:var(--muted2);font-size:.8rem;margin-top:1px}
+.enh .avst{font-family:var(--num);font-size:1.15rem;font-weight:600;color:var(--muted);text-align:right;min-width:62px;font-variant-numeric:tabular-nums}
+.enh.tyst{border-style:dashed;opacity:.72}
+.lage{font-size:.78rem;font-weight:700;padding:4px 9px;border-radius:999px;border:1px solid var(--border-hi);color:var(--muted)}
+.lage.kor{color:#a7f3d0;background:#064e3b88;border-color:#34d39966}
+.lage.fel{color:#fecaca;background:#450a0a88;border-color:#f8717166}
+.fana-mini{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:#7c2d12;color:#fed7aa}
+.prepsum{padding:11px 14px;border-radius:14px;background:#0f1c2f;border:1px solid var(--border);font-size:.92rem;color:var(--muted);line-height:1.5}
+.prepsum b{color:var(--text)}
+.alder{font-size:.76rem;color:var(--muted2);margin-top:7px}
+
+/* ---------- varvet som ett band ---------- */
+.bandhuv{display:flex;align-items:center;gap:14px;padding:8px 16px 0;font-size:.8rem;color:var(--muted);min-width:0}
+.bandhuv b{color:var(--text);font-size:.86rem;letter-spacing:.3px;white-space:nowrap}
+.legend{display:flex;gap:12px;margin-left:auto;flex-wrap:nowrap;overflow:hidden}
+.legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-weight:600}
+.legend i{width:12px;height:12px;border-radius:4px;display:inline-block}
+#bandyta{flex:1;position:relative;min-height:0;cursor:pointer;touch-action:none}
+#bandsvg{position:absolute;inset:0;width:100%;height:100%;display:block}
+#bandsvg text{font-family:Barlow,system-ui,sans-serif}
+
+/* ---------- informationsrutan ---------- */
+#info{position:fixed;inset:0;z-index:20;background:#020617b3;display:grid;place-items:center;padding:18px;backdrop-filter:blur(3px)}
+#info .ruta{width:min(760px,100%);max-height:min(88vh,860px);overflow:auto;background:linear-gradient(180deg,#112036,#0b1526);
+  border:1px solid var(--border-hi);border-radius:22px;padding:22px 24px;box-shadow:0 30px 60px -20px #000}
+#info h3{margin:0 0 4px;font-size:1.35rem}
+#info h4{margin:18px 0 6px;font-size:.8rem;letter-spacing:1px;text-transform:uppercase;color:var(--accent)}
+#info p,#info li{color:#c7d4e6;line-height:1.55;font-size:.95rem}
+#info ul{margin:0;padding-left:20px}
+#info code{background:#0a1424;border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:.86em;color:#bae6fd}
+#info .knappar{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+#info .knappar button{height:48px;border-radius:13px;border:1px solid var(--border-hi);background:#0f1d31;padding:0 16px;font-weight:700;cursor:pointer}
+#info .knappar button.huvud{background:#0e7490;border-color:#22d3ee88}
+#rtksvar{margin-top:10px;font-size:.9rem;color:#fde68a}
+
+#toast{position:fixed;left:calc((100vw - 380px) / 2);bottom:204px;transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:15;
+  display:flex;align-items:center;gap:14px;padding:12px 12px 12px 18px;border-radius:16px;background:#0f1d31f2;border:1px solid var(--border-hi);
+  box-shadow:0 18px 40px -12px #000;font-weight:600;transition:opacity .2s, transform .2s;max-width:calc(100vw - 24px)}
+#toast.syns{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#toast button{height:42px;border-radius:11px;border:1px solid #38bdf866;background:#173252;color:#bae6fd;font-weight:700;padding:0 14px;cursor:pointer}
+
+/* Nattläge: flygbilden tonas ned mer och hela skärmen blir lite mörkare. */
+body.natt #app{filter:brightness(.8)}
+
+/* ---------- stående platta och telefon ----------
+   Kartan överst, varvet under och knapparna direkt efter, så att de nås utan
+   att skrolla på en stående platta. Sidan får skrolla på en telefon. */
+@media (orientation:portrait),(max-width:900px){
+  #app{position:relative;inset:auto;min-height:100dvh;grid-template-columns:minmax(0,1fr);
+    grid-template-rows:58px 58vh 172px auto;grid-template-areas:"top" "map" "band" "panel"}
+  #panel{border-left:0;border-top:1px solid var(--border);overflow:visible}
+  #toast{bottom:18px;left:50%}
+}
+/* Telefonen: kartan är liten, så korten krymper och profilen och provets
+   fart göms. Plattan i hytten är huvudfallet; telefonen är för att titta. */
+@media (max-width:600px){
+  #app{grid-template-rows:54px 58vh 150px auto}
+  #top{gap:8px;padding:0 10px}
+  .chips{display:none}
+  #fr-profil,#fart{display:none}
+  .prov{border-left:0;padding-left:0}
+  .brand span{display:none}
+  #klocka{font-size:1.3rem}
+  #vyknapp .txt{display:none}
+  .markgrid{grid-template-columns:repeat(5,1fr);gap:6px}
+  .mknapp{flex-direction:column;justify-content:center;gap:5px;padding:8px 4px;font-size:.74rem;text-align:center;min-height:84px}
+  .mknapp .ik{width:38px;height:38px}
+  .mknapp.bred{grid-column:auto}
+  #framat{width:calc(100% - 92px);padding:9px 11px 8px}
+  #framat .titel b{font-size:1.55rem}
+  #fr-profil{height:44px}
+  #fr-sub{font-size:.85rem}
+  #fr-slang{font-size:.85rem;padding:6px 8px}
+  #under{min-width:0;padding:7px 12px}
+  #under .stor{font-size:2.5rem}
+  #under .stor small{font-size:1.1rem}
+  #under .sm{display:none}
+  .rund{width:48px;height:48px;font-size:1.45rem}
+  #hogerned{padding:7px 9px;gap:8px}
+  #fart{font-size:1.5rem}
+  .prov span{display:none}
+  .prov button{min-width:36px;height:34px;font-size:.8rem}
+  #provband{display:none}
+  .legend span.l-over,.bandhuv .valv{display:none}
+}
+@media (prefers-reduced-motion:reduce){.spin,.chip .pt,.mk-enhet.kor .ik,#fr-slang.nara{animation:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand">
+      <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M4.9 6l14.2 12M4.9 18L19.1 6"/><path d="M9.5 3.5 12 6l2.5-2.5M9.5 20.5 12 18l2.5 2.5"/></svg></div>
+      <div><b>Snökoll</b><span>Pist · förarvyn</span></div>
+    </div>
+    <div class="chips">
+      <span class="chip fix" id="rtkchip" title="Positionen"><i class="pt"></i><b>RTK fix</b> simulerad</span>
+      <span class="chip" id="jagchip"><b id="jagnamn">Maskin 1</b> du</span>
+      <span class="chip annan" id="annanchip"><i class="pt"></i><b id="annannamn">Maskin 2</b> <span id="annanavst">–</span></span>
+    </div>
+    <div class="verktyg">
+      <span id="klocka">--:--</span>
+      <button class="ikonknapp" id="vyknapp" aria-label="Byt mellan vyn framåt och hela varvet"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg><span class="txt">Hela varvet</span></button>
+      <button class="ikonknapp" id="nattknapp" aria-label="Nattläge"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <button class="ikonknapp" id="helknapp" aria-label="Helskärm"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <button class="ikonknapp" id="infoknapp" aria-label="Om prototypen"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+    </div>
+  </header>
+
+  <main id="kartyta">
+    <div id="karta" aria-label="Kartan framåt"></div>
+    <div class="hud" id="framat">
+      <div class="hud-k">Närmaste 100 m</div>
+      <div class="titel"><i id="fr-ikon"></i><b id="fr-titel">–</b></div>
+      <div id="fr-sub">–</div>
+      <svg id="fr-profil" viewBox="0 0 300 58" preserveAspectRatio="none"></svg>
+      <div id="fr-slang" class="hidden"></div>
+    </div>
+    <div class="hud" id="under">
+      <div class="hud-k">Under maskinen</div>
+      <div class="stor"><span id="u-cm">–</span><small>cm</small></div>
+      <div class="sm">snöyta minus barmark · påhittat</div>
+    </div>
+    <div class="hud" id="hogerupp">
+      <button class="rund" id="kompass" aria-label="Kompass"><svg width="30" height="30" viewBox="0 0 30 30"><path d="M15 3 20 15H10z" fill="#f87171"/><path d="M15 27 10 15h10z" fill="#cbd5e1"/><circle cx="15" cy="15" r="2" fill="#0b1220"/></svg></button>
+      <button class="rund" id="zoomin" aria-label="Zooma in">+</button>
+      <button class="rund" id="zoomut" aria-label="Zooma ut">−</button>
+    </div>
+    <div class="hud" id="hogerned">
+      <div id="fart">–<small>km/h</small></div>
+      <div class="prov" role="group" aria-label="Simuleringens fart">
+        <span>Prov</span>
+        <button data-sim="0" aria-label="Pausa">❚❚</button>
+        <button data-sim="1" class="pa">1×</button>
+        <button data-sim="5">5×</button>
+        <button data-sim="20">20×</button>
+      </div>
+    </div>
+    <div class="hud" id="provband">Prototyp · påhittad data</div>
+    <div class="hud hidden" id="mkort"></div>
+  </main>
+
+  <aside id="panel">
+    <section class="sek">
+      <h2>Markera här <small id="markhint">syns för Maskin 2</small></h2>
+      <div class="markgrid" id="markgrid"></div>
+      <p class="tips">Ett tryck lägger markeringen där maskinen står just nu. Tryck på en markering på kartan för att ta bort den.</p>
+    </section>
+    <section class="sek">
+      <h2>Driften nu <small id="driftalder">exempel</small></h2>
+      <div class="vader" id="vader"></div>
+      <div class="enheter" id="enheter"></div>
+    </section>
+    <section class="sek">
+      <h2>Preparerat</h2>
+      <div class="prepsum" id="prepsum">–</div>
+    </section>
+  </aside>
+
+  <section id="band" aria-label="Hela varvet utrullat">
+    <div class="bandhuv">
+      <b>Varvet <span id="varvlangd">2,3 km</span></b><span class="valv">motsols, från brunn 14 · tryck för att flytta maskinen (prov)</span>
+      <div class="legend">
+        <span><i style="background:linear-gradient(90deg,#ef4444,#fbbf24)"></i>Tunt &lt; 20 cm</span>
+        <span><i style="background:linear-gradient(90deg,#2dd4bf,#60a5fa)"></i>Bra</span>
+        <span class="l-over"><i style="background:linear-gradient(90deg,#a78bfa,#e879f9)"></i>Överskott &gt; 50</span>
+      </div>
+    </div>
+    <div id="bandyta"><svg id="bandsvg" aria-hidden="true"></svg></div>
+  </section>
+</div>
+
+<div id="info" class="hidden" role="dialog" aria-modal="true" aria-labelledby="infotitel">
+  <div class="ruta">
+    <h3 id="infotitel">Förarvyn — en prototyp</h3>
+    <p>Det här är en klickbar prototyp för att välja väg och utseende. Den visar idén, den mäter ingenting. Förarvyn visar bara, den kan aldrig styra anläggningen.</p>
+    <h4>Påhittat</h4>
+    <ul>
+      <li>Snödjupet längs spåret (0–80 cm, med några tunna partier).</li>
+      <li>Maskinernas lägen och fart, och när varje sträcka preparerats.</li>
+      <li>Maskin 2:s markeringar, kanonernas och lansarnas lägen, våttemperaturen och vinden.</li>
+      <li>Var slangarna går över spåret. Det finns inte i styrsystemet, så snögruppen får lägga in det själv när slangen dras.</li>
+    </ul>
+    <h4>Riktigt</h4>
+    <ul>
+      <li>Sparbanksspåret, 2 325 m, och brunnarna 1–19, samma som i Snöprognos (inmätta med pucken 15 november).</li>
+      <li>Flygbilden från Esri.</li>
+    </ul>
+    <h4>Så kopplas det in senare</h4>
+    <ul>
+      <li><b>Positionen:</b> RTK-mottagaren på hyttaket skickar sina positioner till plattan över Bluetooth (Nordic UART), som pucken i Snöprognos. Det går i Chrome på Android, inte på iPhone. Korrektionerna kommer från den egna basen genom onocoys Loop Back.</li>
+      <li><b>Snödjupet:</b> snöytan minus barmarken (<code>barmark.json</code> i Snöprognos, rutor på en meter). Antennen sitter ungefär tre meter upp, så antennhöjden och maskinens lutning måste räknas bort. Basen måste först knytas till Swepos-stationen LIDK.</li>
+      <li><b>Delningen:</b> maskinernas lägen och markeringarna skrivs till Realtime Database under <code>/pist</code>, så att den andra maskinen ser dem. Det kräver nya regler, och de är inte gjorda.</li>
+      <li><b>Driften:</b> kanonerna och vädret kommer från <code>/live</code>, som bryggan redan skickar till Snökoll. Inloggningen blir samma som i Snökoll.</li>
+    </ul>
+    <h4>Prova</h4>
+    <ul>
+      <li>Tryck på bandet längst ner för att flytta maskinen dit.</li>
+      <li>Ändra farten nere till höger på kartan.</li>
+      <li>Öppna sidan i en flik till med <code>?maskin=2</code> i adressen. Markeringarna du lägger syns i den andra fliken, men bara i den här webbläsaren.</li>
+    </ul>
+    <div class="knappar">
+      <button id="rtkknapp">Anslut RTK-mottagaren</button>
+      <button class="huvud" id="infostang">Stäng</button>
+    </div>
+    <div id="rtksvar" class="hidden"></div>
+  </div>
+</div>
+
+<div id="toast" role="status"><span id="toasttxt"></span><button id="toastangra">Ångra</button></div>
+
+<script>
+'use strict';
+/* ==========================================================================
+   SPÅRET OCH BRUNNARNA
+   --------------------------------------------------------------------------
+   Kopior ur Snöprognos (snowgun-forecast/index.html): BUILTIN_TRACK, som är
+   skidåkarnas linje ur fem varv med klocka 1 februari 2026 (2 325 m), och
+   BUILTIN_WELLS, inmätta med pucken 15 november. Senare ska förarvyn läsa
+   dem därifrån, men en kopia räcker för att visa idén och gör prototypen
+   oberoende av nätet.
+
+   Punkterna går motsols (arean räknad med x österut och y norrut är
+   positiv), så maskinen kör dem i den ordning de står. Varvet börjar vid
+   brunn 14, där stora slingan i norr möter gatan söderut.
+   ========================================================================== */
+const SPAR_PTS = [
+  [58.506815,13.086985],[58.50682,13.086814],[58.506818,13.086712],[58.506808,13.086593],
+  [58.506789,13.086479],[58.506763,13.08637],[58.506738,13.086299],[58.5067,13.086228],
+  [58.506647,13.086163],[58.506591,13.086108],[58.506532,13.086067],[58.506462,13.086039],
+  [58.50639,13.086027],[58.506265,13.086034],[58.506143,13.086067],[58.506075,13.0861],
+  [58.506007,13.086099],[58.505948,13.086136],[58.505812,13.086268],[58.505727,13.086391],
+  [58.505681,13.086485],[58.505647,13.086518],[58.505622,13.086555],[58.505387,13.086927],
+  [58.505328,13.087004],[58.505272,13.087059],[58.50514,13.087166],[58.505089,13.087199],
+  [58.504729,13.087348],[58.504538,13.087444],[58.504445,13.087504],[58.504305,13.087623],
+  [58.503995,13.087849],[58.503782,13.087986],[58.503686,13.088022],[58.503578,13.088036],
+  [58.503444,13.088031],[58.503346,13.088003],[58.503278,13.087957],[58.503164,13.087859],
+  [58.50281,13.087488],[58.502675,13.087395],[58.502622,13.08738],[58.502577,13.087383],
+  [58.502507,13.087412],[58.502422,13.087464],[58.502268,13.087603],[58.502052,13.087881],
+  [58.501905,13.088132],[58.50185,13.08819],[58.501775,13.088245],[58.501723,13.088266],
+  [58.50166,13.08826],[58.501545,13.088226],[58.501387,13.088161],[58.50121,13.088108],
+  [58.501147,13.088109],[58.501013,13.08814],[58.500892,13.088198],[58.500629,13.088376],
+  [58.500514,13.088469],[58.500476,13.088513],[58.50039,13.088573],[58.500299,13.088664],
+  [58.500261,13.088719],[58.5002,13.088763],[58.500121,13.088791],[58.499914,13.088801],
+  [58.49987,13.08881],[58.499835,13.088827],[58.499813,13.088852],[58.499792,13.088904],
+  [58.499781,13.088969],[58.499781,13.089036],[58.499789,13.089084],[58.499808,13.08914],
+  [58.499878,13.089243],[58.499912,13.089266],[58.499956,13.089279],[58.499992,13.089278],
+  [58.500027,13.089264],[58.500051,13.089244],[58.500073,13.089215],[58.500128,13.089077],
+  [58.500171,13.088996],[58.500219,13.088921],[58.500318,13.088799],[58.500458,13.088658],
+  [58.50055,13.088586],[58.500645,13.088489],[58.500703,13.088443],[58.50078,13.088396],
+  [58.500867,13.088356],[58.501013,13.088268],[58.501126,13.088218],[58.501215,13.088198],
+  [58.501367,13.088214],[58.501439,13.088233],[58.501605,13.0883],[58.501695,13.088318],
+  [58.501793,13.088313],[58.501873,13.088287],[58.501914,13.088255],[58.501959,13.088199],
+  [58.502,13.088132],[58.502095,13.08795],[58.502168,13.087851],[58.502418,13.087581],
+  [58.50251,13.087513],[58.502579,13.087478],[58.502624,13.087478],[58.502668,13.087491],
+  [58.50283,13.087589],[58.502903,13.087658],[58.503014,13.087801],[58.503126,13.087911],
+  [58.503256,13.088027],[58.503375,13.088107],[58.503454,13.088138],[58.503534,13.088151],
+  [58.503623,13.088136],[58.503729,13.0881],[58.503816,13.088054],[58.504079,13.087881],
+  [58.504237,13.087761],[58.504359,13.087651],[58.50441,13.087615],[58.504582,13.087521],
+  [58.504975,13.087367],[58.50501,13.087359],[58.505159,13.087266],[58.505282,13.087164],
+  [58.505386,13.087062],[58.505448,13.086993],[58.505637,13.086732],[58.50572,13.086602],
+  [58.505747,13.086543],[58.505783,13.086505],[58.505895,13.08636],[58.505958,13.086295],
+  [58.506059,13.086224],[58.506226,13.086161],[58.506369,13.086129],[58.506431,13.086132],
+  [58.506545,13.086174],[58.506587,13.086207],[58.506625,13.086251],[58.506682,13.086335],
+  [58.506713,13.086395],[58.50675,13.086493],[58.506775,13.086584],[58.506792,13.086699],
+  [58.506801,13.086938],[58.506798,13.08704],[58.506774,13.087276],[58.506776,13.087361],
+  [58.506785,13.087497],[58.506798,13.087614],[58.506816,13.087729],[58.506912,13.088191],
+  [58.506929,13.088325],[58.506937,13.088444],[58.506939,13.088615],[58.506934,13.088734],
+  [58.506922,13.088835],[58.506898,13.088963],[58.506852,13.08915],[58.50681,13.089281],
+  [58.506625,13.089655],[58.506595,13.08974],[58.506575,13.089835],[58.506563,13.089935],
+  [58.506563,13.090037],[58.506571,13.090139],[58.506596,13.090285],[58.506632,13.090404],
+  [58.506676,13.090511],[58.506737,13.090613],[58.506799,13.090682],[58.506866,13.090727],
+  [58.506919,13.090742],[58.506982,13.090732],[58.507041,13.090709],[58.507154,13.09061],
+  [58.507219,13.090517],[58.5073,13.090384],[58.507387,13.090286],[58.507484,13.090132],
+  [58.507528,13.090023],[58.507547,13.089947],[58.507554,13.089863],[58.507554,13.089709],
+  [58.507545,13.089626],[58.507529,13.089566],[58.5075,13.089502],[58.507456,13.089443],
+  [58.507423,13.089415],[58.507371,13.08939],[58.507238,13.089361],[58.507168,13.089331],
+  [58.507121,13.089283],[58.507095,13.089216],[58.507061,13.089039],[58.507017,13.08885],
+  [58.506985,13.088602],[58.506968,13.08833],[58.506949,13.088145],[58.506902,13.08785],
+  [58.506848,13.087577],[58.50683,13.087462],[58.50681,13.087191],[58.506815,13.086985]
+];
+const BRUNNAR = [
+  {no:1,lat:58.5000251,lon:13.0888591},{no:2,lat:58.5007883,lon:13.0884306},
+  {no:3,lat:58.501446,lon:13.0883199},{no:4,lat:58.5020553,lon:13.0881364},
+  {no:5,lat:58.5026144,lon:13.0875538},{no:6,lat:58.5031421,lon:13.0880276},
+  {no:7,lat:58.5037755,lon:13.0879116,station:true},{no:8,lat:58.5042417,lon:13.0878237},
+  {no:9,lat:58.504721,lon:13.0875332},{no:10,lat:58.5052341,lon:13.0873162},
+  {no:11,lat:58.5056589,lon:13.086779},{no:12,lat:58.5060168,lon:13.0862999},
+  {no:13,lat:58.5066904,lon:13.086078},{no:14,lat:58.5068476,lon:13.0871011},
+  {no:15,lat:58.5070145,lon:13.0881917},{no:16,lat:58.5069455,lon:13.089078},
+  {no:17,lat:58.506789,lon:13.0903636},{no:18,lat:58.5070813,lon:13.0904723},
+  {no:19,lat:58.5074957,lon:13.0896091},{no:20,lat:58.50341,lon:13.086911,spare:true},
+];
+
+/* Samma rutnät som barmarken i Snöprognos: en meters rutor, origo vid brunn 7
+   (som den mättes med mobilen), x österut och y norrut. Snödjupet ska en dag
+   slås upp ruta för ruta i barmark.json, så positionerna räknas i samma
+   system redan nu. Meter per grad på WGS84-ellipsoiden, som där. */
+const ORIGO = {lat:58.503781, lon:13.087922};
+const MLAT = (()=>{const p=ORIGO.lat*Math.PI/180;return 111132.92-559.82*Math.cos(2*p)+1.175*Math.cos(4*p)})();
+const MLON = (()=>{const p=ORIGO.lat*Math.PI/180;return 111412.84*Math.cos(p)-93.5*Math.cos(3*p)})();
+const tillXY = (lat,lon)=>[(lon-ORIGO.lon)*MLON,(lat-ORIGO.lat)*MLAT];
+const tillLL = (x,y)=>[ORIGO.lat+y/MLAT, ORIGO.lon+x/MLON];
+const lngLat = ([x,y])=>{const [la,lo]=tillLL(x,y);return [lo,la]};
+
+const P = SPAR_PTS.map(p=>tillXY(p[0],p[1]));
+const CUM = [0];
+for(let i=1;i<P.length;i++) CUM.push(CUM[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));
+const L = CUM[CUM.length-1];               // varvets längd, m
+const mod = s=>((s%L)+L)%L;
+
+// Punkten s meter in på varvet.
+function punkt(s){
+  s=mod(s); let lo=0, hi=CUM.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1; if(CUM[m]<=s)lo=m; else hi=m;}
+  const t=(s-CUM[lo])/((CUM[hi]-CUM[lo])||1);
+  return [P[lo][0]+t*(P[hi][0]-P[lo][0]), P[lo][1]+t*(P[hi][1]-P[lo][1])];
+}
+// Kursen i grader från norr, medurs. Riktningen tas mellan en punkt bakom och
+// en framför, så att kartan inte rycker i varje liten knyck i linjen.
+function kurs(s,bak=4,fram=14){
+  const a=punkt(s-bak), b=punkt(s+fram);
+  return (Math.atan2(b[0]-a[0],b[1]-a[1])*180/Math.PI+360)%360;
+}
+// Alla ställen där varvet passerar närmare än maxd meter. Gatan söderut körs
+// åt båda hållen, så de flesta brunnar passeras två gånger per varv.
+function passager(x,y,maxd){
+  const d=[], s=[];
+  for(let i=0;i<P.length-1;i++){
+    const a=P[i], b=P[i+1], dx=b[0]-a[0], dy=b[1]-a[1];
+    let t=((x-a[0])*dx+(y-a[1])*dy)/(dx*dx+dy*dy||1); t=Math.max(0,Math.min(1,t));
+    d.push(Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy)); s.push(CUM[i]+t*Math.hypot(dx,dy));
+  }
+  let ut=[];
+  for(let i=0;i<d.length;i++){
+    if(d[i]>maxd)continue;
+    if(i>0&&d[i]>d[i-1])continue;
+    if(i<d.length-1&&d[i]>d[i+1])continue;
+    ut.push({s:mod(s[i]),d:d[i]});
+  }
+  // Två minimum nära varandra (eller på var sin sida om start) är samma passage.
+  ut.sort((a,b)=>a.s-b.s);
+  const slut=[];
+  for(const p of ut){
+    const f=slut[slut.length-1];
+    if(f&&p.s-f.s<20){if(p.d<f.d)slut[slut.length-1]=p;continue;}
+    slut.push(p);
+  }
+  if(slut.length>1&&slut[0].s+L-slut[slut.length-1].s<20){
+    const a=slut.shift(), b=slut.pop(); slut.push(a.d<b.d?a:b);
+  }
+  return slut.sort((a,b)=>a.s-b.s);
+}
+
+// Varvet i bitar om ungefär fem meter: snödjupet och "preparerat" sparas per bit.
+const N = Math.round(L/5), DS = L/N;
+const SEG = Array.from({length:N},(_,i)=>{const sm=(i+.5)*DS, [x,y]=punkt(sm);return {s0:i*DS, sm, x, y}});
+const segVid = s=>Math.min(N-1,Math.floor(mod(s)/DS));
+
+BRUNNAR.forEach(b=>{[b.x,b.y]=tillXY(b.lat,b.lon); b.pass=b.spare?[]:passager(b.x,b.y,18);});
+const brunn = no=>BRUNNAR.find(b=>b.no===no);
+
+/* ==========================================================================
+   DRIFTEN — EXEMPEL I BRYGGANS FORMAT
+   --------------------------------------------------------------------------
+   Påhittat, men i samma form som bryggan skriver /live, så att det senare
+   bara är att byta källa. Namnen följer Snökoll: enheterna heter efter
+   Modbus-adressen (n° + 2 på SGC400, n° på det äldre kortet). Läget är
+   kolumn 415: 6 kör, 1 fel, 2 stoppad, 11 OK men går inte.
+   Vinden kommer inte från väderstationen: dess vindmätare är inte
+   tillförlitlig, så vinden ska tas ur prognosen, som i Snökoll.
+   ========================================================================== */
+const START = Date.now();
+const lokal = ms=>{const d=new Date(ms),z=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes())+':'+z(d.getSeconds())};
+function exempelLive(nu){
+  const h=s=>lokal(nu-s*1000);
+  return {
+    meta:{ts:nu, gssTid:h(0)},
+    vader:{t:-3.1, rh:83, tw:-4.6, uppdaterad:h(18)},
+    enheter:{
+      'SGC300-1':{typ:'S ACCESS', brunn:3,  flode:5.6,  t:-3.4, rh:84, tw:-4.9, senastHord:h(12)},
+      'SGC400-1':{typ:'S ACCESS 300', brunn:7,  k415:6,  flode:11.8, t:-3.2, rh:83, tw:-4.8, senastHord:h(9)},
+      'SGC400-2':{typ:'S ACCESS 300', brunn:10, k415:6,  flode:12.4, t:-3.6, rh:85, tw:-5.1, senastHord:h(14)},
+      'SGC400-3':{typ:'S ACCESS 300', brunn:12, k415:1,  flode:0,    t:-3.5, rh:84, tw:-5.0, senastHord:h(20)},
+      'SGC400-4':{typ:'TAURUS_2.0',   brunn:5,  k415:6,  flode:8.6,  t:-3.3, rh:84, tw:-4.9, senastHord:h(7)},
+      'SGC400-5':{typ:'TAURUS_2.0',   brunn:8,  k415:2,  flode:0,    t:-3.2, rh:83, tw:-4.7, senastHord:h(11)},
+      'SGC400-6':{typ:'S ACCESS 300', brunn:15, k415:6,  flode:12.1, t:-3.9, rh:86, tw:-5.4, senastHord:h(5)},
+      'SGC400-7':{typ:'S ACCESS 300', brunn:17, k415:11, flode:0,    t:-3.8, rh:85, tw:-5.3, senastHord:h(3*3600)},
+    }
+  };
+}
+const EXEMPEL_VIND = {ms:3.4, byar:6.1, fran:'sydväst'};
+// Var slangen går över spåret (och fanan står). Påhittat, och finns inte i
+// styrsystemet: snögruppen får markera det i Snökoll när slangen dras.
+const EXEMPEL_SLANG = new Set(['Kanon 3','Lans 6','Kanon 8']);
+
+const parseT = x=>{const d=x?new Date(x):null;return d&&!isNaN(d)?d:null};
+/* Samma tolkning som applyLive i index.html. "Kör" bara när läget säger det
+   och enheten hörts de senaste 15 minuterna, mätt mot styrsystemets klocka.
+   Det äldre kortet saknar läge och räknas som körande när vatten går. */
+function tolkaLive(v){
+  const ref=parseT(v.meta&&v.meta.gssTid), ut=[];
+  for(const [key,e] of Object.entries(v.enheter||{})){
+    if(!e||key==='SGC300-2')continue;            // finns inte längre
+    const m=/^(SGC\d+)-(\d+)$/.exec(key)||[], old=m[1]==='SGC300', nr=+(m[2]||0);
+    const lans=/TAURUS/i.test(e.typ||''), heard=parseT(e.senastHord), adr=old?nr:nr+2;
+    const hors=!!(ref&&heard&&Math.abs(ref-heard)<15*60000);
+    const lage=Number.isFinite(e.k415)?e.k415:(old&&e.flode>0?6:null);
+    const tillstand=!hors?'tyst':lage===6?'kor':lage===1?'fel':'star';
+    const namn=(lans?'Lans ':'Kanon ')+adr;
+    ut.push({key, typ:lans?'lans':'kanon', namn, adr, brunn:Number.isFinite(e.brunn)?e.brunn:null,
+      tw:e.tw, q:e.flode, heard, tillstand, slang:EXEMPEL_SLANG.has(namn)});
+  }
+  return ut.sort((a,b)=>a.adr-b.adr);
+}
+let live = exempelLive(START);
+const ENHETER = tolkaLive(live);
+/* Var kanonen står: på andra sidan spåret från brunnen när slangen går över
+   (bortom den bortre passagen), annars på samma sida. */
+ENHETER.forEach(u=>{
+  const b=u.brunn&&brunn(u.brunn); if(!b)return;
+  u.b=b;
+  const ref=b.pass.length?b.pass.reduce((a,p)=>(u.slang?p.d>a.d:p.d<a.d)?p:a):null;
+  if(!ref){u.x=b.x+8;u.y=b.y;return;}
+  const [px,py]=punkt(ref.s), dx=px-b.x, dy=py-b.y, d=Math.hypot(dx,dy)||1;
+  const k=u.slang?(d+7)/d:Math.max(.35,(d-5)/d);
+  u.x=b.x+dx*k; u.y=b.y+dy*k;
+});
+
+/* ==========================================================================
+   SNÖDJUPET — PÅHITTAT
+   --------------------------------------------------------------------------
+   Ett jämnt fält över marken, så att de två körfälten i gatan söderut får
+   ungefär samma djup där de går bredvid varandra. Högar där kanonerna går,
+   några tunna partier långt från dem. Det riktiga djupet blir snöytan från
+   RTK-mottagaren minus barmarken i samma ruta.
+   ========================================================================== */
+const TUNT = 20, OVERSKOTT = 50;   // cm
+const TUNNA = [
+  {s:905, A:-27, sig:30},          // vändslingan i söder, långt från kanonerna
+  {s:2032, A:-25, sig:26},         // stora slingan vid brunn 17 och 18
+  {s:1292, A:-19, sig:8},          // en fläck i östra körfältet
+  {s:158, A:-17, sig:8},           // västra körfältet vid brunn 11
+  {s:612, A:-12, sig:12},
+].map(t=>{const [x,y]=punkt(t.s);return {...t,x,y}});
+const HOGAR = ENHETER.filter(u=>u.x!=null&&u.tillstand!=='tyst')
+  .map(u=>({x:u.x, y:u.y, A:u.tillstand==='kor'?27:12, sig:u.tillstand==='kor'?15:12}));
+function djupFalt(x,y){
+  let d=34+4*Math.sin(x/41+.7)*Math.cos(y/57-.3)+2.5*Math.sin((x-y)/19)+1.4*Math.cos(x/9+y/13);
+  for(const k of HOGAR) d+=k.A*Math.exp(-((x-k.x)**2+(y-k.y)**2)/(2*k.sig*k.sig));
+  for(const k of TUNNA) d+=k.A*Math.exp(-((x-k.x)**2+(y-k.y)**2)/(2*k.sig*k.sig));
+  return Math.max(2,Math.min(80,d));
+}
+const DJUP = SEG.map(g=>djupFalt(g.x,g.y));
+function djupVid(s){
+  s=mod(s); const f=s/DS-.5, i=Math.floor(f), t=f-i;
+  const a=DJUP[(i+N)%N], b=DJUP[(i+1)%N]; return a+(b-a)*t;
+}
+/* Färgen följer djupet: varmt när det är tunt, kallt när det räcker och lila
+   vid överskott. Skarpa skiften vid 20 och 50 cm, så att gränsen syns. */
+const SKALA=[[0,[239,68,68]],[10,[249,115,22]],[19.9,[251,191,36]],[20,[45,212,191]],[35,[56,189,248]],
+  [49.9,[96,165,250]],[50,[167,139,250]],[80,[232,121,249]]];
+function djupFarg(d){
+  d=Math.max(0,Math.min(80,d));
+  for(let i=1;i<SKALA.length;i++){
+    if(d<=SKALA[i][0]){const [d0,c0]=SKALA[i-1],[d1,c1]=SKALA[i],t=(d-d0)/((d1-d0)||1);
+      return 'rgb('+c0.map((c,k)=>Math.round(c+(c1[k]-c)*t)).join(',')+')';}
+  }
+  return 'rgb(232,121,249)';
+}
+
+/* ==========================================================================
+   MASKINERNA — SIMULERADE
+   --------------------------------------------------------------------------
+   Båda kör varvet motsols. ?maskin=2 i adressen gör den här plattan till
+   Maskin 2, så att två flikar kan spela de två hytterna.
+   ========================================================================== */
+const JAG = /[?&]maskin=2\b/.test(location.search)?2:1;
+const M1 = {nr:1, namn:'Maskin 1', s:1250, v:10.5/3.6};
+const M2 = {nr:2, namn:'Maskin 2', s:1950, v:9/3.6};
+const jag = JAG===1?M1:M2, annan = JAG===1?M2:M1;
+let simFart = 1;
+
+/* "Preparerat" per bit av varvet: när, och av vilken maskin. Ingen knapp:
+   det maskinen kört över räknas som preparerat. Historiken nedan är påhittad
+   och räknas bakåt från nu, så att den ser likadan ut när sidan öppnas. */
+const PREP = new Array(N).fill(null);
+// Bit för bit med heltal: att räkna upp s med DS gav avrundningsfel som hoppade
+// över en bit då och då, och varje överhoppad bit syntes som en lucka i spåret.
+function forstamp(fran,till,av,tid){
+  for(let i=Math.floor(fran/DS);i*DS<till-1e-9;i++) PREP[((i%N)+N)%N]={t:tid(Math.max(fran,i*DS)),av};
+}
+forstamp(0,800,'Maskin 2',()=>START-5.4*3600e3);
+forstamp(800,M1.s,'Maskin 1',s=>START-(M1.s-s)/M1.v*1000);
+forstamp(M1.s+DS,1500,'Maskin 1',()=>START-7.9*3600e3);
+forstamp(1500,M2.s,'Maskin 2',s=>START-(M2.s-s)/M2.v*1000);
+let prepAndrad = true;
+
+function stampla(m,s0,s1){
+  let i=segVid(s0); const slut=segVid(s1), nu=Date.now();
+  for(let k=0;k<N;k++){
+    PREP[i]={t:nu,av:m.namn};
+    if(i===slut)break; i=(i+1)%N;
+  }
+  prepAndrad=true;
+}
+// Nytt preparerat syns fullt ut och bleknar under ett halvt dygn. Efter ett
+// dygn räknas sträckan som opreparerad.
+const prepOpak = t=>{const h=(Date.now()-t)/3600e3;return h>24?0:Math.max(.16,1-h/13)};
+// Sammanhängande sträckor: samma maskin och inget glapp över 20 minuter.
+function prepStrackor(){
+  let start=PREP.findIndex((p,i)=>{const f=PREP[(i-1+N)%N];return !p||!f||p.av!==f.av||Math.abs(p.t-f.t)>20*60e3});
+  if(start<0)start=0;
+  const ut=[]; let cur=null;
+  for(let k=0;k<N;k++){
+    const i=(start+k)%N, p=PREP[i];
+    const ok=p&&prepOpak(p.t)>0;
+    if(cur&&ok&&p.av===cur.av&&Math.abs(p.t-cur.sistT)<=20*60e3){cur.n++;cur.sistT=p.t;cur.tider.push(p.t);continue;}
+    if(cur)ut.push(cur);
+    cur=ok?{i0:i,n:1,av:p.av,sistT:p.t,tider:[p.t]}:null;
+  }
+  if(cur)ut.push(cur);
+  return ut.map(r=>({...r, s0:r.i0*DS, langd:r.n*DS, t:r.tider[r.tider.length>>1], tMax:Math.max(...r.tider)}));
+}
+
+/* ==========================================================================
+   MARKERINGARNA
+   --------------------------------------------------------------------------
+   I prototypen sparas de bara i den här webbläsaren (localStorage), och en
+   annan flik med ?maskin=2 får dem genom storage-händelsen. Riktigt ska de
+   till Realtime Database, /pist/markeringar, så att den andra maskinen ser
+   dem. Exemplen från "den andra maskinen" skapas på nytt varje gång och går
+   inte att ta bort.
+   ========================================================================== */
+const IK = {
+  klassiskt:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 3v18M9 3v18M15 3v18M19 3v18"/></svg>',
+  skejt:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21 12 12l8 9M4 12l8-9 8 9"/></svg>',
+  tunt:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9M8.5 8.5 12 12l3.5-3.5"/><path d="M3 16h18"/><path d="M3 20.5h18" stroke-width="3.4"/></svg>',
+  sten:'<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M2.5 19.5 6 11l5-4.5 5.5 2 3 4 2 7z"/><path d="M9 11l2 3-1.5 3" fill="none" stroke="#0b1220" stroke-width="1.4" opacity=".5"/></svg>',
+  hinder:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 22 20H2z"/><path d="M12 9.5v4.5M12 17.2v.3"/></svg>',
+  fana:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V3"/><path d="M6 4h12l-3 4.5L18 13H6" fill="currentColor"/></svg>',
+  kanon:'<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><g class="blad"><circle cx="12" cy="12" r="2.1"/><path d="M12 10c0-3 .5-6-1.5-7.5C8 4 9 7 12 10zM12 14c0 3-.5 6 1.5 7.5C16 20 15 17 12 14zM10 12c-3 0-6-.5-7.5 1.5C4 16 7 15 10 12zM14 12c3 0 6 .5 7.5-1.5C20 8 17 9 14 12z"/></g></svg>',
+  lans:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 22 14 6"/><path d="M12.5 5.5l3 1"/><path d="M17 3.5v.1M19.5 5v.1M18.5 8v.1M21 2.5v.1" stroke-width="2.6"/></svg>',
+};
+const TYPER = {
+  klassiskt:{namn:'Klassiskt spår draget', kort:'Klassiskt', farg:'#7dd3fc'},
+  skejt:    {namn:'Skejt preparerat',      kort:'Skejt',     farg:'#5eead4'},
+  tunt:     {namn:'Tunt',                  kort:'Tunt',      farg:'#fbbf24'},
+  sten:     {namn:'Sten/is',               kort:'Sten/is',   farg:'#fca5a5'},
+  hinder:   {namn:'Hinder',                kort:'Hinder',    farg:'#fb7185'},
+};
+const LAGRING = 'snokollPistMarkeringar';
+const exempelMarkeringar = ()=>[
+  {id:'ex1', typ:'sten',      s:912,  t:START-4.6*3600e3, av:'Maskin 2', exempel:true},
+  {id:'ex2', typ:'hinder',    s:2046, t:START-1.3*3600e3, av:'Maskin 2', exempel:true},
+  {id:'ex3', typ:'tunt',      s:170,  t:START-3.1*3600e3, av:'Maskin 2', exempel:true},
+  {id:'ex4', typ:'klassiskt', s:1655, t:START-0.4*3600e3, av:'Maskin 2', exempel:true},
+];
+function lasEgna(){try{const v=JSON.parse(localStorage.getItem(LAGRING)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
+function sparaEgna(list){try{localStorage.setItem(LAGRING,JSON.stringify(list))}catch(e){}}
+let egna = lasEgna();
+// Markeringar äldre än ett och ett halvt dygn visas inte.
+const allaMarkeringar = ()=>[...exempelMarkeringar(),...egna].filter(m=>TYPER[m.typ]&&Date.now()-m.t<36*3600e3);
+
+/* ==========================================================================
+   HJÄLPARE FÖR TEXT
+   ========================================================================== */
+const fmt = (n,d=0)=>n==null||!isFinite(n)?'–':n.toFixed(d).replace('.',',').replace('-','−');
+const hhmm = ms=>{const d=new Date(ms);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const fore = m=>m<12?'här':m<1000?'om '+Math.max(5,Math.round(m/5)*5)+' m':'om '+fmt(m/1000,1)+' km';
+const esc = s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Var på varvet, i brunnar: "vid brunn 9" eller "mellan brunn 8 och 9".
+function varPaVarvet(s){
+  const alla=[]; BRUNNAR.forEach(b=>b.pass.forEach(p=>alla.push({no:b.no,s:p.s})));
+  alla.sort((a,b)=>Math.abs(dS(a.s,s))-Math.abs(dS(b.s,s)));
+  if(!alla.length)return '';
+  if(Math.abs(dS(alla[0].s,s))<25)return 'vid brunn '+alla[0].no;
+  const fram=alla.filter(a=>dS(a.s,s)>0)[0], bak=alla.filter(a=>dS(a.s,s)<0)[0];
+  // I vändslingorna är brunnen på båda sidor samma brunn.
+  return fram&&bak&&fram.no!==bak.no?'mellan brunn '+bak.no+' och '+fram.no:'vid brunn '+alla[0].no;
+}
+// Kortaste vägen längs varvet från s till t, med tecken (framåt positivt).
+function dS(t,s){let d=mod(t-s);return d>L/2?d-L:d}
+const framfor = (t,s)=>mod(t-s);
+
+/* ==========================================================================
+   KARTAN
+   --------------------------------------------------------------------------
+   Flygbilden från Esri, nedtonad så att den inte bländar i mörkret och så
+   att snödjupets färger syns. Kartan vrids efter kursen och lutas som en
+   bilnavigator. I vyn framåt går den inte att dra i: en hand i hytten ska
+   inte råka flytta den. Plus och minus zoomar.
+   ========================================================================== */
+const PX7M = z=>7*512*Math.pow(2,z)/(40075016.686*Math.cos(ORIGO.lat*Math.PI/180));
+// Spåret ritas sju meter brett, men aldrig smalare än några pixlar: i
+// översikten över hela varvet ska färgerna fortfarande synas.
+const BREDD = f=>['interpolate',['exponential',2],['zoom'],12,5*f,15,Math.max(8,PX7M(15))*f,17,PX7M(17)*f,22,PX7M(22)*f];
+let natt = false;
+const STIL = {
+  version:8,
+  // Nivå 19 finns inte här hos Esri (bara rutan "Map data not yet
+  // available"), så 18 förstoras i stället.
+  sources:{flyg:{type:'raster',tileSize:256,maxzoom:18,
+    tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    attribution:'Flygbild © Esri, Maxar, Earthstar Geographics'}},
+  layers:[
+    {id:'bakgrund',type:'background',paint:{'background-color':'#070d18'}},
+    {id:'flyg',type:'raster',source:'flyg',paint:{'raster-brightness-max':.62,'raster-saturation':-.3,'raster-contrast':.12,'raster-fade-duration':200}}
+  ]
+};
+// Himlen bakom horisonten när kartan lutar. Finns i MapLibre från version 4.
+if(window.maplibregl&&maplibregl.Map&&typeof maplibregl.Map.prototype.setSky==='function'){
+  STIL.sky={'sky-color':'#0a1730','horizon-color':'#1d3a5c','fog-color':'#0a1424','sky-horizon-blend':.6,'horizon-fog-blend':.7,'fog-ground-blend':.75};
+}
+let karta=null, vy='framat', foljZoom=17.75, kamKurs=null, kartaKlar=false, flygFel=0;
+
+function startaKarta(){
+  if(!window.maplibregl){document.getElementById('karta').innerHTML='<p style="padding:20px;color:#fde68a">Kartan kunde inte laddas (MapLibre saknas). Kontrollera nätet.</p>';return;}
+  const [x,y]=punkt(jag.s);
+  karta = new maplibregl.Map({container:'karta', style:STIL, center:lngLat([x,y]), zoom:foljZoom, pitch:62,
+    bearing:kurs(jag.s,6,22), maxPitch:70, attributionControl:{compact:true}, fadeDuration:0});
+  satInteraktion(false);
+  // Trasiga kartrutor ska inte fylla konsolen: de räknas och visas som en
+  // rad om flygbilden uteblir helt.
+  karta.on('error',e=>{if(e&&(e.sourceId==='flyg'||(e.tile&&e.source)))flygFel++; else if(e&&e.error)console.warn('Kartan:',e.error.message||e.error);});
+  // Spåret ritas så fort stilen finns, utan att vänta på flygbilden: på
+  // mobilnätet i hytten kan rutorna dröja, och spåret är det viktiga.
+  karta.once('style.load',()=>{
+    laggTillLager(); skapaMarkorer(); kartaKlar=true; satPadding(); prepTillKarta(); markeringarTillKarta();
+  });
+  window.addEventListener('resize',()=>{satPadding();ritaBand();});
+}
+function satInteraktion(pa){
+  const h=['dragPan','scrollZoom','boxZoom','dragRotate','keyboard','doubleClickZoom','touchZoomRotate','touchPitch'];
+  h.forEach(k=>{if(karta[k])pa?karta[k].enable():karta[k].disable()});
+  if(pa){karta.dragRotate.disable();karta.touchZoomRotate.disableRotation();karta.touchPitch.disable();}
+}
+// Maskinen ska stå långt ner på skärmen, så att det mesta av kartan visar
+// vägen framför. Det görs med utfyllnad överst i stället för att flytta mitten.
+function satPadding(){
+  if(!karta)return;
+  const h=karta.getContainer().clientHeight;
+  karta.setPadding(vy==='framat'?{top:Math.round(h*.42),bottom:0,left:0,right:0}:{top:0,bottom:0,left:0,right:0});
+}
+
+function laggTillLager(){
+  // Hela varvet som en linje, färgad efter snödjupet längs den.
+  karta.addSource('varv',{type:'geojson',lineMetrics:true,data:{type:'Feature',properties:{},
+    geometry:{type:'LineString',coordinates:SPAR_PTS.map(p=>[p[1],p[0]])}}});
+  const grad=['interpolate',['linear'],['line-progress']];
+  grad.push(0,djupFarg(DJUP[0]));
+  SEG.forEach((g,i)=>grad.push(g.sm/L,djupFarg(DJUP[i])));
+  grad.push(1,djupFarg(DJUP[N-1]));
+  karta.addLayer({id:'varv-skugga',type:'line',source:'varv',layout:{'line-join':'round','line-cap':'round'},
+    paint:{'line-color':'#01040a','line-width':BREDD(1.55),'line-opacity':.6,'line-blur':BREDD(.3)}});
+  karta.addLayer({id:'varv-djup',type:'line',source:'varv',layout:{'line-join':'round','line-cap':'round'},
+    paint:{'line-gradient':grad,'line-width':BREDD(1),'line-opacity':.88}});
+
+  // Det preparerade: räfflor som efter manchestern, som bleknar med tiden.
+  karta.addImage('manchester',manchesterBild(),{pixelRatio:1});
+  karta.addSource('prep',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  karta.addLayer({id:'prep',type:'line',source:'prep',layout:{'line-join':'round','line-cap':'butt'},
+    paint:{'line-pattern':'manchester','line-width':BREDD(.84),'line-opacity':['get','op']}});
+
+  // Ett sken över vägen närmast framför maskinen.
+  karta.addSource('framat',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  karta.addLayer({id:'framat-sken',type:'line',source:'framat',layout:{'line-join':'round','line-cap':'round'},
+    paint:{'line-color':'#e0f2fe','line-width':BREDD(1.9),'line-blur':BREDD(.9),'line-opacity':.2}},'varv-djup');
+
+  // Slangarna från brunnen över spåret till kanonen.
+  const slangar=ENHETER.filter(u=>u.slang&&u.b).map(u=>({type:'Feature',properties:{},
+    geometry:{type:'LineString',coordinates:[lngLat([u.b.x,u.b.y]),lngLat([u.x,u.y])]}}));
+  karta.addSource('slang',{type:'geojson',data:{type:'FeatureCollection',features:slangar}});
+  karta.addLayer({id:'slang-kant',type:'line',source:'slang',layout:{'line-cap':'round'},paint:{'line-color':'#1c0a02','line-width':7,'line-opacity':.8}});
+  karta.addLayer({id:'slang',type:'line',source:'slang',layout:{'line-cap':'round'},paint:{'line-color':'#fb923c','line-width':4,'line-dasharray':[2,1.2]}});
+}
+// Ränderna går längs körriktningen, som spåren efter manchestern.
+function manchesterBild(){
+  const w=8,h=24,d=new Uint8Array(w*h*4);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=(y*w+x)*4, ljus=y%3!==2;
+    d[i]=230;d[i+1]=244;d[i+2]=255;d[i+3]=ljus?150:18;
+  }
+  return {width:w,height:h,data:d};
+}
+function prepTillKarta(){
+  if(!kartaKlar)return;
+  const feat=[];
+  // Bitar med ungefär samma blekhet slås ihop till en linje: färre linjer
+  // och inga mörka skarvar där de möts.
+  let cur=null;
+  const avsluta=()=>{if(cur&&cur.pts.length>1)feat.push({type:'Feature',properties:{op:cur.op},geometry:{type:'LineString',coordinates:cur.pts}});cur=null;};
+  for(let i=0;i<N;i++){
+    const p=PREP[i], op=p?Math.round(prepOpak(p.t)*20)/20:0;
+    if(!op){avsluta();continue;}
+    if(!cur||cur.op!==op){avsluta();cur={op,pts:[lngLat(punkt(i*DS))]};}
+    cur.pts.push(lngLat(punkt((i+1)*DS)));
+  }
+  avsluta();
+  karta.getSource('prep').setData({type:'FeatureCollection',features:feat});
+  prepEtiketter();
+}
+
+/* ---------- markörer ---------- */
+const kullas=[];   // markörer som döljs när de ligger bakom maskinen
+function nyMarkor(el,xy,opt={}){
+  const m=new maplibregl.Marker({element:el,anchor:opt.anchor||'center',rotationAlignment:opt.rot||'viewport',
+    pitchAlignment:opt.pitch||'viewport'}).setLngLat(lngLat(xy)).addTo(karta);
+  if(opt.kulla!==false)kullas.push({m,el,x:xy[0],y:xy[1]});
+  return m;
+}
+function div(cls,html){const e=document.createElement('div');e.className=cls;e.innerHTML=html||'';return e;}
+let jagMarkor=null, annanMarkor=null, annanNamn=null, avstMarkorer=[];
+function pistmaskin(farg,mork,id){
+  // Pistmaskinen sedd uppifrån, fronten uppåt: plogen, banden, hytten och
+  // fräsen med manchestern bakom.
+  return `<svg width="46" height="70" viewBox="0 0 48 72"><defs><linearGradient id="k${id}" x1="0" x2="1"><stop offset="0" stop-color="${mork}"/><stop offset=".5" stop-color="${farg}"/><stop offset="1" stop-color="${mork}"/></linearGradient></defs>
+    <path d="M2 10Q24 1 46 10v5Q24 7 2 15z" fill="#e2e8f0"/>
+    <rect x="4" y="15" width="12" height="41" rx="3.5" fill="#0b1220"/><rect x="32" y="15" width="12" height="41" rx="3.5" fill="#0b1220"/>
+    <path d="M5 19h10M5 23h10M5 27h10M5 31h10M5 35h10M5 39h10M5 43h10M5 47h10M5 51h10M33 19h10M33 23h10M33 27h10M33 31h10M33 35h10M33 39h10M33 43h10M33 47h10M33 51h10" stroke="#334155" stroke-width="1.4"/>
+    <rect x="14" y="16" width="20" height="39" rx="4.5" fill="url(#k${id})"/>
+    <rect x="16.5" y="21" width="15" height="13" rx="2.6" fill="#07101d" stroke="#e0f2fe" stroke-width=".9"/>
+    <path d="M18 23.5h12" stroke="#7dd3fc" stroke-width="1.2" opacity=".6"/>
+    <rect x="5" y="57" width="38" height="7" rx="2.2" fill="#94a3b8"/>
+    <rect x="6" y="65" width="36" height="5" rx="1.5" fill="#e2e8f0" opacity=".75"/></svg>`;
+}
+function skapaMarkorer(){
+  // Brunnarna: ett nummer. Brunn 7 bär väderstationen.
+  BRUNNAR.filter(b=>!b.spare).forEach(b=>nyMarkor(div('mk-brunn'+(b.station?' st':''),String(b.no)),[b.x,b.y]));
+  // Enheterna vid sin brunn, med läget.
+  ENHETER.filter(u=>u.x!=null).forEach(u=>{
+    const txt={kor:'kör',fel:'fel',star:'står',tyst:'tyst'}[u.tillstand];
+    nyMarkor(div('mk-enhet '+u.tillstand,`<span class="ik">${u.typ==='lans'?IK.lans:IK.kanon.replace('class="blad"',u.tillstand==='kor'?'class="blad spin"':'')}</span><span class="txt">${esc(u.namn)} · ${txt}</span>`),[u.x,u.y]);
+  });
+  // Fanan där slangen går över varvet. Den står vid spårkanten på brunnens
+  // sida, som i verkligheten, och inte mitt i spåret där maskinen kör.
+  ENHETER.filter(u=>u.slang&&u.b).forEach(u=>u.b.pass.forEach(p=>{
+    const [px,py]=punkt(p.s), dx=u.b.x-px, dy=u.b.y-py, d=Math.hypot(dx,dy)||1, k=Math.min(4.5,d)/d;
+    nyMarkor(div('mk-fana',IK.fana),[px+dx*k,py+dy*k],{anchor:'bottom'});
+  }));
+  // Avståndet framåt, 50 och 100 m, som skyltar vid vägen.
+  avstMarkorer=[50,100].map(m=>({m,mk:nyMarkor(div('mk-avst',m+' m'),punkt(jag.s+m),{anchor:'left',kulla:false})}));
+  annanMarkor=nyMarkor(div('mk-maskin annan',pistmaskin('#fbbf24','#92400e','a')),punkt(annan.s),{rot:'map',pitch:'map',kulla:false});
+  annanNamn=nyMarkor(div('mk-namn',annan.namn),punkt(annan.s),{anchor:'top',kulla:false});
+  annanNamn.setOffset([0,26]);
+  jagMarkor=nyMarkor(div('mk-maskin jag',pistmaskin('#22d3ee','#0e7490','j')),punkt(jag.s),{rot:'map',pitch:'map',kulla:false});
+}
+let prepMarkorer=[];
+function prepEtiketter(){
+  if(!kartaKlar)return;
+  prepMarkorer.forEach(k=>{k.m.remove();const i=kullas.indexOf(k);if(i>=0)kullas.splice(i,1);});
+  prepMarkorer=[];
+  for(const r of prepStrackor()){
+    if(r.langd<70)continue;
+    const nu=Date.now()-r.tMax<3*60e3&&r.av===jag.namn;
+    const mitt=r.s0+r.langd/2, xy=punkt(mitt);
+    const el=div('mk-prep',nu?'Preparerat nu':'Preparerat '+hhmm(r.t));
+    el.style.opacity=Math.max(.55,prepOpak(r.t));
+    nyMarkor(el,xy);
+    // Skylten göms när maskinen står på den, så att den inte täcker maskinen.
+    kullas[kullas.length-1].prep=true;
+    prepMarkorer.push(kullas[kullas.length-1]);
+  }
+}
+let markMarkorer=[];
+function markeringarTillKarta(nyId){
+  if(!kartaKlar)return;
+  markMarkorer.forEach(k=>{k.m.remove();const i=kullas.indexOf(k);if(i>=0)kullas.splice(i,1);});
+  markMarkorer=[];
+  for(const mk of allaMarkeringar()){
+    const T=TYPER[mk.typ];
+    const el=div('mk-mark'+(mk.id===nyId?' ny':''),IK[mk.typ]);
+    el.style.background=T.farg;
+    el.addEventListener('click',ev=>{ev.stopPropagation();visaMarkkort(mk);});
+    // Skylten står vid högra spårkanten, som en vägskylt. Mitt i spåret
+    // hamnade den bakom maskinen och syntes inte när föraren tryckte.
+    const [x,y]=punkt(mk.s), k=kurs(mk.s,3,3)*Math.PI/180;
+    nyMarkor(el,[x+Math.cos(k)*7,y-Math.sin(k)*7],{anchor:'bottom'});
+    markMarkorer.push(kullas[kullas.length-1]);
+  }
+}
+
+/* ==========================================================================
+   VARVET SOM ETT BAND
+   --------------------------------------------------------------------------
+   Hela varvet utrullat rakt, i körriktningen från brunn 14. Gatan söderut
+   körs åt båda hållen, så de flesta brunnar finns två gånger på bandet: en
+   gång på väg ner och en på väg upp.
+   ========================================================================== */
+const band={W:0,H:0};
+const BP=18;
+const bx = s=>BP+s/L*(band.W-2*BP);
+function bandGeo(){
+  const H=band.H;
+  return {yU:2, yM:37, yD0:50, yD1:H-46, yP:H-41, yB:H-22, yL:H-13};
+}
+function ritaBand(){
+  const box=document.getElementById('bandyta'), svg=document.getElementById('bandsvg');
+  const W=box.clientWidth, H=box.clientHeight; if(!W||!H)return;
+  band.W=W; band.H=H;
+  const g=bandGeo(), dy=d=>g.yD1-Math.min(d,80)/80*(g.yD1-g.yD0);
+  let h=`<defs><linearGradient id="bgd" gradientUnits="userSpaceOnUse" x1="${bx(0)}" x2="${bx(L)}" y1="0" y2="0">`+
+    SEG.map((s,i)=>`<stop offset="${(s.sm/L).toFixed(4)}" stop-color="${djupFarg(DJUP[i])}"/>`).join('')+`</linearGradient>
+    <linearGradient id="bgv" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity=".18"/></linearGradient>
+    <mask id="bgm"><rect x="0" y="${g.yD0}" width="${W}" height="${g.yD1-g.yD0}" fill="url(#bgv)"/></mask></defs>`;
+  // Bakgrund för djupet och kilometrarna.
+  h+=`<rect x="${bx(0)}" y="${g.yD0}" width="${bx(L)-bx(0)}" height="${g.yD1-g.yD0}" rx="6" fill="#0b1526"/>`;
+  for(let km=.5;km<L/1000;km+=.5){
+    const x=bx(km*1000);
+    h+=`<line x1="${x}" x2="${x}" y1="${g.yD0}" y2="${g.yD1}" stroke="#ffffff14"/><text x="${x+4}" y="${g.yD0+11}" font-size="10" fill="#8296b5">${fmt(km,1)} km</text>`;
+  }
+  // Djupet som en yta, färgad efter djupet.
+  const linje=SEG.map((s,i)=>`${bx(s.sm).toFixed(1)},${dy(DJUP[i]).toFixed(1)}`).join(' L');
+  h+=`<path d="M${bx(0)},${g.yD1} L${bx(0)},${dy(DJUP[0]).toFixed(1)} L${linje} L${bx(L)},${dy(DJUP[N-1]).toFixed(1)} L${bx(L)},${g.yD1}Z" fill="url(#bgd)" mask="url(#bgm)"/>`;
+  h+=`<path d="M${bx(0)},${dy(DJUP[0]).toFixed(1)} L${linje}" fill="none" stroke="url(#bgd)" stroke-width="2.2"/>`;
+  [[TUNT,'20 cm','#fbbf24'],[OVERSKOTT,'50','#c4b5fd']].forEach(([d,t,c])=>{
+    h+=`<line x1="${bx(0)}" x2="${bx(L)}" y1="${dy(d)}" y2="${dy(d)}" stroke="${c}" stroke-opacity=".55" stroke-dasharray="4 4"/>`+
+      `<text x="${bx(0)+4}" y="${dy(d)-3}" font-size="10" font-weight="700" fill="${c}" fill-opacity=".85">${t}</text>`;
+  });
+  // Brunnarna, med en lucka i numren när de står för tätt.
+  const pass=[]; BRUNNAR.forEach(b=>b.pass.forEach(p=>pass.push({no:b.no,s:p.s,st:b.station})));
+  pass.sort((a,b)=>a.s-b.s);
+  let sistX=-99;
+  for(const p of pass){
+    const x=bx(p.s);
+    h+=`<line x1="${x}" x2="${x}" y1="${g.yD1}" y2="${g.yB-8}" stroke="#ffffff30"/>`;
+    if(x-sistX>=17){sistX=x;
+      h+=`<circle cx="${x}" cy="${g.yB}" r="8" fill="#0b1526" stroke="${p.st?'#fbbf24':'#9db0c9'}" stroke-width="1.5"/><text x="${x}" y="${g.yB+3.6}" font-size="10.5" font-weight="700" text-anchor="middle" fill="#e2e8f0">${p.no}</text>`;
+    } else h+=`<circle cx="${x}" cy="${g.yB}" r="2" fill="#9db0c9"/>`;
+  }
+  // Enheterna vid sina brunnar, och fanan där slangen går över.
+  const FARG={kor:'#34d399',fel:'#f87171',star:'#94a3b8',tyst:'#64748b'};
+  for(const u of ENHETER){
+    if(!u.b)continue;
+    for(const p of u.b.pass){
+      const x=bx(p.s);
+      const ring={kor:'#064e3b',fel:'#450a0a',star:'#1e293b',tyst:'#1e293b'}[u.tillstand];
+      h+=`<g transform="translate(${x},${g.yU+12})" color="${FARG[u.tillstand]}" opacity="${u.tillstand==='tyst'?.6:1}"><circle r="11.5" fill="${ring}" stroke="${FARG[u.tillstand]}" stroke-opacity=".7" ${u.tillstand==='tyst'?'stroke-dasharray="3 2"':''}/><g transform="translate(-9,-9) scale(.82)">${u.typ==='lans'?IK.lans:IK.kanon.replace('class="blad"',u.tillstand==='kor'?'class="blad spin"':'')}</g></g>`;
+      if(u.slang)h+=`<g transform="translate(${x+12},${g.yU+3})"><rect width="18" height="18" rx="5" fill="#7c2d12" stroke="#fdba74"/><g transform="translate(1.5,1.5) scale(.62)" color="#ffedd5">${IK.fana}</g></g>`;
+    }
+  }
+  h+=`<g id="b-prep"></g><g id="b-mark"></g><g id="b-dyn"></g>`;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.innerHTML=h;
+  ritaBandPrep(); ritaBandMark(); ritaBandDyn(true);
+}
+function ritaBandPrep(){
+  const el=document.getElementById('b-prep'); if(!el||!band.W)return;
+  const g=bandGeo(); let h=`<rect x="${bx(0)}" y="${g.yP}" width="${bx(L)-bx(0)}" height="13" rx="3" fill="#ffffff08"/>`;
+  for(const r of prepStrackor()){
+    // En sträcka kan gå över starten; den ritas då i två delar.
+    const delar=r.s0+r.langd>L?[[r.s0,L],[0,r.s0+r.langd-L]]:[[r.s0,r.s0+r.langd]];
+    const op=prepOpak(r.t);
+    for(const [a,b] of delar){
+      h+=`<rect x="${bx(a)}" y="${g.yP}" width="${Math.max(1,bx(b)-bx(a))}" height="13" fill="${r.av===jag.namn?'#a5f3fc':'#fde68a'}" fill-opacity="${(op*.75).toFixed(2)}"/>`;
+    }
+    const w=bx(Math.min(L,r.s0+r.langd))-bx(r.s0);
+    if(w>58){
+      const nu=Date.now()-r.tMax<3*60e3&&r.av===jag.namn;
+      h+=`<text x="${bx(r.s0)+w/2}" y="${g.yP+10}" font-size="10" font-weight="700" text-anchor="middle" fill="#fff" stroke="#0b1220" stroke-width="3" paint-order="stroke">${nu?'nu':hhmm(r.t)}</text>`;
+    }
+  }
+  el.innerHTML=h;
+}
+function ritaBandMark(){
+  const el=document.getElementById('b-mark'); if(!el||!band.W)return;
+  const g=bandGeo(); let h='';
+  for(const mk of allaMarkeringar()){
+    const x=bx(mod(mk.s)), T=TYPER[mk.typ];
+    h+=`<g transform="translate(${x},${g.yM})"><path d="M0 9 -4 4h8z" fill="${T.farg}"/><circle r="7.5" cy="-1" fill="${T.farg}" stroke="#0b1220" stroke-width="1"/><g transform="translate(-5.6,-6.6) scale(.47)" color="#0b1220">${IK[mk.typ]}</g></g>`;
+  }
+  el.innerHTML=h;
+}
+function ritaBandDyn(ny){
+  const el=document.getElementById('b-dyn'); if(!el||!band.W)return;
+  const g=bandGeo();
+  if(ny){
+    el.innerHTML=`<g id="b-fram"></g>
+      <g id="b-annan"><rect x="-1.25" y="${g.yU}" width="2.5" height="${g.yB-g.yU-9}" fill="#fbbf24"/><g class="pill"><rect x="-17" y="${g.yL-1}" width="34" height="14" rx="7" fill="#fbbf24"/><text x="0" y="${g.yL+9.5}" font-size="10" font-weight="800" text-anchor="middle" fill="#2a1f05">M${annan.nr}</text></g></g>
+      <g id="b-jag"><rect x="-2" y="${g.yU}" width="4" height="${g.yB-g.yU-9}" fill="#22d3ee"/><path d="M-7 ${g.yD1} 0 ${g.yD1-9} 7 ${g.yD1}z" fill="#22d3ee"/><g class="pill"><rect x="-17" y="${g.yL-1}" width="34" height="14" rx="7" fill="#22d3ee"/><text x="0" y="${g.yL+9.5}" font-size="10" font-weight="800" text-anchor="middle" fill="#05202a">DU</text></g></g>`;
+  }
+  // Bandet ritas bara om när en markör flyttat sig minst en halv pixel.
+  const nyckel=Math.round(bx(mod(jag.s))*2)+'|'+Math.round(bx(mod(annan.s))*2)+'|'+band.W;
+  if(!ny&&nyckel===sistBandX)return;
+  sistBandX=nyckel;
+  const fram=document.getElementById('b-fram');
+  const a=mod(jag.s), b=a+100, rect=(x0,x1)=>`<rect x="${x0}" y="${g.yD0}" width="${Math.max(0,x1-x0)}" height="${g.yD1-g.yD0}" fill="#e0f2fe" fill-opacity=".09" stroke="#e0f2fe" stroke-opacity=".45" stroke-width="1"/>`;
+  fram.innerHTML=b<=L?rect(bx(a),bx(b)):rect(bx(a),bx(L))+rect(bx(0),bx(b-L));
+  const satt=(id,s)=>{
+    const x=bx(mod(s)), e=document.getElementById(id);
+    e.setAttribute('transform',`translate(${x.toFixed(1)},0)`);
+    // Etiketten hålls inne i bandet vid kanterna.
+    const k=Math.max(17-x,0)-Math.max(x-(band.W-17),0);
+    e.querySelector('.pill').setAttribute('transform',`translate(${k},0)`);
+  };
+  satt('b-annan',annan.s); satt('b-jag',jag.s);
+}
+// Tryck på bandet flyttar maskinen dit. Bara för att prova.
+(function(){
+  const yta=document.getElementById('bandyta');
+  let drar=false;
+  const flytta=e=>{const r=yta.getBoundingClientRect();const s=(e.clientX-r.left-BP)/(r.width-2*BP)*L;
+    jag.s=mod(Math.max(0,Math.min(L-1,s)));kamKurs=null;};
+  yta.addEventListener('pointerdown',e=>{drar=true;try{yta.setPointerCapture(e.pointerId)}catch(x){}flytta(e);});
+  yta.addEventListener('pointermove',e=>{if(drar)flytta(e);});
+  yta.addEventListener('pointerup',()=>{drar=false;});
+  yta.addEventListener('pointercancel',()=>{drar=false;});
+})();
+
+/* ==========================================================================
+   FRAMÅT, UNDER MASKINEN OCH PANELEN
+   ========================================================================== */
+// Vad som väntar de närmaste 100 metrarna: tunt, överskott och slangar.
+function framat(s){
+  const ut={min:99,max:0,tunt:null,over:null};
+  for(let m=0;m<=100;m+=2.5){
+    const d=djupVid(s+m);
+    ut.min=Math.min(ut.min,d); ut.max=Math.max(ut.max,d);
+    if(d<TUNT){ if(!ut.tunt)ut.tunt={vid:m,min:d,langd:0}; if(ut.tunt.slut==null){ut.tunt.min=Math.min(ut.tunt.min,d);ut.tunt.langd=m-ut.tunt.vid+2.5;} }
+    else if(ut.tunt&&ut.tunt.slut==null) ut.tunt.slut=m;
+    if(d>=OVERSKOTT&&!ut.over)ut.over={vid:m,max:d};
+    if(ut.over&&d>ut.over.max&&m-ut.over.vid<40)ut.over.max=d;
+  }
+  // Närmaste slang inom 150 m.
+  ut.slang=null;
+  for(const u of ENHETER){ if(!u.slang||!u.b)continue;
+    for(const p of u.b.pass){const m=framfor(p.s,s); if(m<150&&(!ut.slang||m<ut.slang.m))ut.slang={m,u};} }
+  return ut;
+}
+function ritaFramat(){
+  const f=framat(jag.s), kort=document.getElementById('framat');
+  let titel, sub, farg, ikon;
+  if(f.tunt){
+    const mkt=f.tunt.min<10;
+    titel=(f.tunt.vid<8?(mkt?'Mycket tunt här':'Tunt här'):(mkt?'Mycket tunt ':'Tunt ')+fore(f.tunt.vid));
+    sub='ner till '+fmt(f.tunt.min)+' cm · '+Math.max(5,Math.round(f.tunt.langd/5)*5)+' m långt';
+    farg=mkt?'#ef4444':'#fbbf24'; ikon=IK.tunt;
+  } else if(f.over){
+    titel='Överskott '+fore(f.over.vid); sub='upp till '+fmt(f.over.max)+' cm'; farg='#c084fc';
+    ikon='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21v-9M8.5 15.5 12 12l3.5 3.5"/><path d="M3 8h18"/><path d="M3 3.5h18" stroke-width="3.4"/></svg>';
+  } else {
+    titel='Bra snö'; sub=fmt(f.min)+'–'+fmt(f.max)+' cm hela vägen'; farg='#2dd4bf'; ikon='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6"/></svg>';
+  }
+  kort.style.borderLeftColor=farg;
+  document.getElementById('fr-titel').textContent=titel;
+  document.getElementById('fr-titel').style.color=farg;
+  document.getElementById('fr-sub').textContent=sub;
+  const ik=document.getElementById('fr-ikon'); ik.innerHTML=ikon; ik.style.color=farg;
+  const sl=document.getElementById('fr-slang');
+  if(f.slang){
+    sl.classList.remove('hidden'); sl.classList.toggle('nara',f.slang.m<35);
+    sl.innerHTML=`${IK.fana}<span>Slang över spåret ${fore(f.slang.m)}<small>${esc(f.slang.u.namn)} vid brunn ${f.slang.u.brunn}</small></span>`;
+  } else sl.classList.add('hidden');
+  // Profilen de närmaste 120 metrarna.
+  const W=300,H=58,top=4,bot=H-12,dy=d=>bot-Math.min(d,80)/80*(bot-top),x=m=>m/120*W;
+  let pts=[],stops=[];
+  for(let m=0;m<=120;m+=2.5){const d=djupVid(jag.s+m);pts.push(`${x(m).toFixed(1)},${dy(d).toFixed(1)}`);stops.push(`<stop offset="${(m/120).toFixed(3)}" stop-color="${djupFarg(d)}"/>`);}
+  let p=`<defs><linearGradient id="frg" x1="0" x2="1">${stops.join('')}</linearGradient></defs>`+
+    `<path d="M0,${bot} L${pts.join(' L')} L${W},${bot}Z" fill="url(#frg)" fill-opacity=".5"/><path d="M${pts.join(' L')}" fill="none" stroke="url(#frg)" stroke-width="2.5"/>`+
+    `<line x1="0" x2="${W}" y1="${dy(TUNT)}" y2="${dy(TUNT)}" stroke="#fbbf24" stroke-opacity=".6" stroke-dasharray="4 4"/>`;
+  [50,100].forEach(m=>p+=`<line x1="${x(m)}" x2="${x(m)}" y1="${top}" y2="${bot}" stroke="#ffffff30"/><text x="${x(m)}" y="${H-1}" font-size="10" fill="#9db0c9" text-anchor="middle" font-family="Barlow,system-ui">${m} m</text>`);
+  if(f.slang&&f.slang.m<=120)p+=`<line x1="${x(f.slang.m)}" x2="${x(f.slang.m)}" y1="${top}" y2="${bot}" stroke="#fb923c" stroke-width="2.5"/>`;
+  p+=`<text x="2" y="${H-1}" font-size="10" fill="#9db0c9" font-family="Barlow,system-ui">nu</text>`;
+  document.getElementById('fr-profil').innerHTML=p;
+  // Under maskinen.
+  const d=djupVid(jag.s);
+  document.getElementById('u-cm').textContent=fmt(d);
+  document.getElementById('under').style.borderLeftColor=djupFarg(d);
+  document.getElementById('u-cm').style.color=d<TUNT?djupFarg(d):'';
+}
+function ritaPanel(){
+  // Vädret: våttemperaturen från väderstationen vid brunn 7, som visar för
+  // varmt, och spannet bland kanonernas egna givare bredvid.
+  const v=live.vader||{}, tws=ENHETER.filter(u=>u.tillstand!=='tyst'&&Number.isFinite(u.tw)).map(u=>u.tw);
+  document.getElementById('vader').innerHTML=`
+    <div><div class="vk">Våttemp</div><div class="vt">${fmt(v.tw,1)}<small>°C</small></div></div>
+    <div class="vr">Luft <b>${fmt(v.t,1)} °C</b> · fukt <b>${fmt(v.rh)} %</b><br>
+      Kanonerna <b>${tws.length?fmt(Math.min(...tws),1)+' … '+fmt(Math.max(...tws),1):'–'} °C</b> våt<br>
+      Vind <b>${fmt(EXEMPEL_VIND.ms,1)} m/s</b> ${EXEMPEL_VIND.fran} <span style="color:var(--muted2)">· prognos</span></div>`;
+  // Enheterna i den ordning maskinen kommer till dem.
+  const rader=ENHETER.filter(u=>u.b).map(u=>{const m=Math.min(...u.b.pass.map(p=>framfor(p.s,jag.s)));return {u,m};}).sort((a,b)=>a.m-b.m);
+  const TXT={kor:'Kör',fel:'Fel',star:'Står',tyst:'Tyst'};
+  document.getElementById('enheter').innerHTML=rader.map(({u,m})=>`
+    <div class="enh ${u.tillstand}">
+      <span class="ik">${u.typ==='lans'?IK.lans:IK.kanon.replace('class="blad"',u.tillstand==='kor'?'class="blad spin"':'')}</span>
+      <div><b>${esc(u.namn)}${u.slang?` <span class="fana-mini" title="Slang över spåret">${IK.fana.replace(/width="20" height="20"/,'width="14" height="14"')}</span>`:''}</b>
+        <small>brunn ${u.brunn} · våt ${fmt(u.tw,1)}°${u.tillstand==='kor'?' · '+fmt(u.q,1)+' m³/h':''}${u.tillstand==='tyst'?' · hörd '+hhmm(u.heard):''}</small></div>
+      <span class="lage ${u.tillstand}">${TXT[u.tillstand]}</span>
+      <span class="avst">${fore(m)}</span>
+    </div>`).join('');
+  const s=Math.round((Date.now()-live.meta.ts)/1000);
+  document.getElementById('driftalder').textContent='exempel · '+(s<60?s+' s':Math.round(s/60)+' min')+' sedan';
+  // Hur mycket som preparerats senaste dygnet, och av vem.
+  const str=prepStrackor(), sum=a=>str.filter(r=>!a||r.av===a).reduce((x,r)=>x+r.langd,0);
+  const senast=str.reduce((a,r)=>r.tMax>a?r.tMax:a,0);
+  document.getElementById('prepsum').innerHTML=`<b>${fmt(sum()/1000,1)} av ${fmt(L/1000,1)} km</b> preparerat senaste dygnet · ${jag.namn} ${fmt(sum(jag.namn)/1000,1)} km, ${annan.namn} ${fmt(sum(annan.namn)/1000,1)} km.<br>Senast ${hhmm(senast)}. Det som inte körts på ett dygn räknas som opreparerat.`;
+}
+function ritaToppen(){
+  document.getElementById('klocka').textContent=hhmm(Date.now());
+  const m=framfor(annan.s,jag.s);
+  document.getElementById('annanavst').textContent=m<L/2?fmt(m)+' m före':fmt(L-m)+' m efter';
+  document.getElementById('fart').innerHTML=(simFart?fmt(jag.v*3.6*Math.min(simFart,1)):'0')+'<small>km/h</small>';
+}
+
+/* ---------- knapparna för markeringar ---------- */
+let senastMarkering=null, toastTimer=null;
+function byggMarkknappar(){
+  const ordning=['klassiskt','skejt','tunt','sten','hinder'];
+  document.getElementById('markgrid').innerHTML=ordning.map(t=>`<button class="mknapp${t==='hinder'?' bred':''}" data-typ="${t}" aria-label="Markera ${TYPER[t].namn}">
+      <span class="ik" style="background:${TYPER[t].farg}">${IK[t]}</span><span>${TYPER[t].namn}</span></button>`).join('');
+  document.querySelectorAll('.mknapp').forEach(b=>b.addEventListener('click',()=>markera(b.dataset.typ,b)));
+  document.getElementById('markhint').textContent='syns för '+annan.namn;
+}
+function markera(typ,knapp){
+  const s=jag.s;
+  const mk={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), typ, s, t:Date.now(), av:jag.namn};
+  // Positionen sparas också, så att markeringen hamnar rätt även om spåret
+  // mäts om. Riktigt kommer den från RTK-mottagaren.
+  const [la,lo]=tillLL(...punkt(s)); mk.lat=+la.toFixed(7); mk.lon=+lo.toFixed(7);
+  egna=[...lasEgna(),mk]; sparaEgna(egna);
+  senastMarkering=mk.id;
+  markeringarTillKarta(mk.id); ritaBandMark();
+  if(knapp){knapp.classList.add('blink');setTimeout(()=>knapp.classList.remove('blink'),400);}
+  // En kort skakning som kvitto. Bara efter ett riktigt tryck, annars
+  // klagar Chrome i konsolen.
+  if(navigator.vibrate&&(!navigator.userActivation||navigator.userActivation.isActive))try{navigator.vibrate(40)}catch(e){}
+  visaToast(`${TYPER[typ].namn} markerat ${varPaVarvet(s)}`,true);
+}
+function visaToast(txt,angra){
+  document.getElementById('toasttxt').textContent=txt;
+  document.getElementById('toastangra').classList.toggle('hidden',!angra);
+  const t=document.getElementById('toast'); t.classList.add('syns');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('syns'),6000);
+}
+document.getElementById('toastangra').addEventListener('click',()=>{
+  if(!senastMarkering)return;
+  egna=lasEgna().filter(m=>m.id!==senastMarkering); sparaEgna(egna); senastMarkering=null;
+  markeringarTillKarta(); ritaBandMark(); document.getElementById('toast').classList.remove('syns');
+});
+function visaMarkkort(mk){
+  const k=document.getElementById('mkort'), T=TYPER[mk.typ];
+  const egen=!mk.exempel&&mk.av===jag.namn;
+  k.innerHTML=`<span class="mk-mark" style="background:${T.farg};cursor:default">${IK[mk.typ]}</span>
+    <div class="mk-txt"><b>${T.namn}</b><small>${hhmm(mk.t)} · ${esc(mk.av)} · ${varPaVarvet(mk.s)}${mk.exempel?' · exempel':''}</small></div>
+    ${egen?'<button class="tabort">Ta bort</button>':''}<button class="stang">Stäng</button>`;
+  k.classList.remove('hidden');
+  k.querySelector('.stang').onclick=()=>k.classList.add('hidden');
+  const tb=k.querySelector('.tabort');
+  if(tb)tb.onclick=()=>{egna=lasEgna().filter(m=>m.id!==mk.id);sparaEgna(egna);markeringarTillKarta();ritaBandMark();k.classList.add('hidden');};
+}
+// En annan flik (?maskin=2) som lägger eller tar bort en markering.
+window.addEventListener('storage',e=>{if(e.key===LAGRING){egna=lasEgna();markeringarTillKarta();ritaBandMark();}});
+
+/* ==========================================================================
+   LOOPEN
+   ========================================================================== */
+let sist=performance.now(), sistTick=0, sistPrep=0, sistSken=0, sistKam='', flygerTill=0, sistBandX='';
+function ruta(t){
+  const dt=Math.min(.12,(t-sist)/1000); sist=t;
+  if(simFart>0){
+    for(const m of [jag,annan]){const s0=m.s; m.s=mod(m.s+m.v*dt*simFart); stampla(m,s0,m.s);}
+  }
+  if(kartaKlar){
+    const xy=punkt(jag.s), mal=kurs(jag.s,6,22);
+    // Kartan vrids mjukt mot kursen, fortare när provet går fort.
+    if(kamKurs==null)kamKurs=mal;
+    else{const d=((mal-kamKurs+540)%360)-180; kamKurs=(kamKurs+d*Math.min(1,dt*1.8*Math.max(1,Math.sqrt(simFart)))+360)%360;}
+    jagMarkor.setLngLat(lngLat(xy)).setRotation(kurs(jag.s,2,6));
+    annanMarkor.setLngLat(lngLat(punkt(annan.s))).setRotation(kurs(annan.s,2,6));
+    annanNamn.setLngLat(lngLat(punkt(annan.s)));
+    avstMarkorer.forEach(a=>a.mk.setLngLat(lngLat(punkt(jag.s+a.m))));
+    // Kameran flyttas bara när något ändrats: står provet still ska kartan
+    // inte ritas om i varje bildruta och tömma plattans batteri.
+    const kamNyckel=jag.s.toFixed(2)+'|'+kamKurs.toFixed(2)+'|'+foljZoom;
+    if(vy==='framat'&&t>flygerTill&&kamNyckel!==sistKam){sistKam=kamNyckel;
+      karta.jumpTo({center:lngLat(xy),bearing:kamKurs,zoom:foljZoom,pitch:62});}
+    document.querySelector('#kompass svg').style.transform=`rotate(${-karta.getBearing()}deg)`;
+    if(t-sistSken>300){sistSken=t;
+      const c=[];for(let m=-8;m<=125;m+=4)c.push(lngLat(punkt(jag.s+m)));
+      karta.getSource('framat').setData({type:'Feature',properties:{},geometry:{type:'LineString',coordinates:c}});
+    }
+  }
+  ritaBandDyn(false);
+  if(t-sistTick>250){sistTick=t; ritaFramat(); kulla();}
+  if(t-sistPrep>1000){sistPrep=t; ritaToppen(); ritaPanel();
+    if(prepAndrad){prepAndrad=false; prepTillKarta(); ritaBandPrep();}}
+  requestAnimationFrame(ruta);
+}
+// Markörer bakom maskinen och långt bort döljs i vyn framåt, så att kartan
+// inte blir full av siffror vid horisonten.
+function kulla(){
+  if(!kartaKlar)return;
+  const [x,y]=punkt(jag.s), k=kamKurs*Math.PI/180, hx=Math.sin(k), hy=Math.cos(k);
+  for(const o of kullas){
+    let syns=true;
+    if(vy==='framat'){const dx=o.x-x, dy=o.y-y, fram=dx*hx+dy*hy, d=Math.hypot(dx,dy);
+      syns=fram>-45&&d<400&&!(o.prep&&d<40);}
+    o.el.style.visibility=syns?'':'hidden';
+  }
+  const syns=vy==='framat';
+  avstMarkorer.forEach(a=>a.mk.getElement().style.visibility=syns?'':'hidden');
+  // Flygbilden: säg till om den inte kommer fram alls.
+  if(flygFel>20&&!document.getElementById('flygvarning')){
+    const d=div('hud','Flygbilden laddas inte. Spåret och djupet visas ändå.');d.id='flygvarning';
+    d.style.cssText='left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 14px;font-weight:600';
+    document.getElementById('kartyta').appendChild(d);
+  }
+}
+
+/* ---------- knappar ---------- */
+document.querySelectorAll('.prov button').forEach(b=>b.addEventListener('click',()=>{
+  simFart=+b.dataset.sim; document.querySelectorAll('.prov button').forEach(x=>x.classList.toggle('pa',x===b));
+}));
+document.getElementById('zoomin').addEventListener('click',()=>{if(vy==='framat')foljZoom=Math.min(19.2,foljZoom+.5);else karta.zoomIn();});
+document.getElementById('zoomut').addEventListener('click',()=>{if(vy==='framat')foljZoom=Math.max(15.5,foljZoom-.5);else karta.zoomOut();});
+function bytVy(ny){
+  vy=ny; const knapp=document.getElementById('vyknapp');
+  document.getElementById('kartyta').classList.toggle('varv',vy==='varv');
+  knapp.classList.toggle('pa',vy==='varv'); knapp.querySelector('.txt').textContent=vy==='varv'?'Framåt':'Hela varvet';
+  if(!kartaKlar)return;
+  satPadding();
+  if(vy==='varv'){
+    satInteraktion(true);
+    const b=new maplibregl.LngLatBounds(); SPAR_PTS.forEach(p=>b.extend([p[1],p[0]]));
+    karta.fitBounds(b,{padding:{top:70,bottom:70,left:40,right:80},bearing:0,pitch:0,duration:900});
+  } else {
+    // Tillbaka till vyn framåt med en kort flygning i stället för ett ryck.
+    satInteraktion(false); kamKurs=kurs(jag.s,6,22); sistKam='';
+    karta.easeTo({center:lngLat(punkt(jag.s)),bearing:kamKurs,zoom:foljZoom,pitch:62,duration:900});
+    flygerTill=performance.now()+950;
+  }
+  kulla();
+}
+document.getElementById('vyknapp').addEventListener('click',()=>bytVy(vy==='framat'?'varv':'framat'));
+document.getElementById('kompass').addEventListener('click',()=>bytVy(vy==='framat'?'varv':'framat'));
+document.getElementById('nattknapp').addEventListener('click',e=>{
+  natt=!natt; document.body.classList.toggle('natt',natt); e.currentTarget.classList.toggle('pa',natt);
+  if(kartaKlar)karta.setPaintProperty('flyg','raster-brightness-max',natt?.4:.62);
+});
+document.getElementById('helknapp').addEventListener('click',()=>{
+  const d=document;
+  if(d.fullscreenElement)d.exitFullscreen&&d.exitFullscreen().catch(()=>{});
+  else d.documentElement.requestFullscreen&&d.documentElement.requestFullscreen().catch(()=>{});
+});
+const info=document.getElementById('info');
+document.getElementById('infoknapp').addEventListener('click',()=>info.classList.remove('hidden'));
+document.getElementById('rtkchip').addEventListener('click',()=>info.classList.remove('hidden'));
+document.getElementById('infostang').addEventListener('click',()=>info.classList.add('hidden'));
+info.addEventListener('click',e=>{if(e.target===info)info.classList.add('hidden');});
+document.getElementById('rtkknapp').addEventListener('click',()=>{
+  const s=document.getElementById('rtksvar'); s.classList.remove('hidden');
+  s.textContent=('bluetooth' in navigator)
+    ?'Inte inkopplad i prototypen. Den här webbläsaren har Web Bluetooth, så mottagaren kan anslutas här när den finns.'
+    :'Inte inkopplad i prototypen. Den här webbläsaren saknar Web Bluetooth — det krävs Chrome på Android.';
+});
+
+/* Skärmen får inte slockna mitt i ett pass. Wake Lock finns i Chrome på
+   Android; den släpps när sidan göms och tas igen när den syns. */
+let vakenlas=null;
+async function hallVaken(){try{if('wakeLock' in navigator&&document.visibilityState==='visible'&&!vakenlas){vakenlas=await navigator.wakeLock.request('screen');vakenlas.addEventListener('release',()=>{vakenlas=null});}}catch(e){}}
+document.addEventListener('pointerdown',hallVaken,{once:true});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')hallVaken();});
+
+/* ==========================================================================
+   INKOPPLINGEN SENARE
+   --------------------------------------------------------------------------
+   Inget av detta är gjort. Det står här så att det är tydligt var det ska in.
+
+   1. POSITIONEN. RTK-mottagaren på hyttaket skickar NMEA ($GNGGA och
+      $GNRMC) över Bluetooth LE med Nordic UART, som pucken i Snöprognos:
+        tjänst 6e400001-b5a3-f393-e0a9-e50e24dcca9e
+        TX     6e400003-b5a3-f393-e0a9-e50e24dcca9e (mottagaren → plattan)
+      navigator.bluetooth.requestDevice → GATT → startNotifications, rad för
+      rad. Läge och höjd ersätter jag.s; kursen tas ur rörelsen. Web
+      Bluetooth kräver Chrome på Android, därför en Android-platta.
+      Korrektionerna går från den egna basen via onocoys Loop Back direkt
+      till mottagaren. Nyckeln dit hör hemma i mottagaren, aldrig här.
+
+   2. SNÖDJUPET. Snöytan = antennens höjd − antennhöjden över snön, rättad
+      för maskinens lutning (antennen sitter ungefär 3 m upp, så en grads
+      lutning flyttar den 5 cm i sidled). Barmarken slås upp i barmark.json
+      (https://gkrallo.github.io/snowgun-forecast/barmark.json, en meters
+      rutor, origo ORIGO ovan). Djupet = snöytan − barmarken. Basen måste
+      först knytas till Swepos-stationen LIDK, som barmarken bygger på.
+
+   3. DELNINGEN. Varje maskin skriver sitt läge högst en gång i sekunden till
+      /pist/maskiner/{maskin} {lat, lon, s, kurs, fix, ts}, och djupet per
+      ruta när det ändrats. Markeringarna till /pist/markeringar. Det kräver
+      nya regler i firebase/database.rules.json (bara medlemmar, var och en
+      skriver sitt eget), och de är inte gjorda.
+
+   4. DRIFTEN. exempelLive() byts mot /live, som Snökoll redan lyssnar på,
+      med samma inloggning. tolkaLive tar emot den som den är.
+   ========================================================================== */
+
+/* ---------- start ---------- */
+document.getElementById('jagnamn').textContent=jag.namn;
+document.getElementById('annannamn').textContent=annan.namn;
+document.getElementById('varvlangd').textContent=fmt(L/1000,1)+' km';
+if(JAG===2)document.title='Snökoll Pist — Maskin 2';
+byggMarkknappar();
+startaKarta();
+ritaBand();
+new ResizeObserver(()=>ritaBand()).observe(document.getElementById('bandyta'));
+ritaPanel(); ritaToppen(); ritaFramat();
+requestAnimationFrame(ruta);
+// Samma service worker som Snökoll: förarvyn kan installeras som en egen app
+// på plattan (pist-manifest.json), och MapLibre sparas mellan gångerna.
+if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body>
+</html>
