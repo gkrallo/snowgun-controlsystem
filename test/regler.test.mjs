@@ -243,3 +243,50 @@ test('notiser och kvittering: bara ens egna, och bara medlemmar', async () => {
   await nekas(satt('larmlage/aktiva/finns-inte/kvitt', MEDLEM, kv), 'kvittera ett larm som inte finns');
   await nekas(satt('larmlage/ko', MEDLEM, [{ titel: 'x' }]), 'skriva i notiskön');
 });
+
+/* ---------- Mätprov: kontrollpunkter med pucken (/pist/kontroll) ---------- */
+
+const kpunkt = (uid, x = {}) => Object.assign({ ts: NU - 60000, lat: 58.5020553, lon: 13.0881364, h: 130.612, n: 118, sd: 0.006, uid, namn: 'Prov' }, x);
+
+test('kontrollpunkter: medlemmar läser, utomstående och lösenordskonton gör det inte', async () => {
+  await far(satt('pist/kontroll/-Okp_1', MEDLEM, kpunkt('uid-medlem', { sdu: 0.012, brunn: 4, text: 'hörnet mot spåret' })), 'spara en punkt');
+  assert.equal((await far(las('pist/kontroll', ANNAN), 'läsa som annan medlem')).val['-Okp_1'].brunn, 4);
+  await nekas(las('pist/kontroll', null), 'läsa utan inloggning');
+  await nekas(las('pist/kontroll', UTANFOR), 'läsa som utomstående');
+  await nekas(las('pist/kontroll', OBEKRAFTAD), 'läsa med obekräftad adress');
+  const LOSEN = token('uid-losen', 'medlem.ett@example.com', { firebase: { sign_in_provider: 'password', identities: {} } });
+  await nekas(las('pist/kontroll', LOSEN), 'läsa med lösenordskonto');
+  await nekas(satt('pist/kontroll/-Okp_2', LOSEN, kpunkt('uid-losen')), 'skriva med lösenordskonto');
+  // Resten av /pist finns inte än och ska vara stängt.
+  await nekas(las('pist', MEDLEM), 'läsa hela /pist');
+  await nekas(satt('pist/maskiner/m1', MEDLEM, { lat: 1 }), 'skriva någon annanstans under /pist');
+});
+
+test('kontrollpunkter: man ändrar sitt eget, administratören allt, och ingen skriver i någon annans namn', async () => {
+  await far(satt('pist/kontroll/p1', MEDLEM, kpunkt('uid-medlem')), 'lägga till');
+  await far(satt('pist/kontroll/p1', MEDLEM, kpunkt('uid-medlem', { text: 'rättad' })), 'rätta sin egen');
+  await nekas(satt('pist/kontroll/p1', ANNAN, kpunkt('uid-medlem', { h: 1 })), 'rätta någon annans');
+  await nekas(tabort('pist/kontroll/p1', ANNAN), 'ta bort någon annans');
+  await nekas(satt('pist/kontroll/p2', MEDLEM, kpunkt('uid-annan')), 'ny punkt i någon annans namn');
+  await nekas(satt('pist/kontroll/p3', UTANFOR, kpunkt('uid-utanfor')), 'utomstående skriver');
+  await nekas(satt('pist/kontroll/p4', BRYGGAN, kpunkt(BRYGGA)), 'bryggans konto skriver');
+  await far(tabort('pist/kontroll/p1', ADMIN), 'administratören tar bort');
+  await far(satt('pist/kontroll/p5', MEDLEM, kpunkt('uid-medlem')), 'lägga till en till');
+  await far(tabort('pist/kontroll/p5', MEDLEM), 'ta bort sin egen');
+  await nekas(tabort('pist/kontroll', MEDLEM), 'ta bort hela listan');
+});
+
+test('kontrollpunkter: nyckeln och fälten kontrolleras', async () => {
+  for (const k of [ELAK, 'a b', 'a"b', 'a<b>', 'x'.repeat(41)])
+    await nekas(satt('pist/kontroll/' + k, MEDLEM, kpunkt('uid-medlem')), 'nyckeln ' + k);
+  await nekas(andra('pist/kontroll', MEDLEM, { [ELAK]: kpunkt('uid-medlem') }), 'elak nyckel i ett samlat anrop');
+  const fel = { 'okänt fält': { extra: 1 }, 'höjd som text': { h: '130' }, 'orimlig latitud': { lat: 580 }, 'orimlig longitud': { lon: -200 },
+    'tid i framtiden': { ts: NU + 86400000 }, 'brunn 21': { brunn: 21 }, 'brunn 4,5': { brunn: 4.5 }, 'negativ spridning': { sd: -1 },
+    'noll mätvärden': { n: 0 }, 'för lång text': { text: 'x'.repeat(121) }, 'text som tal': { text: 5 }, 'långt namn': { namn: 'x'.repeat(81) } };
+  for (const [vad, x] of Object.entries(fel)) await nekas(satt('pist/kontroll/pf', MEDLEM, kpunkt('uid-medlem', x)), vad);
+  for (const falt of ['ts', 'lat', 'lon', 'h', 'n', 'sd', 'uid', 'namn']) {
+    const p = kpunkt('uid-medlem'); delete p[falt];
+    await nekas(satt('pist/kontroll/pf', MEDLEM, p), 'utan ' + falt);
+  }
+  assert.equal((await las('pist/kontroll', 'owner')).val, null);
+});

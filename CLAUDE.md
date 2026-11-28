@@ -229,6 +229,22 @@ kodgranskningen" nedan.
   körande när vatten går. **Kanonen på adress 2
   finns inte längre** men står kvar i styrsystemets databas med flit; appen
   hoppar över den och dess gamla larm.
+- **Livemätning av snödjup (RTK) är påbörjad** (28 november), se
+  `docs/rtk-livematning.md`. Kristians beslut: all RTK-hantering hör hemma
+  här, Snöprognos förblir öppen och ska inte hänvisa till RTK, och barmarken
+  flyttas hit. En pistmaskin i vinter, med pucken (SparkFun RTK Facet) på
+  taket och en egen bas via onocoy (inte på plats än). **onocoy-uppgifterna
+  finns bara i pucken**, som hämtar korrektionerna själv över wifi — aldrig
+  i appen, i repot eller under `app/`. Ingen nyckel finns sparad någonstans.
+  Första steget är byggt: vyn **Mätprov** (`rtk`), som läser pucken över
+  Bluetooth, jämför med barmarken och sparar kontrollpunkter under
+  `/pist/kontroll`. Barmarken är räknad mot Swepos och livemätningen kommer
+  i onocoys referensram: skillnaden ska mätas, och **ingen rättning läggs på
+  förrän Kristian bestämt den**. Barmarken läses tills vidare från
+  Snöprognos (`BAR_URL`), så att den finns på ett ställe; `BAR_ORIGO` och
+  `BAR_M` måste vara samma tal som där. Inte provat med riktig puck. Inte
+  bestämt: skärmen i hytten (fast Android eller egna telefoner) och var
+  barmarken ska ligga.
 - **Inte gjort:** svar från leverantören och läs-only-kontot; faktorn för
   FT01; prova en omstart av styrdatorn; backup av styrdatorn.
 
@@ -268,7 +284,9 @@ I korthet:
 5. **Lösenord/nycklar aldrig i git.** Se `SECRETS.md` (gitignore-ad).
 6. **Firebase-regler låsta:** bara bryggan skriver driftdata, bara inloggade
    medlemmar läser. Bryggan får fylla på historiken men inte ta bort den. Undantaget är `/damm`, där medlemmar skriver sina egna
-   avläsningar av vattenmätaren och måttbandet (Kristian, 25 november).
+   avläsningar av vattenmätaren och måttbandet (Kristian, 25 november), och
+   `/pist/kontroll`, där de skriver sina egna kontrollpunkter med pucken
+   (28 november). Resten av `/pist` är stängt tills maskinkontot finns.
    Inget i Firebase kan styra anläggningen.
 7. **Tidsstämpel på allt** — appen varnar för gammal data, visar aldrig stale
    som live.

@@ -242,7 +242,7 @@ test('K3: dammens uttag är okänt när värdena är gamla, inte "det senaste"',
   assert.deepEqual(utanNat(app.fel), []);
 });
 
-const VYER = ['overview', 'water', 'dam', 'advisor', 'cannons', 'lances', 'alarms', 'forecast', 'map'];
+const VYER = ['overview', 'water', 'dam', 'advisor', 'cannons', 'lances', 'alarms', 'forecast', 'map', 'rtk'];
 test('K3: alla vyer går att rita i alla lägen utan fel', () => {
   for (const meta of [{}, { sqlOk: false }, { gssAlder: 900 }, null]) {
     const app = medKlocka(), nu = app.nu();
@@ -656,4 +656,319 @@ test('läget nu: prognosen ger bara besked om nu när inget annat finns', () => 
 test('läget nu: ?demo är oförändrat', () => {
   const app = laddaApp({ search: '?demo' });
   assert.doesNotMatch(app.visa('overview'), /Läget nu|undefined|NaN/);
+});
+
+/* ---------- Mätprov: pucken mot barmarken ---------- */
+
+// NMEA-rader som pucken skickar dem, med kontrollsumma räknad här och inte av appen.
+const nmea = s => { let x = 0; for (const c of s) x ^= c.charCodeAt(0); return '$' + s + '*' + x.toString(16).toUpperCase().padStart(2, '0'); };
+const grad = (v, n) => { const g = Math.floor(v); return String(g).padStart(n, '0') + ((v - g) * 60).toFixed(7).padStart(10, '0'); };
+const B4 = { lat: 58.5020553, lon: 13.0881364 };   // brunn 4 som den står i appen
+const gga = ({ kl = '120000.00', lat = B4.lat, lon = B4.lon, q = 4, alt = 95.412, sep = 35.2, ald = '1.0' } = {}) =>
+  nmea(`GNGGA,${kl},${grad(lat, 2)},N,${grad(lon, 3)},E,${q},24,0.6,${alt.toFixed(3)},M,${sep === null ? '' : sep.toFixed(3)},M,${ald},0000`);
+const gst = (kl = '120000.00', sdu = 0.012) => nmea(`GNGST,${kl},0.9,,,,0.008,0.008,${sdu}`);
+const mata = (app, rader) => app.kor('puckMata')(rader.join('\r\n') + '\r\n');
+const BARFIL = (cells, x = {}) => Object.assign({ format: 'snoprognos-barmark-2', cell: 1, origin: [58.503781, 13.087922], files: [{}, {}], cells }, x);
+
+// En inloggad app med en ansluten puck (utan Bluetooth), där skrivningarna bara antecknas.
+function medPuck(val) {
+  const app = medKlocka(undefined, val), skrivet = [];
+  app.ctx.dammMe = () => ({ uid: 'jag', namn: 'Jag' });
+  app.ctx.kontrollWrite = (id, data) => { skrivet.push([id, data]); return Promise.resolve(); };
+  app.kor('puck.dev={gatt:{}};puck.vill=true');
+  const M = app.varde('BAR_M');
+  return Object.assign(app, { skrivet, M,
+    // en punkt så här många meter norr och öster om brunn 4
+    vid: (n, o) => ({ lat: B4.lat + n / M.lat, lon: B4.lon + o / M.lon }),
+    ruta: (lat, lon) => app.varde(`barXY(${lat},${lon})`).map(Math.floor) });
+}
+// Mäter en punkt: en rad i sekunden i trettio sekunder, som pucken skulle skicka.
+function matPunkt(app, { lat = B4.lat, lon = B4.lon, alt = 95.412, n = 30, q = 4, sdu = 0.012, ror = 0 } = {}) {
+  mata(app, [gga({ kl: '115959.00', lat, lon, alt, q: 4 }), gst('115959.00', 0.012)]);
+  app.kor('matStarta()');
+  for (let i = 0; i < n; i++) {
+    app.fram(1 / 60);
+    const kl = '1200' + String(i).padStart(2, '0') + '.00';
+    mata(app, [gga({ kl, lat: lat + (i === 5 ? ror / app.M.lat : 0), lon, alt, q }), gst(kl, sdu)]);
+  }
+  app.fram(1 / 60); app.kor('rtkTick()');
+}
+
+test('mätprov: bara hela rader med rätt kontrollsumma räknas, och höjden är över ellipsoiden', () => {
+  const app = medPuck();
+  // Läroboksraden: 48°07,038' N, 11°31,000' E, 545,4 m över havet, geoiden 46,9 m.
+  app.kor('puckMata')('$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n');
+  let g = app.varde('puck.gga');
+  assert.ok(Math.abs(g.lat - 48.1173) < 1e-6 && Math.abs(g.lon - 11.5166667) < 1e-6);
+  assert.ok(Math.abs(g.h - 592.3) < 1e-9, 'höjden ska vara havshöjd plus geoidhöjd');
+  assert.equal(app.kor('puckLage()'), 'grov');
+  // Fel kontrollsumma, och en rad som kommer i två bitar med binärt skräp före.
+  const rad = gga({ alt: 95.5 });
+  app.kor('puckMata')(rad.replace('95.500', '99.500') + '\r\n');
+  assert.equal(app.varde('puck.gga').q, 1, 'en rad med fel kontrollsumma ska inte räknas');
+  app.kor('puckMata')('µb\u0002\u0015$GNG' + rad.slice(0, 30));
+  assert.equal(app.varde('puck.gga').q, 1, 'en halv rad ska vänta på resten');
+  app.kor('puckMata')(rad.slice(30) + '\r\n' + gst('120000.00', 0.011) + '\r\n');
+  g = app.varde('puck.gga');
+  assert.equal(g.q, 4);
+  assert.ok(Math.abs(g.h - 130.7) < 1e-9);
+  assert.equal(g.sdu, 0.011, 'höjdosäkerheten kommer ur GST-raden med samma klockslag');
+  assert.equal(g.kalder, 1);
+  assert.equal(app.kor('puckLage()'), 'fix');
+  // Utan geoidhöjd går höjden inte att räkna om, och då är det ingen position.
+  mata(app, [gga({ kl: '120001.00', sep: null })]);
+  assert.equal(app.kor('puckLage()'), 'utan');
+});
+
+test('mätprov: en puck som tystnat visas som gammal, inte som fix', () => {
+  const app = medPuck();
+  mata(app, [gga(), gst()]);
+  assert.match(app.visa('rtk'), /RTK-fix/);
+  assert.doesNotMatch(app.main(), /rtk-gammal|Värdena ovan är gamla/);
+  app.fram(6 / 60);
+  assert.equal(app.kor('puckLage()'), 'tyst');
+  const html = app.visa('rtk');
+  assert.match(html, /Tyst i 6 s/);
+  assert.match(html, /class="readout rtk-gammal"/);
+  assert.match(html, /Värdena ovan är gamla/);
+  assert.doesNotMatch(html, />RTK-fix</, 'lampan får inte stå kvar på fix');
+  assert.match(html, /onclick="matStarta\(\)" disabled/, 'det går inte att mäta på gamla värden');
+});
+
+test('mätprov: lamporna följer puckens läge, och det går bara att mäta med fix', () => {
+  const app = medPuck();
+  for (const [q, lage, text] of [[1, 'grov', 'Ingen korrektion'], [5, 'float', 'RTK float'], [0, 'utan', 'Ingen position'], [4, 'fix', 'RTK-fix']]) {
+    mata(app, [gga({ q })]);
+    assert.equal(app.kor('puckLage()'), lage);
+    const html = app.visa('rtk');
+    assert.match(html, new RegExp('>' + text + '<'));
+    assert.equal(/onclick="matStarta\(\)" disabled/.test(html), q !== 4, 'knappen vid läget ' + lage);
+  }
+  mata(app, [gga({ q: 5 })]);
+  app.kor('matStarta()');
+  assert.equal(app.kor('mat.pa'), false);
+  assert.match(app.visa('rtk'), /Mätningen kräver RTK-fix/);
+  // Utan puck: knappen säger varför.
+  app.kor('puckNer()');
+  assert.match(app.visa('rtk'), /Pucken inte ansluten[\s\S]*Anslut pucken först/);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('mätprov: utan Bluetooth i webbläsaren säger appen det', async () => {
+  const app = medKlocka();
+  app.visa('rtk');
+  await app.kor('puckAnslut()');
+  assert.match(app.visa('rtk'), /kan inte Bluetooth[^<]*inte på iPhone/);
+});
+
+test('mätprov: bara värden med fix och höjdosäkerhet under 5 cm räknas', () => {
+  let app = medPuck();
+  matPunkt(app, { alt: 95.412 });
+  let r = app.varde('mat.res');
+  assert.equal(r.n, 30);
+  assert.ok(Math.abs(r.h - 130.612) < 1e-9);
+  assert.ok(r.sd < 1e-9 && r.ror < 1e-6);
+  // Float hela vägen: ingenting att räkna på.
+  app = medPuck();
+  matPunkt(app, { q: 5 });
+  assert.equal(app.kor('mat.res'), null);
+  assert.match(app.visa('rtk'), /För få värden med RTK-fix: 0 av 30/);
+  // Fix men för osäker höjd.
+  app = medPuck();
+  matPunkt(app, { sdu: 0.08 });
+  assert.equal(app.kor('mat.res'), null);
+  // Pucken tystnar mitt i mätningen.
+  app = medPuck();
+  mata(app, [gga(), gst()]);
+  app.kor('matStarta()');
+  app.fram(10 / 60); app.kor('rtkTick()');
+  assert.equal(app.kor('mat.pa'), false);
+  assert.match(app.visa('rtk'), /Pucken tystnade under mätningen/);
+});
+
+test('mätprov: barmarksfilen tas bara emot med rätt format och nollpunkt', () => {
+  const app = medPuck();
+  const [gx, gy] = app.ruta(B4.lat, B4.lon);
+  assert.match(app.kor('barTaEmot')(BARFIL([[gx, gy, 130500, 3, 12]], { format: 'snoprognos-barmark-1' })), /format/);
+  assert.match(app.kor('barTaEmot')(BARFIL([[gx, gy, 130500, 3, 12]], { origin: [58.5037755, 13.0879116] })), /nollpunkt/);
+  assert.match(app.kor('barTaEmot')(BARFIL([])), /tom/);
+  assert.equal(app.kor('bar.rutor'), null);
+  assert.equal(app.kor('barTaEmot')(BARFIL([[gx, gy, 130500, 3, 12], [gx + 2, gy, 130900, 1, 0], 'skräp'])), '');
+  assert.deepEqual(app.varde(`barVid(${B4.lat},${B4.lon})`), { avst: 0, h: 130.5, n: 3, sd: 0.012 });
+  // En meter bort finns ingen mätt ruta: den närmaste inom två meter gäller, och avståndet står med.
+  const p = app.vid(0, 1);
+  const nara = app.varde(`barVid(${p.lat},${p.lon})`);
+  assert.ok(nara.avst > 0 && nara.avst <= 2 && (nara.h === 130.5 || nara.h === 130.9));
+  const bort = app.vid(40, 40);
+  assert.equal(app.kor(`barVid(${bort.lat},${bort.lon})`), null);
+});
+
+test('mätprov: höjden räknas bara på mätt mark, och pucken säger om den ligger där', () => {
+  const app = medPuck(), nu = app.nu();
+  const [gx, gy] = app.ruta(B4.lat, B4.lon);
+  // Mätt mark i brunnens ruta och fyra meter österut. Rutan däremellan är inte mätt.
+  app.kor('barTaEmot')(BARFIL([[gx, gy, 130000, 3, 10], [gx + 4, gy, 130000, 3, 10]]));
+  const pa = { lat: B4.lat, lon: B4.lon }, bredvid = app.vid(0, 1.5);
+  const rad = (p, dh) => ({ ts: nu - 60000, lat: p.lat, lon: p.lon, h: 130 + dh, n: 30, sd: 0.004, uid: 'jag', namn: 'Jag' });
+  app.kor('applyKontroll')({ '-Opa': rad(pa, 0.07), '-Obredvid': rad(bredvid, 0.30) });
+  const S = app.varde('kontrollSumma()');
+  assert.equal(S.nh, 1, 'punkten bredvid mätt mark räknas inte i höjd');
+  assert.ok(Math.abs(S.dh - 0.07) < 1e-9);
+  const html = app.visa('rtk');
+  assert.match(html, /1 punkt på mätt mark:<\/b> pucken visar i median 7,0 cm över barmarken/);
+  assert.match(html, /\+30,0 cm<br><span class="muted small">ruta [\d,]+ m bort, räknas inte/);
+  // Medan pucken ligger där: lampraden säger om marken är mätt, och åt vilket håll den finns.
+  mata(app, [gga(pa), gst()]);
+  assert.match(app.visa('rtk'), /på mätt mark<\/b>/);
+  mata(app, [gga(Object.assign({ kl: '120001.00' }, app.vid(0, 2.2))), gst('120001.00')]);
+  assert.match(app.visa('rtk'), /närmaste mätta ruta [\d,]+ m åt öster/);
+  mata(app, [gga(Object.assign({ kl: '120002.00' }, app.vid(30, 30))), gst('120002.00')]);
+  assert.match(app.visa('rtk'), /ingen mätt mark inom två meter/);
+  // Och en mätning bredvid mätt mark säger varför höjden inte räknas.
+  matPunkt(app, Object.assign({ alt: 95.1 }, bredvid));
+  assert.match(app.visa('rtk'), /i närmaste mätta ruta, [\d,]+ m bort\. Så långt ifrån räknas höjden inte in/);
+});
+
+test('mätprov: punkten jämförs med barmarken och med brunnens inmätta läge', () => {
+  const app = medPuck();
+  const p = app.vid(0.4, 0.6), [gx, gy] = app.ruta(p.lat, p.lon);
+  app.kor('barTaEmot')(BARFIL([[gx, gy, 130540, 3, 12]]));
+  app.kor("rtkForm.brunn='4'");
+  matPunkt(app, { lat: p.lat, lon: p.lon, alt: 95.412 });   // 130,612 m: 7,2 cm över barmarken
+  const html = app.visa('rtk');
+  assert.match(html, /Pucken visar <b[^>]*>7,2 cm över barmarken<\/b>/);
+  assert.match(html, /40,0 cm norr och 60,0 cm öster om<\/b> brunn 4/);
+  assert.doesNotMatch(html, /osäkert inmätt\)\.|undefined|NaN/);
+  // Samma punkt mot en brunn hundratals meter bort: appen frågar om rätt brunn är vald.
+  app.kor("rtkForm.brunn='9'");
+  assert.match(app.visa('rtk'), /är rätt brunn vald\?/);
+});
+
+test('mätprov: spara skriver det uppmätta, inte skillnaden, och en puck som rört sig sparas inte', async () => {
+  let app = medPuck();
+  const p = app.vid(0.4, 0.6);
+  app.kor("rtkForm.brunn='4';rtkForm.text='  på gruset  '");
+  matPunkt(app, { lat: p.lat, lon: p.lon });
+  await app.kor('rtkSpara()');
+  assert.equal(app.skrivet.length, 1);
+  const [id, d] = app.skrivet[0];
+  assert.equal(id, null);
+  assert.deepEqual(Object.keys(d).sort(), ['brunn', 'h', 'lat', 'lon', 'n', 'namn', 'sd', 'sdu', 'text', 'ts', 'uid']);
+  assert.deepEqual([d.brunn, d.h, d.n, d.sd, d.sdu, d.text, d.uid, d.namn], [4, 130.612, 30, 0, 0.012, 'på gruset', 'jag', 'Jag']);
+  assert.ok(Math.abs(d.lat - p.lat) < 1e-8 && Math.abs(d.lon - p.lon) < 1e-8 && d.ts === app.nu());
+  assert.match(app.visa('rtk'), /Sparat bland kontrollpunkterna/);
+  assert.equal(app.kor('mat.res'), null);
+  // Pucken flyttas 30 cm mitt i mätningen.
+  app = medPuck();
+  matPunkt(app, { ror: 0.3 });
+  assert.match(app.visa('rtk'), /Pucken rörde sig [\d,]+ cm under mätningen/);
+  assert.match(app.main(), /onclick="rtkSpara\(\)" disabled/);
+  await app.kor('rtkSpara()');
+  assert.deepEqual(app.skrivet, []);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('mätprov: sammanfattningen tar medianen, utan osäkra brunnar i sidled och utan punkter långt från sin brunn', () => {
+  const app = medPuck(), nu = app.nu();
+  const b = no => app.varde(`WELLS.find(w=>w.no===${no})`);
+  const punkt = (no, dn, de, dh, x = {}) => { const w = b(no); return Object.assign({ ts: nu - no * 60000, lat: w.lat + dn / app.M.lat, lon: w.lon + de / app.M.lon, h: 130 + dh, n: 30, sd: 0.004, brunn: no, uid: 'jag', namn: 'Jag' }, x); };
+  // Barmarken ligger på 130,000 m i varje ruta där en punkt hamnar.
+  const P = { '-Oa': punkt(1, 0.40, 0.60, 0.06), '-Ob': punkt(2, 0.42, 0.62, 0.08), '-Oc': punkt(4, 0.44, 0.58, 0.07),
+    '-Od': punkt(3, 0.90, 0.10, 0.09),                     // brunn 3 är osäkert inmätt: räknas i höjd, inte i sidled
+    '-Oe': punkt(9, 30, 0, 0.50) };                        // 30 m från brunnen: fel brunn vald, räknas inte alls
+  app.kor('barTaEmot')(BARFIL(Object.values(P).map(p => [...app.ruta(p.lat, p.lon), 130000, 3, 10])));
+  app.kor('applyKontroll')(Object.assign({}, P, { "x');alert(1);('": punkt(1, 0, 0, 9) }));
+  assert.equal(app.kor('kontrollList().length'), 5, 'en rad med otillåten nyckel visas inte');
+  const S = app.varde('kontrollSumma()');
+  assert.deepEqual([S.n, S.nh, S.ns], [5, 4, 3]);
+  assert.ok(Math.abs(S.dh - 0.075) < 1e-6, 'medianen av 6, 7, 8 och 9 cm');
+  assert.ok(Math.abs(S.dn - 0.42) < 1e-4 && Math.abs(S.de - 0.60) < 1e-4);
+  const html = app.visa('rtk');
+  assert.match(html, /4 punkter på mätt mark:<\/b> pucken visar i median 7,5 cm över barmarken \(från \+6,0 cm till \+9,0 cm\)/);
+  assert.match(html, /3 vid säkert inmätta brunnar:<\/b> i median 42,0 cm norr och 60,0 cm öster om inmätningen/);
+  assert.match(html, /osäkert inmätt brunn/);
+  assert.match(html, /långt från brunnen, räknas inte/);
+  assert.match(html, /Ingen rättning läggs på av sig själv/);
+  assert.doesNotMatch(html, /alert|undefined|NaN/);
+  // Med färre än tre punkter säger appen att det är för lite.
+  app.kor('applyKontroll')({ '-Oa': P['-Oa'] });
+  assert.match(app.visa('rtk'), /1 punkt på mätt mark[\s\S]*Mät minst tre punkter på mätt mark innan skillnaden används/);
+});
+
+test('mätprov: anteckningen skrivs ut som text, och knapparna kör bara sitt', () => {
+  const app = medPuck(), nu = app.nu();
+  const rad = x => Object.assign({ ts: nu - 60000, lat: B4.lat, lon: B4.lon, h: 130.6, n: 30, sd: 0.004, uid: 'jag', namn: 'Jag' }, x);
+  app.kor('applyKontroll')({ '-Oa': rad({ text: '<img src=x onerror=alert(1)>', namn: '<b>Elak</b>' }), '-Ob': rad({ brunn: "4');alert(1);('", ts: 'i går' }) });
+  const html = app.visa('rtk');
+  assert.doesNotMatch(html, /<img|<b>Elak/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.equal(app.kor('kontrollList().length'), 1, 'en rad utan tid räknas inte');
+  for (const kod of onclick(html)) assert.deepEqual(korOnclick(kod, ['go', 'puckAnslut', 'matStarta', 'matAvbryt', 'rtkSpara', 'kontrollTaBort', 'barOm', 'rtkRita']).intrang.filter(x => x[0] !== 'fel'), [], kod);
+  assert.deepEqual(onclick(html).filter(k => k.startsWith('kontrollTaBort')).map(k => korOnclick(k, ['kontrollTaBort']).anrop[0]), [['kontrollTaBort', '-Oa']]);
+});
+
+test('mätprov: ta bort en kontrollpunkt kräver två tryck, och bara sina egna', async () => {
+  const app = medPuck(), nu = app.nu();
+  const rad = uid => ({ ts: nu - 60000, lat: B4.lat, lon: B4.lon, h: 130.6, n: 30, sd: 0.004, uid, namn: uid });
+  app.kor('applyKontroll')({ '-Omin': rad('jag'), '-Oannan': rad('annan') });
+  assert.deepEqual(onclick(app.visa('rtk')).filter(k => k.startsWith('kontrollTaBort')).length, 1, 'ingen knapp på någon annans punkt');
+  await app.kor("kontrollTaBort('-Oannan')");
+  await app.kor("kontrollTaBort('-Oannan')");
+  assert.deepEqual(app.skrivet, [], 'någon annans punkt går inte att ta bort');
+  await app.kor("kontrollTaBort('-Omin')");
+  assert.deepEqual(app.skrivet, [], 'första trycket tar inte bort');
+  assert.match(app.main(), /Ta bort punkten [^<]*\? Tryck en gång till/);
+  assert.match(app.main(), />Tryck igen</);
+  await app.kor("kontrollTaBort('-Omin')");
+  assert.deepEqual(app.skrivet, [['-Omin', null]]);
+  // En administratör får ta bort allas.
+  app.kor('setAdmin(true,"admin@example,com")');
+  assert.equal(onclick(app.visa('rtk')).filter(k => k.startsWith('kontrollTaBort')).length, 2);
+});
+
+test('mätprov: utloggning kopplar från pucken och tömmer punkterna', () => {
+  const app = medPuck();
+  mata(app, [gga(), gst()]);
+  app.kor('applyKontroll')({ '-Oa': { ts: app.nu(), lat: B4.lat, lon: B4.lon, h: 130.6, n: 30, sd: 0.004, uid: 'jag', namn: 'Jag' } });
+  app.kor("rtkForm.text='kvar?'");
+  app.visa('rtk');
+  app.kor('clearApp()');
+  assert.equal(app.kor('puckLage()'), 'ingen');
+  assert.equal(app.kor('puck.gga'), null);
+  assert.equal(app.kor('kontrollList().length'), 0);
+  assert.equal(app.kor('rtkForm.text'), '');
+});
+
+test('mätprov: ?demo har en låtsaspuck och en påhittad barmark, och skriver ingenting', async () => {
+  const app = medKlocka(undefined, { search: '?demo' }), skrivet = [];
+  app.ctx.kontrollWrite = (...a) => { skrivet.push(a); return Promise.resolve(); };
+  app.kor('applyKontroll')({ '-Oriktig': { ts: app.nu(), lat: B4.lat, lon: B4.lon, h: 130.6, n: 30, sd: 0.004, uid: 'x', namn: 'Riktig' } });
+  assert.equal(app.kor('kontrollList().length'), 0, 'riktiga punkter tas inte in i ?demo');
+  assert.match(app.visa('rtk'), /EXEMPELDATA[\s\S]*Barmarken här är påhittad[\s\S]*Starta låtsaspucken/);
+  await app.kor('puckAnslut()');
+  const rad = sek => app.kor('puckMata')(app.kor('puckDemoRad')(sek));
+  rad(1); assert.equal(app.kor('puckLage()'), 'grov');
+  rad(4); assert.equal(app.kor('puckLage()'), 'float');
+  rad(8); assert.equal(app.kor('puckLage()'), 'fix');
+  assert.match(app.visa('rtk'), />Låtsaspuck</);
+  app.kor('matStarta()');
+  for (let i = 0; i < 30; i++) { app.fram(1 / 60); rad(10 + i); }
+  app.fram(1 / 60); app.kor('rtkTick()');
+  const k = app.varde('kontrollRakna(Object.assign({brunn:4},mat.res))');
+  assert.ok(Math.abs(k.dh - 0.08) < 0.02 && Math.abs(k.dn - 0.42) < 0.02 && Math.abs(k.de - 0.61) < 0.02, JSON.stringify(k));
+  await app.kor('rtkSpara()');
+  assert.deepEqual(skrivet, []);
+  assert.equal(app.kor('kontrollList().length'), 1);
+  assert.match(app.visa('rtk'), /1 punkt på mätt mark/);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('mätprov: nås från menyn och från översikten, och inget om onocoy-uppgifter står i appen', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu()));
+  assert.match(app.visa('overview'), /onclick="go\('rtk'\)"[^>]*>[\s\S]*?Mätprov — pucken mot barmarken/);
+  assert.match(app.kor("document.getElementById('nav').innerHTML"), /go\('rtk'\)/);
+  assert.doesNotMatch(app.kor("document.getElementById('botnav').innerHTML"), /go\('rtk'\)/, 'telefonens rad rymmer sex knappar');
+  // Korrektionerna hämtar pucken själv. Appen ska inte känna till adress, mountpoint eller lösenord.
+  assert.doesNotMatch(appHtml, /clients\.onocoy|servers\.onocoy|mountpoint\s*[:=]|ntrip\w*\s*[:=]/i);
 });

@@ -87,6 +87,28 @@
       }
     },
 
+    "pist": {
+      "kontroll": {
+        ".read": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        "$id": {
+          ".write": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
+          ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.hasChildren(['ts', 'lat', 'lon', 'h', 'n', 'sd', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
+          "ts":    { ".validate": "newData.isNumber() && newData.val() > 1735689600000 && newData.val() < now + 600000" },
+          "lat":   { ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90" },
+          "lon":   { ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180" },
+          "h":     { ".validate": "newData.isNumber() && newData.val() > -500 && newData.val() < 9000" },
+          "n":     { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 100000" },
+          "sd":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 100" },
+          "sdu":   { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 100" },
+          "brunn": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 20 && newData.val() % 1 === 0" },
+          "text":  { ".validate": "newData.isString() && newData.val().length <= 120" },
+          "uid":   { ".validate": "newData.isString()" },
+          "namn":  { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "$annat": { ".validate": false }
+        }
+      }
+    },
+
     "members": {
       ".read":  "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",
       ".write": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",

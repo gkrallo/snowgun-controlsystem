@@ -340,6 +340,9 @@ canvas{max-width:100%}
 .dam-ctrl input[type=number],.dam-ctrl input[type=text],.dam-ctrl input[type=datetime-local]{width:100%;background:#0c1626;
   border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px 11px;font-size:.9rem}
 .dam-ctrl input[type=datetime-local]{color-scheme:dark}
+.dam-ctrl select{width:100%;background:#0c1626;border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px 11px;font-size:.9rem;color-scheme:dark}
+/* Mätprov: värden från en puck som tystnat ska inte se färska ut. */
+.readout.rtk-gammal div b{color:#6f7f96}
 .dam-ctrl input:disabled{opacity:.45}
 .dam-ctrl input[type=range]{width:100%;accent-color:var(--ice);margin-top:4px}
 .seg{display:inline-flex;background:#0c1626;border:1px solid var(--border);border-radius:9px;overflow:hidden}
@@ -953,6 +956,7 @@ const NAV = [
   {id:'lances',   label:'Lansar',      icon:'lance'},
   {id:'alarms',   label:'Larm',        icon:'bell'},
   {id:'forecast', label:'Körfönster',  icon:'clock'},
+  {id:'rtk',      label:'Mätprov',     icon:'track'},   // pucken mot barmarken; på telefon nås den från Översikt
   {id:'members',  label:'Medlemmar',   icon:'users'},   // bara för administratörer, se buildNav
 ];
 
@@ -1099,8 +1103,8 @@ function buildNav(){
   // Telefonens rad rymmer sex knappar. Kanoner och lansar delar därför på en
   // ("Enheter", med växel i vyn); rådgivaren nås från Vatten och körfönstret
   // från Översikt.
-  const mob=NAV.filter(n=>!['forecast','advisor','lances','members'].includes(n.id));
-  const on=n=>n.id===cur||(n.id==='cannons'&&cur==='lances')||(n.id==='water'&&cur==='advisor')||(n.id==='overview'&&cur==='forecast');
+  const mob=NAV.filter(n=>!['forecast','advisor','lances','members','rtk'].includes(n.id));
+  const on=n=>n.id===cur||(n.id==='cannons'&&cur==='lances')||(n.id==='water'&&cur==='advisor')||(n.id==='overview'&&(cur==='forecast'||cur==='rtk'));
   document.getElementById('botnav').innerHTML=mob.map(n=>`<a class="${on(n)?'active':''}" onclick="go('${n.id}')">${icon(n.icon,'currentColor',22)}<span>${n.id==='cannons'?'Enheter':n.id==='water'?'Vatten':n.label}</span>${n.id==='alarms'&&a?`<span class="badge">${a}</span>`:''}</a>`).join('');
 }
 
@@ -1336,7 +1340,10 @@ function vOverviewR(){
 
   <div class="section-title">Enheter</div>
   ${cannons.length?`<div class="grid g-units">${cannons.map(unitCard).join('')}</div>`:'<p class="muted small">Inga enheter i datan än.</p>'}
-  ${isAdmin?`<button class="linkbtn" style="margin-top:18px;display:inline-flex;align-items:center;gap:8px" onclick="go('members')">${icon('users','#7dd3fc',15)} Medlemmar och åtkomst</button>`:''}
+  <div class="row" style="margin-top:18px;flex-wrap:wrap;gap:10px">
+  <button class="linkbtn" style="display:inline-flex;align-items:center;gap:8px" onclick="go('rtk')">${icon('track','#7dd3fc',15)} Mätprov — pucken mot barmarken</button>
+  ${isAdmin?`<button class="linkbtn" style="display:inline-flex;align-items:center;gap:8px" onclick="go('members')">${icon('users','#7dd3fc',15)} Medlemmar och åtkomst</button>`:''}
+  </div>
   </div>`;
 }
 
@@ -2085,7 +2092,7 @@ function tvaTryck(tag,aterstall){
   clearTimeout(arm.t);
   if(arm.tag===tag){arm.tag='';return true;}
   arm.tag=tag;
-  arm.t=setTimeout(()=>{arm.tag='';if(aterstall)aterstall();if(current==='dam')render();},8000);
+  arm.t=setTimeout(()=>{arm.tag='';if(aterstall)aterstall();if(current==='dam'||current==='rtk')render();},8000);
   return false;
 }
 const armad=tag=>arm.tag===tag;
@@ -3228,6 +3235,441 @@ function drawCharts(){
 let unitHist={};
 
 /* ============================================================
+   MÄTPROV — pucken mot barmarken (RTK)
+   Första steget mot livemätning av snödjup, se docs/rtk-livematning.md.
+   Pucken (SparkFun RTK Facet) får korrektioner från den egna basen via
+   onocoy och hämtar dem själv över wifi. Uppgifterna dit finns bara i
+   pucken, aldrig här. Appen läser bara det pucken skickar över Bluetooth.
+
+   Barmarken är räknad mot Swepos, livemätningen kommer i onocoys
+   referensram. Skillnaden är fast men okänd tills den mätts: pucken läggs
+   med RTK-fix på mark som finns i barmarken, och varje punkt sparas
+   gemensamt under /pist/kontroll. Det uppmätta sparas, inte skillnaden —
+   den räknas mot barmarken varje gång, så att en trimmad barmark ger rätt
+   svar. Ingen rättning läggs på av sig själv.
+   ============================================================ */
+/* Barmarken har en källa, och den ligger i Snöprognos tills den flyttats hit.
+   Rutor på en meter med origo i brunn 7 som den mättes med mobilen. Talen är
+   samma som BARE_ORIGIN och BARE_M där och får inte ändras på ett ställe utan
+   det andra: då flyttas all barmark i sidled utan att något märks. */
+const BAR_URL='https://gkrallo.github.io/snowgun-forecast/barmark.json';
+const BAR_FORMAT='snoprognos-barmark-2';
+const BAR_ORIGO={lat:58.503781,lon:13.087922};
+const BAR_M=(()=>{const p=BAR_ORIGO.lat*Math.PI/180;
+  return {lat:111132.92-559.82*Math.cos(2*p)+1.175*Math.cos(4*p), lon:111412.84*Math.cos(p)-93.5*Math.cos(3*p)};})();
+const barXY=(lat,lon)=>[(lon-BAR_ORIGO.lon)*BAR_M.lon,(lat-BAR_ORIGO.lat)*BAR_M.lat];
+let bar={rutor:null,fel:'',hamtar:false,pass:0};
+// Tar emot barmarksfilen. Svarar med en feltext, eller '' när den gick in.
+function barTaEmot(j){
+  if(!j||j.format!==BAR_FORMAT||!Array.isArray(j.cells)||j.cell!==1)return 'Barmarksfilen har ett format som appen inte känner igen.';
+  const o=j.origin;
+  if(!Array.isArray(o)||Math.abs(o[0]-BAR_ORIGO.lat)>1e-7||Math.abs(o[1]-BAR_ORIGO.lon)>1e-7)
+    return 'Barmarkens nollpunkt är en annan än appens. Inget jämförs förrän det är utrett.';
+  const m=new Map();
+  for(const c of j.cells){
+    if(!Array.isArray(c))continue;
+    const [gx,gy,mm,n,sd]=c;
+    if(Number.isInteger(gx)&&Number.isInteger(gy)&&Number.isFinite(mm))m.set(gx+','+gy,{h:mm/1000,n:Number.isFinite(n)?n:1,sd:Number.isFinite(sd)?sd/1000:null});
+  }
+  if(!m.size)return 'Barmarksfilen är tom.';
+  bar.rutor=m; bar.pass=Array.isArray(j.files)?j.files.length:0;
+  return '';
+}
+async function barLadda(){
+  if(bar.hamtar||!real)return;
+  bar.hamtar=true; bar.fel='';
+  try{
+    const r=await fetch(BAR_URL,{cache:'no-cache'});
+    if(!r.ok)throw new Error('svar '+r.status);
+    bar.fel=barTaEmot(await r.json());
+  }catch(e){bar.fel='Barmarken gick inte att hämta. Punkterna går att spara ändå, och jämförs när barmarken finns.';}
+  bar.hamtar=false;
+  if(current==='rtk')liveRefresh();
+}
+function barOm(){bar.fel='';barLadda();render();}
+// ?demo: en påhittad, svagt lutande mark, så att inget riktigt behöver hämtas.
+const barDemo=(lat,lon)=>{const [x,y]=barXY(lat,lon);return 130+0.004*x-0.002*y;};
+/* Barmarken under en punkt: rutan punkten ligger i, annars närmaste mätta
+   ruta inom två meter (avst = meter till den rutans mitt). Mark som bara är
+   framräknad mellan körda linjer används inte: en kontrollpunkt ska ligga
+   på mätt mark. */
+function barVid(lat,lon){
+  const [x,y]=barXY(lat,lon), gx=Math.floor(x), gy=Math.floor(y);
+  if(!real)return {h:barDemo(lat,lon),n:3,sd:0.02,avst:0};
+  if(!bar.rutor)return null;
+  const r=bar.rutor.get(gx+','+gy);
+  if(r)return Object.assign({avst:0},r);
+  let b=null;
+  for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++){
+    const c=bar.rutor.get((gx+dx)+','+(gy+dy)); if(!c)continue;
+    const vx=gx+dx+.5-x, vy=gy+dy+.5-y, d=Math.hypot(vx,vy);
+    // rikt = åt vilket håll rutan ligger, i grader från norr
+    if(d<=2&&(!b||d<b.avst))b=Object.assign({avst:d,rikt:(Math.atan2(vx,vy)*180/Math.PI+360)%360},c);
+  }
+  return b;
+}
+const VADERSTRECK=['norr','nordost','öster','sydost','söder','sydväst','väster','nordväst'];
+const strackTxt=g=>VADERSTRECK[Math.round(g/45)%8];
+
+/* ---------- pucken över Bluetooth ----------
+   SparkFuns firmware skickar NMEA över Nordics UART-tjänst när pucken står
+   på BLE. Strömmen kan också innehålla binär rådata, och rader kan komma
+   halva: bara hela rader med rätt kontrollsumma räknas. En halv höjd är
+   värre än ingen. */
+const NUS_SERVICE='6e400001-b5a3-f393-e0a9-e50e24dcca9e', NUS_TX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const PUCK_TYST_MS=5000;
+function nmeaOk(rad){
+  const s=rad.indexOf('*'); if(rad[0]!=='$'||s<0)return false;
+  let x=0; for(let i=1;i<s;i++)x^=rad.charCodeAt(i);
+  return x===parseInt(rad.slice(s+1,s+3),16);
+}
+function nmeaDeg(v,hemi){
+  v=String(v||''); const d=v.indexOf('.')-2; if(d<1)return NaN;
+  const g=+v.slice(0,d)+ +v.slice(d)/60;
+  return hemi==='S'||hemi==='W'?-g:g;
+}
+const puckTom=()=>({dev:null,vill:false,bruten:false,buf:'',gga:null,gst:null,at:0,fel:'',las:null,demo:0,aterT:0,forsok:0});
+let puck=puckTom();
+const MAT_S=30, MAT_MIN=20, MAT_SDU=0.05, MAT_ROR=0.05;
+const matTom=(msg,err)=>({pa:false,start:0,prov:[],res:null,msg:msg||'',err:!!err,sparar:false});
+let mat=matTom();
+let rtkForm={brunn:'',text:''};
+function puckMata(text){
+  puck.buf+=text;
+  const delar=puck.buf.split('\n'); puck.buf=delar.pop().slice(-512);   // en halv rad väntar på resten
+  for(const raw of delar){
+    const i=raw.lastIndexOf('$'); if(i<0)continue;
+    const rad=raw.slice(i).trim(); if(!nmeaOk(rad))continue;
+    const f=rad.slice(0,rad.indexOf('*')).split(','), typ=f[0].slice(3);
+    if(typ==='GST'){
+      // Höjdens osäkerhet (fält 8). Hör ihop med GGA-raden med samma klockslag.
+      const s=parseFloat(f[8]); puck.gst={tag:f[1],sdu:Number.isFinite(s)?s:null};
+      if(puck.gga&&puck.gga.tag===f[1])puck.gga.sdu=puck.gst.sdu;
+    }else if(typ==='GGA'){
+      const alt=parseFloat(f[9]), sep=parseFloat(f[11]), ald=parseFloat(f[13]);
+      // Barmarken är höjd över ellipsoiden. GGA ger höjd över havet och
+      // geoidens höjd var för sig; utan båda går höjden inte att använda.
+      const g={tag:f[1],q:+f[6]||0,sats:+f[7]||0,hdop:parseFloat(f[8]),lat:nmeaDeg(f[2],f[3]),lon:nmeaDeg(f[4],f[5]),
+        h:alt+sep, kalder:Number.isFinite(ald)?ald:null, sdu:puck.gst&&puck.gst.tag===f[1]?puck.gst.sdu:null, t:Date.now()};
+      if(![g.lat,g.lon,g.h].every(Number.isFinite))g.q=0;
+      puck.gga=g; puck.at=g.t; puck.bruten=false;
+      if(mat.pa)mat.prov.push(g);
+    }
+  }
+}
+// ingen = inte ansluten, bruten = Bluetooth föll bort, vantar = inget har
+// kommit än, tyst = gamla värden, utan = ingen position, grov = position
+// utan korrektioner, float, fix.
+function puckLage(){
+  if(!puck.dev)return 'ingen';
+  if(puck.bruten)return 'bruten';
+  if(!puck.gga)return 'vantar';
+  if(Date.now()-puck.at>PUCK_TYST_MS)return 'tyst';
+  const q=puck.gga.q;
+  return q===4?'fix':q===5?'float':q===0?'utan':'grov';
+}
+async function puckKoppla(dev){
+  const srv=await dev.gatt.connect();
+  const ch=await (await srv.getPrimaryService(NUS_SERVICE)).getCharacteristic(NUS_TX);
+  const dec=new TextDecoder('latin1');
+  ch.addEventListener('characteristicvaluechanged',e=>puckMata(dec.decode(e.target.value)));
+  await ch.startNotifications();
+}
+function puckNer(){
+  clearInterval(puck.demo); clearTimeout(puck.aterT);
+  if(puck.las){try{puck.las.release();}catch(e){}}
+  const d=puck.dev; puck=puckTom();
+  if(d&&d.gatt&&d.gatt.connected){try{d.gatt.disconnect();}catch(e){}}
+  if(mat.pa)mat=matTom('Pucken kopplades från under mätningen.',true);
+}
+// Skärmen hålls tänd medan pucken är ansluten. Låset släpps av sig självt när
+// sidan göms och tas om när den kommer fram igen.
+async function puckVaken(){
+  try{if(navigator.wakeLock&&puck.dev&&!document.hidden)puck.las=await navigator.wakeLock.request('screen');}catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&puck.dev)puckVaken();});
+/* Bluetooth föll bort utan att någon bad om det. Samma puck provas igen några
+   gånger utan nytt tryck; går det inte får man ansluta på nytt. (Inte provat
+   med en riktig puck än, 28 november.) */
+function puckTappad(){
+  if(!puck.vill||!puck.dev)return;
+  const dev=puck.dev;
+  if(mat.pa)mat=matTom('Bluetooth bröts under mätningen.',true);
+  if(puck.forsok>=5){puckNer();puck.fel='Bluetooth bröts och gick inte att få tillbaka. Tryck Anslut pucken.';rtkRita();return;}
+  puck.forsok++; puck.bruten=true; puck.gga=null;
+  puck.fel='Bluetooth bröts. Försöker ansluta igen ('+puck.forsok+' av 5) …'; rtkRita();
+  puck.aterT=setTimeout(()=>{
+    if(puck.dev!==dev||!puck.vill)return;
+    puckKoppla(dev).then(()=>{puck.fel='';puck.forsok=0;puck.bruten=false;rtkRita();},()=>puckTappad());
+  },3000);
+}
+async function puckAnslut(){
+  if(puck.dev){puckNer();rtkRita();return;}
+  if(!real){puckDemo();rtkRita();return;}
+  if(!navigator.bluetooth){puck.fel='Den här webbläsaren kan inte Bluetooth. Det fungerar i Chrome på Android och på dator, inte på iPhone.';rtkRita();return;}
+  try{
+    const dev=await navigator.bluetooth.requestDevice({filters:[{services:[NUS_SERVICE]},{namePrefix:'Facet'}],optionalServices:[NUS_SERVICE]});
+    puck.fel='Ansluter …'; rtkRita();
+    await puckKoppla(dev);
+    puck.dev=dev; puck.vill=true; puck.fel=''; puck.forsok=0;
+    dev.addEventListener('gattserverdisconnected',puckTappad);
+    puckVaken();
+  }catch(e){
+    puck.fel=e&&e.name==='NotFoundError'?'Ingen puck vald.'
+      :e&&e.name==='SecurityError'?'Webbläsaren tillät inte Bluetooth här. Tryck på knappen igen.'
+      :'Kunde inte ansluta ('+(e&&e.message||e)+'). Står pucken på BLE under System Configuration → Bluetooth Protocol?';
+  }
+  rtkRita();
+}
+/* ?demo: en låtsaspuck vid den valda brunnen (brunn 4 om ingen är vald). Den
+   får fix efter några sekunder och ligger med flit 8 cm över den påhittade
+   barmarken och en bit nordost om brunnen, så att det syns vad Mätprov
+   letar efter. Rör ingen riktig data. */
+const nmeaRad=s=>{let x=0;for(let i=0;i<s.length;i++)x^=s.charCodeAt(i);return '$'+s+'*'+x.toString(16).toUpperCase().padStart(2,'0')+'\r\n';};
+const nmeaGrad=(v,n)=>{const a=Math.abs(v),g=Math.floor(a);return String(g).padStart(n,'0')+((a-g)*60).toFixed(7).padStart(10,'0');};
+function puckDemoRad(sek){
+  const w=WELLS.find(x=>x.no===+rtkForm.brunn&&!x.spare)||WELLS[3], q=sek<3?1:sek<6?5:4, brus=()=>(Math.random()-.5)*0.012;
+  const lat=w.lat+(0.42+brus())/BAR_M.lat, lon=w.lon+(0.61+brus())/BAR_M.lon, h=barDemo(w.lat,w.lon)+0.08+brus();
+  const d=new Date(), p=n=>String(n).padStart(2,'0'), kl=p(d.getUTCHours())+p(d.getUTCMinutes())+p(d.getUTCSeconds())+'.'+p(Math.floor(d.getUTCMilliseconds()/10));
+  return nmeaRad(`GNGGA,${kl},${nmeaGrad(lat,2)},N,${nmeaGrad(lon,3)},E,${q},24,0.6,${(h-35.2).toFixed(3)},M,35.200,M,${q>=4?'1.0':''},${q>=4?'0000':''}`)+
+    nmeaRad(`GNGST,${kl},0.9,,,,0.008,0.008,${q===4?'0.012':q===5?'0.300':'1.500'}`);
+}
+function puckDemo(){
+  puck=puckTom(); puck.dev={demo:true}; puck.vill=true;
+  const t0=Date.now();
+  puck.demo=setInterval(()=>puckMata(puckDemoRad((Date.now()-t0)/1000)),250);
+}
+
+/* ---------- mätningen ----------
+   Trettio sekunder med pucken stilla. Bara värden med RTK-fix och
+   höjdosäkerhet under fem centimeter räknas, samma regel som barmarken är
+   byggd med. Float ger decimeterfel. */
+const rtkMedian=a=>{const s=[...a].sort((x,y)=>x-y),n=s.length;return n?(n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2):null;};
+const matBra=p=>p.q===4&&(p.sdu==null||p.sdu<=MAT_SDU);
+function matStarta(){
+  if(puckLage()!=='fix'){mat=matTom('Mätningen kräver RTK-fix.',true);rtkRita();return;}
+  mat=matTom(); mat.pa=true; mat.start=Date.now(); rtkRita();
+}
+function matAvbryt(text){mat=matTom(text,!!text);rtkRita();}
+function matKlar(){
+  const alla=mat.prov, bra=alla.filter(matBra);
+  if(bra.length<MAT_MIN)return matAvbryt(`För få värden med RTK-fix: ${bra.length} av ${alla.length}. Vänta tills pucken har fix och höjdosäkerhet under ${MAT_SDU*100} cm, och mät igen.`);
+  const n=bra.length, lat=bra.reduce((s,p)=>s+p.lat,0)/n, lon=bra.reduce((s,p)=>s+p.lon,0)/n, hm=bra.reduce((s,p)=>s+p.h,0)/n;
+  const [x0,y0]=barXY(lat,lon), su=bra.map(p=>p.sdu).filter(Number.isFinite);
+  mat=matTom();
+  mat.res={ts:Date.now(),lat,lon,h:rtkMedian(bra.map(p=>p.h)),n,sd:Math.sqrt(bra.reduce((s,p)=>s+(p.h-hm)**2,0)/n),
+    sdu:su.length?rtkMedian(su):null, bort:alla.length-n,
+    // Hur långt den längst bort liggande punkten hamnade från medelvärdet: har pucken rört sig?
+    ror:Math.max(...bra.map(p=>{const [x,y]=barXY(p.lat,p.lon);return Math.hypot(x-x0,y-y0);}))};
+  rtkRita();
+}
+function rtkTick(){
+  if(mat.pa){
+    const l=puckLage();
+    if(l==='tyst'||l==='ingen'||l==='bruten')matAvbryt('Pucken tystnade under mätningen.');
+    else if(Date.now()-mat.start>=MAT_S*1000)matKlar();
+  }
+  if(puck.dev||mat.pa)rtkRita();
+}
+// En mätning som pågår ska bli klar också om man bläddrar till en annan vy.
+setInterval(()=>{if(current==='rtk'||mat.pa)rtkTick();},1000);
+
+/* ---------- kontrollpunkterna (/pist/kontroll) ---------- */
+let kontrollData={}, kontrollErr='', kontrollMsg='';
+// Samma krav på nyckeln som i dammloggen och i reglerna (DAMM_ID).
+const kontrollList=()=>Object.entries(kontrollData||{}).filter(([id,x])=>DAMM_ID.test(id)&&x&&typeof x==='object')
+  .map(([id,x])=>Object.assign({},x,{id})).filter(p=>[p.ts,p.lat,p.lon,p.h].every(Number.isFinite)).sort((a,b)=>b.ts-a.ts);
+function applyKontroll(v,nekad){
+  if(!real)return;   // i ?demo ligger punkterna bara i minnet
+  kontrollData=v||{};
+  kontrollErr=nekad?'Får inte läsa kontrollpunkterna. Säg till en administratör.':'';
+  if(current==='rtk')liveRefresh();
+}
+function kontrollSkriv(id,data){
+  if(real){ if(!window.kontrollWrite)return Promise.reject(new Error('Inte inloggad'));
+    return window.kontrollWrite(id,data); }
+  if(data===null)delete kontrollData[id]; else kontrollData[id||('demo'+Date.now())]=data;
+  return Promise.resolve();
+}
+// Brunnar som fick fix bara åt ena hållet när de mättes in 15 november och
+// kan ligga upp till en meter fel. De duger för höjden, inte i sidled.
+const BRUNN_OSAKER=[3,5,6,8,10,11,12];
+/* Punkten mot barmarken och mot brunnen. dh = puckens höjd minus barmarken
+   (plus = pucken visar högre). dn och de = meter norr och öster om brunnens
+   inmätta läge. langt = mer än fem meter från brunnen: troligen fel brunn
+   vald, och punkten räknas då inte in i sammanfattningen.
+
+   Brunnarnas hörn ligger en till två meter utanför den mätta marken
+   (fyrhjulingen körde gatans kanter). En punkt vid en brunn ger därför läget
+   i sidled, och höjden mäts på mätt mark: bara punkter som ligger i en mätt
+   ruta (avst 0) räknas i höjdens median. */
+function kontrollRakna(p){
+  const b=barVid(p.lat,p.lon), w=Number.isInteger(p.brunn)?WELLS.find(x=>x.no===p.brunn&&!x.spare):null;
+  const ut={dh:b?p.h-b.h:null, avst:b?b.avst:null, dn:null, de:null, osaker:false, langt:false};
+  if(w){ut.dn=(p.lat-w.lat)*BAR_M.lat; ut.de=(p.lon-w.lon)*BAR_M.lon; ut.osaker=BRUNN_OSAKER.includes(w.no); ut.langt=Math.hypot(ut.dn,ut.de)>5;}
+  return ut;
+}
+function kontrollSumma(L=kontrollList()){
+  const R=L.map(kontrollRakna).filter(r=>!r.langt);
+  const hojd=R.filter(r=>r.dh!=null&&r.avst===0).map(r=>r.dh), sid=R.filter(r=>r.dn!=null&&!r.osaker);
+  return {n:L.length, nh:hojd.length, dh:rtkMedian(hojd), dhMin:hojd.length?Math.min(...hojd):null, dhMax:hojd.length?Math.max(...hojd):null,
+    ns:sid.length, dn:rtkMedian(sid.map(r=>r.dn)), de:rtkMedian(sid.map(r=>r.de))};
+}
+async function rtkSpara(){
+  const r=mat.res, me=dammJag(); if(!r||mat.sparar)return;
+  const fel=t=>{mat.msg=t;mat.err=true;mat.sparar=false;rtkRita();};
+  if(!me)return fel('Inte inloggad.');
+  if(r.ror>MAT_ROR)return fel('Pucken rörde sig under mätningen. Mät igen med pucken stilla.');
+  const d={ts:r.ts,lat:+r.lat.toFixed(8),lon:+r.lon.toFixed(8),h:+r.h.toFixed(3),n:r.n,sd:+r.sd.toFixed(3),uid:me.uid,namn:me.namn};
+  if(Number.isFinite(r.sdu))d.sdu=+r.sdu.toFixed(3);
+  const b=+rtkForm.brunn; if(Number.isInteger(b)&&b>=1&&b<=19)d.brunn=b;
+  const t=String(rtkForm.text||'').trim().slice(0,120); if(t)d.text=t;
+  mat.sparar=true; mat.msg=''; rtkRita();
+  try{
+    await kontrollSkriv(null,d);
+    mat=matTom('Sparat bland kontrollpunkterna.'); rtkForm.text='';
+    if(current==='rtk')render();
+  }catch(e){fel('Kunde inte spara: '+felText(e));}
+}
+async function kontrollTaBort(id){
+  const p=kontrollList().find(x=>x.id===id); if(!p||!dammFarAndra(p))return;
+  if(!tvaTryck('kp:'+id,()=>{kontrollMsg='';})){
+    kontrollMsg=`Ta bort punkten ${fmtDT(p.ts)}? Tryck en gång till på knappen.`; render(); return;}
+  try{await kontrollSkriv(id,null);kontrollMsg='Borttagen.';}
+  catch(e){kontrollMsg='Kunde inte ta bort: '+felText(e);}
+  render();
+}
+// Vid utloggning: pucken kopplas från och inget ligger kvar åt nästa.
+function rtkRensa(){puckNer();mat=matTom();rtkForm={brunn:'',text:''};kontrollData={};kontrollErr='';kontrollMsg='';}
+
+/* ---------- vyn ---------- */
+const cmAbs=m=>num(Math.abs(m)*100,1)+' cm';
+const cmTeck=m=>(m>=0?'+':'−')+cmAbs(m);
+const hojdTxt=dh=>Math.abs(dh)<0.0005?'lika med barmarken':cmAbs(dh)+(dh>0?' över':' under')+' barmarken';
+const sidTxt=(dn,de)=>cmAbs(dn)+(dn>=0?' norr':' söder')+' och '+cmAbs(de)+(de>=0?' öster':' väster')+' om';
+function rtkStatusHTML(){
+  const l=puckLage(), g=puck.gga;
+  const lampa=(ok,txt)=>`<span class="chip ${ok===true?'s-run':ok===false?'s-off':'s-limit'}"><span class="d"></span>${txt}</span>`;
+  const bt=l==='ingen'?lampa(false,'Pucken inte ansluten'):l==='bruten'?lampa(null,'Bluetooth bröts'):lampa(true,real?'Pucken ansluten':'Låtsaspuck');
+  const fix={fix:lampa(true,'RTK-fix'),float:lampa(null,'RTK float'),grov:lampa(false,'Ingen korrektion'),utan:lampa(false,'Ingen position'),
+    vantar:lampa(null,'Väntar på position'),tyst:lampa(null,'Tyst i '+Math.round((Date.now()-puck.at)/1000)+' s')}[l]||'';
+  let h=`<div class="row" style="flex-wrap:wrap;gap:8px;margin-top:12px">${bt}${fix}</div>`;
+  if(g&&['fix','float','grov','utan','tyst'].includes(l)){
+    // Gamla värden får inte se färska ut: nedtonade, och texten säger det.
+    h+=`<div class="readout${l==='tyst'?' rtk-gammal':''}">
+      <div><b>${g.sats}</b><span>satelliter</span></div>
+      <div><b>${Number.isFinite(g.sdu)?num(g.sdu*100,1)+' cm':'–'}</b><span>höjdosäkerhet</span></div>
+      <div><b>${g.kalder!=null?num(g.kalder,1)+' s':'–'}</b><span>korrektionens ålder</span></div>
+      <div><b>${g.q?num(g.h,2)+' m':'–'}</b><span>höjd över ellipsoiden</span></div></div>`;
+    if(g.q){
+      // Ligger pucken på mätt mark? Bara där går höjden att jämföra.
+      const b=l==='tyst'?null:barVid(g.lat,g.lon);
+      const mark=l==='tyst'?'':!real||b&&b.avst===0?' · <b style="color:#34d399">på mätt mark</b>'
+        :b?` · närmaste mätta ruta ${num(b.avst,1)} m åt ${strackTxt(b.rikt)}`:bar.rutor?' · ingen mätt mark inom två meter':'';
+      h+=`<p class="muted small" style="margin:8px 0 0">${g.lat.toFixed(7)}, ${g.lon.toFixed(7)}${mark}</p>`;
+    }
+    const fork={grov:'Pucken har en position men får inga korrektioner. Kontrollera att den är ansluten till wifi och till onocoy (NTRIP Client på puckens inställningssida).',
+      float:'Korrektionerna kommer fram, men pucken har inte låst sig än. Vänta, och ge den fri himmel.',
+      utan:'Pucken ser inte tillräckligt många satelliter för en position.',
+      tyst:'Inget har kommit från pucken på '+Math.round((Date.now()-puck.at)/1000)+' s. Värdena ovan är gamla.'}[l];
+    if(fork)h+=`<p class="muted small" style="margin:8px 0 0;line-height:1.5">${fork}</p>`;
+  }
+  if(puck.fel)h+=`<p class="mt-msg fel">${esc(puck.fel)}</p>`;
+  h+=`<div class="row" style="margin-top:12px"><button class="linkbtn${puck.dev?'':' fram'}" onclick="puckAnslut()">${puck.dev?'Koppla från':real?'Anslut pucken':'Starta låtsaspucken'}</button></div>`;
+  return h;
+}
+function rtkMatHTML(){
+  const l=puckLage();
+  if(mat.pa){
+    const s=Math.min(MAT_S,Math.round((Date.now()-mat.start)/1000));
+    return `<div class="bar green" style="margin-top:14px"><i style="width:${Math.round(s/MAT_S*100)}%"></i></div>
+      <p class="muted small" style="margin:8px 0 0">Mäter … ${s} av ${MAT_S} s, ${mat.prov.filter(matBra).length} värden med fix. Håll pucken stilla.</p>
+      <div class="row" style="margin-top:12px"><button class="linkbtn" onclick="matAvbryt()">Avbryt</button></div>`;
+  }
+  let h='';
+  if(mat.res){
+    const r=mat.res, b=+rtkForm.brunn, k=kontrollRakna(Object.assign({},r,{brunn:Number.isInteger(b)&&b>=1?b:null}));
+    const rader=[];
+    if(k.dh!=null)rader.push(`Pucken visar <b style="color:var(--text)">${hojdTxt(k.dh)}</b>`+(k.avst>0?` i närmaste mätta ruta, ${num(k.avst,1)} m bort. Så långt ifrån räknas höjden inte in: lägg pucken på mätt mark för höjden.`:'.'));
+    else rader.push(bar.rutor||!real?'Punkten ligger utanför den mätta barmarken, så höjden går inte att jämföra här.':'Barmarken är inte hämtad, så höjden jämförs först när den finns.');
+    if(k.dn!=null)rader.push(`Den ligger <b style="color:var(--text)">${sidTxt(k.dn,k.de)}</b> brunn ${b} som den mättes in 15 november`+(k.osaker?' (den brunnen är osäkert inmätt)':'')+'.'+(k.langt?' <b style="color:#f87171">Det är långt — är rätt brunn vald?</b>':''));
+    if(r.ror>MAT_ROR)rader.push(`<b style="color:#f87171">Pucken rörde sig ${cmAbs(r.ror)} under mätningen.</b> Mät igen med pucken stilla.`);
+    h+=`<div class="readout">
+      <div><b>${num(r.h,3)} m</b><span>höjd över ellipsoiden</span></div>
+      <div><b>${num(r.sd*100,1)} cm</b><span>spridning i höjd</span></div>
+      <div><b>${r.n}</b><span>värden${r.bort?' ('+r.bort+' utan fix)':''}</span></div></div>
+      <p class="muted small" style="margin:10px 0 0;line-height:1.6">${rader.join(' ')}</p>
+      <div class="row" style="margin-top:12px"><button class="linkbtn fram" onclick="rtkSpara()"${mat.sparar||r.ror>MAT_ROR?' disabled':''}>${mat.sparar?'Sparar …':'Spara punkten'}</button><button class="linkbtn" onclick="matStarta()"${l==='fix'?'':' disabled'}>Mät igen</button><button class="linkbtn" onclick="matAvbryt()">Släng</button></div>`;
+  }else{
+    const varfor={ingen:'Anslut pucken först.',bruten:'Väntar på pucken.',vantar:'Väntar på pucken.',tyst:'Väntar på pucken.',fix:''}[l]??'Mätningen kräver RTK-fix.';
+    h+=`<div class="row" style="margin-top:14px"><button class="linkbtn fram" onclick="matStarta()"${l==='fix'?'':' disabled'}>Mät ${MAT_S} s</button>${varfor?`<span class="muted small">${varfor}</span>`:''}</div>`;
+  }
+  if(mat.msg)h+=`<p class="mt-msg ${mat.err?'fel':''}">${esc(mat.msg)}</p>`;
+  return h;
+}
+// Bara pucken och mätningen ritas om varje sekund, inte hela vyn: fälten
+// bredvid ska inte tappa det man skriver.
+function rtkRita(){
+  if(current!=='rtk')return;
+  const s=document.getElementById('rtk_status'), m=document.getElementById('rtk_mat');
+  if(s)s.innerHTML=rtkStatusHTML();
+  if(m)m.innerHTML=rtkMatHTML();
+}
+function kontrollHTML(){
+  const L=kontrollList(), S=kontrollSumma(L);
+  if(!L.length)return `<p class="muted small" style="margin:10px 0 0">Inga kontrollpunkter sparade än.${real?'':' (I ?demo sparas de bara i minnet.)'}</p>`;
+  let h='<p class="muted small" style="margin:10px 0 0;line-height:1.6">';
+  if(S.nh)h+=`<b style="color:var(--text)">${S.nh} ${S.nh===1?'punkt':'punkter'} på mätt mark:</b> pucken visar i median ${hojdTxt(S.dh)}`+(S.nh>1?` (från ${cmTeck(S.dhMin)} till ${cmTeck(S.dhMax)})`:'')+'. ';
+  else h+='Ingen punkt ligger på mätt mark än, så höjden går inte att jämföra. ';
+  if(S.ns)h+=`<b style="color:var(--text)">${S.ns} vid säkert inmätta brunnar:</b> i median ${sidTxt(S.dn,S.de)} inmätningen. `;
+  if(S.nh<3)h+='Mät minst tre punkter på mätt mark innan skillnaden används. ';
+  h+='Ingen rättning läggs på av sig själv.</p>';
+  if(kontrollMsg)h+=`<p class="mt-msg">${esc(kontrollMsg)}</p>`;
+  h+=`<div style="overflow-x:auto"><table class="kron-tab mt-tab"><tr><th>När</th><th>Var</th><th class="r">Höjd mot barmarken</th><th class="r">I sidled mot brunnen</th><th>Vem</th><th></th></tr>`;
+  for(const p of L){
+    const k=kontrollRakna(p), var_=Number.isInteger(p.brunn)?'Brunn '+p.brunn:'Annan punkt';
+    const hojd=k.dh!=null?(k.avst>0?`${cmTeck(k.dh)}<br><span class="muted small">ruta ${num(k.avst,1)} m bort, räknas inte</span>`:`<b>${cmTeck(k.dh)}</b>`):'<span class="muted small">'+(bar.rutor||!real?'utanför barmarken':'barmarken saknas')+'</span>';
+    const sid=k.dn!=null?`${cmTeck(k.dn)} N, ${cmTeck(k.de)} Ö`+(k.langt?'<br><span class="muted small">långt från brunnen, räknas inte</span>':k.osaker?'<br><span class="muted small">osäkert inmätt brunn</span>':''):'–';
+    const knapp=dammFarAndra(p)?`<button class="linkbtn"${armad('kp:'+p.id)?' style="border-color:var(--alarm);color:var(--alarm)"':''} onclick="kontrollTaBort(${jsArg(p.id)})">${armad('kp:'+p.id)?'Tryck igen':'Ta bort'}</button>`:'';
+    h+=`<tr><td>${fmtDT(p.ts)}</td><td>${var_}${typeof p.text==='string'&&p.text?'<br><span class="muted small">'+esc(p.text)+'</span>':''}</td><td class="r">${hojd}</td><td class="r">${sid}</td><td>${esc(p.namn)}</td><td class="r">${knapp}</td></tr>`;
+  }
+  return h+'</table></div>';
+}
+function vRtk(){
+  if(real&&!bar.rutor&&!bar.hamtar&&!bar.fel)barLadda();
+  const barTxt=!real?'Barmarken här är påhittad.'
+    :bar.rutor?`Barmarken har ${bar.rutor.size.toLocaleString('sv-SE')} mätta rutor ur ${bar.pass} pass och hämtas från Snöprognos.`
+    :bar.hamtar?'Hämtar barmarken …':esc(bar.fel)+' <button class="linkbtn" onclick="barOm()">Försök igen</button>';
+  return topbar('Snödjup','Mätprov — pucken mot barmarken')+`<div class="view">
+   <div class="banner ok">${icon('track','#34d399',20)}<div style="flex:1"><b>Stämmer pucken med barmarken?</b> <span class="muted small">Barmarken är räknad mot Swepos. Livemätningen kommer via den egna basen och onocoy, i ett annat referenssystem. Lägg pucken med RTK-fix på mark som finns i barmarken och mät: skillnaden ska bli densamma överallt, och blir då en fast rättning för säsongen. ${barTxt}</span></div></div>
+   ${kontrollErr?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${kontrollErr}</b></div></div>`:''}
+   <div class="dam-grid">
+     <div class="card dam-ctrl" id="rtkpuck">
+       <h3>${icon('gauge','#7dd3fc',15)} Pucken</h3>
+       <p class="muted small" style="margin:8px 0 0;line-height:1.5">Bluetooth fungerar i Chrome på Android och på dator, inte på iPhone. Pucken ska stå på BLE och själv vara ansluten till onocoy över wifi.</p>
+       <div id="rtk_status">${rtkStatusHTML()}</div>
+     </div>
+     <div class="card dam-ctrl" id="rtkmat">
+       <h3>${icon('map','#7dd3fc',15)} Mät en punkt</h3>
+       <label for="rtk_brunn">Var ligger pucken?</label>
+       <select id="rtk_brunn" onchange="rtkForm.brunn=this.value;rtkRita()">
+         <option value="">Annan punkt på mätt mark</option>
+         ${WELLS.filter(w=>!w.spare).map(w=>`<option value="${w.no}"${+rtkForm.brunn===w.no?' selected':''}>Brunn ${w.no}, hörnet mot spåret${BRUNN_OSAKER.includes(w.no)?' (osäkert inmätt)':''}</option>`).join('')}
+       </select>
+       <label for="rtk_text">Anteckning</label>
+       <input type="text" id="rtk_text" maxlength="120" value="${esc(rtkForm.text)}" placeholder="till exempel: på gruset, fri himmel" oninput="rtkForm.text=this.value">
+       <div id="rtk_mat">${rtkMatHTML()}</div>
+     </div>
+   </div>
+   <div class="card" style="margin-top:14px">
+     <h3>${icon('track','#7dd3fc',15)} Kontrollpunkter</h3>
+     ${kontrollHTML()}
+   </div>
+   <div class="note" style="margin-top:14px"><b>Så gör du:</b> det behövs två sorters punkter. <b>För höjden</b> läggs pucken på mätt mark, alltså där fyrhjulingen körde längs gatans kant; rutan Pucken säger "på mätt mark" när den ligger rätt. Välj flacka ställen med fri himmel. <b>För läget i sidled</b> läggs pucken i brunnens hörn mot spåret, där slangen kommer upp, helst vid brunn 1, 2, 4, 9 och 13–19. Vänta på RTK-fix och mät. Tre punkter av varje räcker för en första bild, fem är bättre. Skiljer höjderna mer än ett par centimeter sinsemellan är det något annat än referenssystemet som spökar: träd, mjuk mark eller att pucken ligger på en tuva.</div>
+  </div>`;
+}
+
+/* ============================================================
    RENDER + LIVE
    ============================================================ */
 /* soft = vyn fräschas bara upp med nya värden (var femte sekund). Då ska
@@ -3249,6 +3691,7 @@ function render(soft){
   else if(current==='alarms')m.innerHTML=vAlarms();
   else if(current==='forecast')m.innerHTML=vForecast();
   else if(current==='members')m.innerHTML=vMembers();
+  else if(current==='rtk')m.innerHTML=vRtk();
   // Grafer och karta som hör till en vy man lämnat ska bort, annars ligger de
   // kvar i minnet mot en canvas som inte längre finns.
   for(const k in charts){if(!document.getElementById(k)){charts[k].destroy();delete charts[k];}}
@@ -3327,6 +3770,7 @@ function clearApp(){
     dammData={avlas:{},kalib:{}};dammErr='';damSync();
     calForm={cm:'',ts:'',edit:null,msg:'',err:false};mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,sparar:false};loggAlla=false;
     larmlage={};notisSt={pa:false,laddad:false,arbetar:false,msg:'',err:false};}
+  rtkRensa();
   isAdmin=false;myKey='';members=null;memMsg='';memForm={email:'',name:'',role:'viewer'};
   if(current==='members')current='overview';
 }
@@ -3417,8 +3861,9 @@ const MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 // inget om varför.
 const INAPP = /FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\/|; wv\)/i.test(navigator.userAgent);
 let stopMember = null, stopMeta = null, stopHist = null, stopMembers = null, stopDamm = null, stopVatten = null, curRoll = 'Snögruppen';
-let stopLarm = null, stopNotis = null;
+let stopLarm = null, stopNotis = null, stopKontroll = null;
 function stopData() {
+  if (stopKontroll) { stopKontroll(); stopKontroll = null; }
   if (stopLarm) { stopLarm(); stopLarm = null; }
   if (stopNotis) { stopNotis(); stopNotis = null; }
   if (stopVatten) { stopVatten(); stopVatten = null; }
@@ -3444,6 +3889,14 @@ window.loadHist = hours => {
 window.dammWrite = (lista, id, data) => {
   if (!fb || !fb.auth.currentUser) return Promise.reject(new Error('Inte inloggad'));
   const bas = fb.dbm.ref(fb.db, 'damm/' + lista);
+  if (data === null) return fb.dbm.remove(fb.dbm.child(bas, id));
+  return fb.dbm.set(id ? fb.dbm.child(bas, id) : fb.dbm.push(bas), data);
+};
+// Kontrollpunkterna från Mätprov (/pist/kontroll). Samma regler som dammens
+// rader: en medlem lägger till och tar bort sitt eget, en administratör allt.
+window.kontrollWrite = (id, data) => {
+  if (!fb || !fb.auth.currentUser) return Promise.reject(new Error('Inte inloggad'));
+  const bas = fb.dbm.ref(fb.db, 'pist/kontroll');
   if (data === null) return fb.dbm.remove(fb.dbm.child(bas, id));
   return fb.dbm.set(id ? fb.dbm.child(bas, id) : fb.dbm.push(bas), data);
 };
@@ -3649,6 +4102,9 @@ if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
     // säsong, så hela grenen.
     stopVatten = fb.dbm.onValue(fb.dbm.ref(fb.db, 'vattenTimme'),
       s6 => window.applyVattenTimme(s6.val()), () => window.applyVattenTimme(null, true));
+    // Kontrollpunkterna från Mätprov: en handfull rader, så hela grenen.
+    stopKontroll = fb.dbm.onValue(fb.dbm.ref(fb.db, 'pist/kontroll'),
+      s9 => window.applyKontroll(s9.val()), () => window.applyKontroll(null, true));
     // Pushlarm som pågår, och om den här telefonen har larmen på.
     stopLarm = fb.dbm.onValue(fb.dbm.ref(fb.db, 'larmlage/aktiva'),
       s7 => window.applyLarmlage(s7.val()), () => window.applyLarmlage(null));
