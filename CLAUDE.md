@@ -34,10 +34,16 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
 
 **Efter kodgranskningen 28 november** (listan står i
 `snowgun-forecast/matdata/granskning-2026-11-28.md`) är Snökolls fynd rättade
-och incheckade, med prov. **När det här skrevs var ingenting utlagt och
-bryggan 13 inte installerad** — kontrollera med `git log origin/main..` och
-`/live/meta/version` innan du utgår från något annat. Reglerna lades ut 28
-november kväll. Kristian bestämde samma kväll: förslagssidorna bara på
+och incheckade, med prov. **Reglerna, appen och larmfunktionen lades ut 28
+november kväll** (reglerna först, sedan appen och `vakt` vid 19:30). Den
+utlagda sidan är kontrollerad utifrån: samma fil som i repot,
+säkerhetshuvudena finns, biblioteken laddas med sina kontrollsummor,
+förslagssidorna svarar 404, och Firebases egna sidor för inloggningen
+(`/__/auth/…`) har ingen ramspärr. **Bryggan 13 är inte installerad** — se
+`/live/meta/version`; larmet "Styrsystemet står" och fem minuters gräns i
+appen kräver den. Inte provat av Claude: inloggningen, och att notiser
+kommer fram.
+Kristian bestämde samma kväll: förslagssidorna bara på
 förhandslänken (`forslag/`), Vattenråd märks som skiss, dammens läckage och
 reservtakt är fasta värden lika för alla, ett pushlarm när styrsystemet
 står, och översiktens besked "Läget nu" (nedan). Se "Mönster efter
