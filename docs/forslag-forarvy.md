@@ -1,7 +1,7 @@
 # Förarvyn för pistmaskinerna
 
 26 november 2026. **Klickbar prototyp, inte utlagd.** Sidan är
-`app/pist.html` och nås på `/pist.html`, skild från resten av Snökoll så att
+`forslag/pist.html` och nås på `/pist.html`, skild från resten av Snökoll så att
 plattan i hytten kan starta rakt dit. All data i den är påhittad utom spåret,
 brunnarna och flygbilden. Den skriver ingenting till Firebase och loggar inte
 in.
@@ -48,7 +48,7 @@ en egen `pist-manifest.json` så att förarvyn kan installeras som en egen app
 
 ## Förslag 2, för mobilen (27 november)
 
-`app/pist-mobil.html`, efter Kristians synpunkter på förslag 1. Förslag 1
+`forslag/pist-mobil.html`, efter Kristians synpunkter på förslag 1. Förslag 1
 (`pist.html`) ligger kvar som det var, så att förarna kan jämföra.
 
 - **En maskin**, den röda PistenBully 100 (ritad, utan märkets logga).
@@ -85,7 +85,7 @@ en egen `pist-manifest.json` så att förarvyn kan installeras som en egen app
 
 ## Förslag 3, planering (27 november)
 
-`app/planering.html`: när ska vi schakta, pista och spåra? Byggd på SLF:s
+`forslag/planering.html`: när ska vi schakta, pista och spåra? Byggd på SLF:s
 handbok *Slope Preparation and Grooming* (Davos 2019); sidnumren står vid
 varje tumregel i sidan. Allt väder och all snötillverkning är påhittat.
 
@@ -114,18 +114,26 @@ förarvyn. Tiderna då spåret är öppet (08–21) är påhittade.
 
 ## Dela förslagen med förarna
 
-`app/forslag.html` är startsidan, med en knapp per förslag. Den delas med en
-**förhandslänk i Firebase Hosting**: en egen adress som inte rör
-snow.pettersson.app och slutar gälla av sig själv. Från repots rot, i den
-gren där förslagen finns:
+`forslag/forslag.html` är startsidan, med en knapp per förslag. Förslagen
+ligger i en egen mapp, `forslag/`, och **inte under `app/`** (sedan 28
+november, efter kodgranskningen). Under `app/` hamnade de på
+snow.pettersson.app, där de delade inloggning, lagring och service worker
+med den riktiga appen och gick att installera som "Snökoll Pist". De delas
+med en **förhandslänk i Firebase Hosting**: en egen adress som inte rör
+snow.pettersson.app och slutar gälla av sig själv. Från repots rot:
 
-    firebase hosting:channel:deploy forslag --expires 30d
+    firebase hosting:channel:deploy forslag --expires 30d --config firebase.forslag.json
 
+`--config firebase.forslag.json` är det som gör att mappen `forslag/` läggs
+ut och inte appen. Glöms den läggs hela Snökoll på förhandslänken i stället.
 Adressen blir ungefär `https://snoprognos--forslag-xxxxxxxx.web.app`, och
 länken till förarna är den med `/forslag.html` på slutet. Samma kommando
-igen lägger ut ändringar på samma adress. Förslagen loggar inte in, så att
-inloggningen inte fungerar på web.app-adresser spelar ingen roll för dem
-(Snökoll själv fungerar däremot inte på förhandslänken).
+igen lägger ut ändringar på samma adress. Förslagen loggar inte in och läser
+ingenting ur Firebase.
+
+Kommandot med `--config` är inte provat än (28 november). Nya förslag läggs
+i `forslag/`, aldrig i `app/`. Märket "Prototyp · påhittad data" ska synas
+på alla skärmstorlekar.
 
 Inte som en artifact på claude.ai: där får sidan troligen inte hämta
 flygbilden från Esri, förarna skulle behöva konto för att kommentera, och

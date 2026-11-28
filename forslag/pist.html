@@ -12,7 +12,7 @@
   FÖRARVYN FÖR PISTMASKINERNA — KLICKBAR PROTOTYP (26 november 2026)
 
   En egen sida i Snökoll, så att plattan i hytten kan starta rakt hit
-  (snow.pettersson.app/pist.html) och index.html inte behöver röras.
+  (förhandslänken, se docs/forslag-forarvy.md) och index.html inte behöver röras.
 
   Allt som rör sig är PÅHITTAT: snödjupet, maskinernas lägen, när det
   preparerats, Maskin 2:s markeringar, kanonernas lägen, vinden och var
@@ -290,7 +290,6 @@ body.natt #app{filter:brightness(.8)}
   #fart{font-size:1.5rem}
   .prov span{display:none}
   .prov button{min-width:36px;height:34px;font-size:.8rem}
-  #provband{display:none}
   .legend span.l-over,.bandhuv .valv{display:none}
 }
 @media (prefers-reduced-motion:reduce){.spin,.chip .pt,.mk-enhet.kor .ik,#fr-slang.nara{animation:none}}
@@ -1417,7 +1416,8 @@ ritaPanel(); ritaToppen(); ritaFramat();
 requestAnimationFrame(ruta);
 // Samma service worker som Snökoll: förarvyn kan installeras som en egen app
 // på plattan (pist-manifest.json), och MapLibre sparas mellan gångerna.
-if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+// Ingen service worker: förslagen ligger bara på förhandslänken och ska alltid
+// hämtas färska. (forslag/sw.js finns bara för att ta bort en gammal.)
 </script>
 </body>
 </html>

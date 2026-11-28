@@ -120,3 +120,38 @@ test('reglerna är giltig JSON och stängda i roten', () => {
   assert.equal(r['.read'], false);
   assert.equal(r['.write'], false);
 });
+
+/* ---------- S3: förslagen ligger inte på den skarpa adressen ---------- */
+
+test('S3: under app/ ligger bara Snökoll', () => {
+  const filer = fs.readdirSync(new URL('app/', rot)).sort();
+  assert.deepEqual(filer, ['index.html', 'kanon-192.png', 'kanon-512.png', 'kanon-apple.png', 'kanon-maskable-512.png', 'manifest.json', 'sw.js']);
+  assert.equal(JSON.parse(las('firebase.json')).hosting.public, 'app');
+  assert.equal(JSON.parse(las('firebase.forslag.json')).hosting.public, 'forslag');
+});
+
+test('S3: förslagen går inte att förväxla med Snökoll', () => {
+  for (const m of ['forslag/pist-manifest.json', 'forslag/pist-mobil-manifest.json']) {
+    const j = JSON.parse(las(m));
+    assert.doesNotMatch(j.name + j.short_name, /Snökoll/, m);
+    assert.match(j.name, /prototyp, påhittad data/, m);
+    for (const i of j.icons) assert.ok(fs.existsSync(new URL('forslag/' + i.src.replace('./', ''), rot)), i.src);
+  }
+  for (const sida of ['pist.html', 'pist-mobil.html', 'planering.html', 'forslag.html']) {
+    const html = las('forslag/' + sida);
+    assert.doesNotMatch(html, /serviceWorker\.register/, sida);
+    for (const l of html.matchAll(/href="\.\/([\w-]+\.(?:html|json|png))"/g)) assert.ok(fs.existsSync(new URL('forslag/' + l[1], rot)), sida + ' länkar till ' + l[1]);
+  }
+});
+
+test('S3: märket "påhittad data" göms inte på smala skärmar', () => {
+  const html = las('forslag/pist.html');
+  assert.match(html, /id="provband">Prototyp · påhittad data</);
+  assert.doesNotMatch(html, /#provband\{display:none\}/);
+});
+
+test('S3: förslagens sw.js tar bara bort den gamla service workern', () => {
+  const kod = las('forslag/sw.js');
+  assert.match(kod, /registration\.unregister\(\)/);
+  assert.doesNotMatch(kod, /addEventListener\("(fetch|push)"/);
+});

@@ -1,0 +1,37 @@
+{
+  "name": "Förslag 1 — förarvyn (prototyp, påhittad data)",
+  "short_name": "Förslag 1",
+  "description": "Prototyp med påhittad data. Inte Snökoll: ingen riktig drift visas här.",
+  "lang": "sv",
+  "id": "./pist.html",
+  "start_url": "./pist.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "orientation": "any",
+  "background_color": "#050a13",
+  "theme_color": "#050a13",
+  "icons": [
+    {
+      "src": "./kanon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./kanon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./kanon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

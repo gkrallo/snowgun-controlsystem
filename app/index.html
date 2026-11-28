@@ -572,8 +572,9 @@ function applyLive(v){
   if(metaLive&&metaLive.sqlOk===false&&!larmlage.sql)alarms.unshift({id:'sqlnere',sev:'crit',
     title:'Bryggan når inte styrsystemets databas',
     meta:'Värdena i appen är de senast lästa.',ack:false});
-  // Inget pushlarm finns för det här läget; raden kommer med nästa hjärtslag.
-  if(dataLage()==='gss')alarms.unshift({id:'gssstar',sev:'crit',
+  // Har pushlarmet för samma sak gått ut (efter tio minuter, med bryggan 13)
+  // står det i stället, som för databasen ovan.
+  if(dataLage()==='gss'&&!larmlage.gss)alarms.unshift({id:'gssstar',sev:'crit',
     title:'Styrsystemet skriver inga nya värden',
     meta:'Bryggan går och kan läsa, men det senaste värdet är från '+dm(new Date(dataTid()))+'. Värdena i appen står still.',ack:false});
   alarms.unshift(...pushAlarms());
@@ -597,7 +598,7 @@ function pushAlarms(){
 function applyLarmlage(v){
   if(!real)return;
   larmlage=v||{};
-  alarms=alarms.filter(a=>!a.push&&!(a.id==='sqlnere'&&larmlage.sql));
+  alarms=alarms.filter(a=>!a.push&&!(a.id==='sqlnere'&&larmlage.sql)&&!(a.id==='gssstar'&&larmlage.gss));
   alarms.unshift(...pushAlarms());
   liveRefresh();
 }
@@ -642,7 +643,7 @@ function vNotis(){
     </div>
     ${hinder?`<p class="muted small" style="margin:10px 0 0;line-height:1.55">${esc(hinder)}</p>`:''}
     ${notisSt.msg?`<p class="small" style="margin:10px 0 0;color:${notisSt.err?'var(--alarm)':'var(--muted)'}">${esc(notisSt.msg)}</p>`:''}
-    <p class="muted small" style="margin:10px 0 0;line-height:1.55">Alla i snögruppen får samma larm, dygnet runt: en kanon som stannar, står i fel eller tystnar, bryggan som tystnar, och nya larm i styrsystemet. Vill du ha tyst på natten, använd telefonens Stör ej. Larmen är ett komplement — de styr ingenting, och anläggningens egna skydd gäller som förut.</p>
+    <p class="muted small" style="margin:10px 0 0;line-height:1.55">Alla i snögruppen får samma larm, dygnet runt: en kanon som stannar, står i fel eller tystnar, bryggan som tystnar, styrsystemet som slutar skriva nya värden, och nya larm i styrsystemet. Vill du ha tyst på natten, använd telefonens Stör ej. Larmen är ett komplement — de styr ingenting, och anläggningens egna skydd gäller som förut.</p>
   </div>`;
 }
 function applyHist(h){
@@ -947,7 +948,7 @@ const NAV = [
   {id:'overview', label:'Översikt',    icon:'grid'},
   {id:'water',    label:'Vattenbalans',icon:'drop'},
   {id:'dam',      label:'Damm',        icon:'dam'},
-  {id:'advisor',  label:'Vattenråd',   icon:'sliders'},
+  {id:'advisor',  label:'Vattenråd (skiss)', icon:'sliders'},
   {id:'cannons',  label:'Kanoner',     icon:'fan'},
   {id:'lances',   label:'Lansar',      icon:'lance'},
   {id:'alarms',   label:'Larm',        icon:'bell'},
@@ -1444,7 +1445,7 @@ function vWaterR(){
   </div>
   <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck efter högtryckspumpen (PT02)</h3>${histSeg()}
     ${histPts.length>1?'<div class="chartbox"><canvas id="cWater"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
-    <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren</button>
+    <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren (skiss)</button>
   </div>
   </div>`;
 }
@@ -1551,7 +1552,7 @@ function vWater(){
       <div class="val" style="font-size:1.5rem;font-weight:700;margin-top:6px">≈ 1,8 <small class="muted" style="font-size:.9rem">av 2,3 km täcks nu</small></div>
       <div class="bar" style="margin-top:10px"><i style="width:78%"></i></div>
       <p class="muted small" style="line-height:1.6;margin-top:12px">Med strypning körs <b style="color:var(--text)">7 enheter</b> samtidigt och sträckan blir längre, i stället för full effekt på 3–4. Släpps strypningen ökar produktionen per kanon men färre kan köra.</p>
-      <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren</button>
+      <button class="linkbtn" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px" onclick="go('advisor')">${icon('sliders','#7dd3fc',15)} Öppna vattenrådgivaren (skiss)</button>
     </div>
   </div>
   </div>`;
@@ -1676,11 +1677,17 @@ const DAMLV=[
    mätningar, men går inte att välja.
    V0/t0 är den senaste mätningen med måttband. Finns ingen sparad är V0 ett
    exempel, och vyn säger det. Läckage, lägsta driftnivå och reservtakten är
-   inställningar i telefonen. */
+   fasta värden, lika för alla (Kristian, 28 november). Förut gick läckaget
+   och reservtakten att ändra i telefonen, utan att sparas: de nollställdes
+   vid varje omladdning, och två telefoner kunde visa olika procent (K7).
+   Läckaget 2 m³/dygn och lägsta driftnivån 0,5 m är antagna, inte uppmätta;
+   mätningarna av läckaget står i docs/damm-matningar.md. */
 // Påfyllningspumpens takt står på ett ställe. Texterna sa förut 213, 214 och
 // "ca 9" om samma pump (K7).
 const FYLL_M3D=213;                                  // m³/dygn, cirka 9 m³/h
-let dam={ V0:3743, t0:Date.now(), kalId:null, drawn:0, fillRate:FYLL_M3D, leak:2.0, floorH:0.5, horn:'SN' };
+const LACKAGE_M3D=2;                                 // m³/dygn, läckage och avdunstning (antaget)
+const LAGSTA_NIVA_M=0.5;                             // m, lägsta driftnivå vid pumpintaget (antaget)
+let dam={ V0:3743, t0:Date.now(), kalId:null, drawn:0, fillRate:FYLL_M3D, leak:LACKAGE_M3D, floorH:LAGSTA_NIVA_M, horn:'SN' };
 // Utan sparad mätning är V0 ett exempel. I drift får det inte visas som
 // dammens nivå utanför Damm-koll, där det står att det är ett exempel (K7).
 const damKand=()=>!real||dam.kalId!==null;
@@ -2001,12 +2008,11 @@ function vDam(){
      </div>
    </div>
 
-   <div class="note" style="margin-top:14px">⚠️ <b>Så snabbt töms den:</b> användbar volym ≈ ${Math.round(V100-floorVol()).toLocaleString('sv-SE')} m³. Vid fullt uttag — pumptaket <b>70 m³/h</b> (1 680 m³/dygn), som också är dammens högsta utflöde — räcker det ungefär <b>${((V100-floorVol())/(PUMP_MAX*24)).toFixed(1)} dygn</b>. Påfyllningspumpen ger bara ${FYLL_M3D} m³/dygn (cirka ${num(FYLL_M3D/24,0)} m³/h), en bråkdel av uttaget, så den är en påfyllnad mellan passen snarare än i takt med kanonerna. Pumptaket är verkligt; lägsta driftnivå (${dam.floorH} m) och läckage är ännu exempel. Volymmodellen är exakt och förankrad i ritningen, och krönet och snorkeln är inmätta mot vattenytan.</div>
+   <div class="note" style="margin-top:14px">⚠️ <b>Så snabbt töms den:</b> användbar volym ≈ ${Math.round(V100-floorVol()).toLocaleString('sv-SE')} m³. Vid fullt uttag — pumptaket <b>70 m³/h</b> (1 680 m³/dygn), som också är dammens högsta utflöde — räcker det ungefär <b>${((V100-floorVol())/(PUMP_MAX*24)).toFixed(1)} dygn</b>. Påfyllningspumpen ger bara ${FYLL_M3D} m³/dygn (cirka ${num(FYLL_M3D/24,0)} m³/h), en bråkdel av uttaget, så den är en påfyllnad mellan passen snarare än i takt med kanonerna. Pumptaket är verkligt; lägsta driftnivå (${num(LAGSTA_NIVA_M)} m) och läckaget (${num(LACKAGE_M3D,0)} m³/dygn) är antagna, inte uppmätta. Volymmodellen är exakt och förankrad i ritningen, och krönet och snorkeln är inmätta mot vattenytan.</div>
   </div>`;
 }
 const clampH=h=>Math.max(0,Math.min(DAM.hMax,h));
 const tapeFor=h=>Math.max(0,Math.round(tapeAt(h,'SN')));
-function damNum(k,v){const n=parseFloat(String(v).replace(',','.')); if(!isNaN(n)&&n>=0)dam[k]=n; render();}
 
 /* Två tryck i stället för webbläsarens frågeruta (K10). confirm() visas inte
    i en installerad app på alla telefoner: den svarar nej direkt, och knappen
@@ -2134,10 +2140,7 @@ function mtCard(){
     ${knappar}
     ${mtForm.msg?`<p class="mt-msg ${mtForm.err?'fel':''}">${mtForm.msg}</p>`:''}
     ${sist&&!red?`<p class="muted small" style="margin-top:10px">Senast: ${fmtDT(sist.ts)}, ${TYPTXT[sist.typ].toLowerCase()} ${fmtM3(sist.m3)} m³${sist.namn?' ('+esc(sist.namn)+')':''}. Alla avläsningar finns i loggen.</p>`:''}
-    <label>Reservtakt när avläsningar saknas (m³/dygn)</label>
-    <input type="number" id="dam_rate" value="${dam.fillRate}" onchange="damNum('fillRate',this.value)">
-    <label>Läckage / avdunstning (m³/dygn)</label>
-    <input type="number" id="dam_leak" value="${dam.leak}" step="0.5" onchange="damNum('leak',this.value)">
+    <p class="muted small" style="margin-top:12px">Räknat med ${num(LACKAGE_M3D,0)} m³/dygn i läckage och avdunstning, och med ${FYLL_M3D} m³/dygn i påfyllning när mätaren inte lästs av med pumpen igång. Värdena är lika för alla.</p>
     <p class="muted small" style="margin-top:10px">Påfyllningen ger cirka ${num(FYLL_M3D/24,0)} m³/h (${FYLL_M3D} m³/dygn) — den är en påfyllnad mellan passen, inte i takt med snökanonernas uttag (upp till 70 m³/h).</p>`;
 }
 function mtRedigera(id){const a=dammData.avlas[id]; if(!a)return;
@@ -2330,7 +2333,11 @@ function vAdvisor(){
     fast: ['Producera fort','Full effekt på de bästa enheterna tills pumpen är full — mest snö per timme, kortare bana.'],
     last: ['Få vattnet att räcka','Kör färre, kallaste enheter så magasinet håller fler dygn.'],
   };
-  return topbar('Vattenbalans','Vattenrådgivare',vattenSw('advisor'))+`<div class="view">
+  // Märkt som skiss tills den är färdig (Kristian, 28 november; K8 i
+  // granskningen). Det som saknas står i rutan, så att ingen ställer in
+  // anläggningen efter siffrorna.
+  return topbar('Vattenbalans','Vattenrådgivare — skiss',vattenSw('advisor'))+`<div class="view">
+   <div class="note" style="margin:0 0 14px"><b>SKISS — ställ inte in anläggningen efter de här siffrorna än.</b> Rådgivaren är inte färdig: lansar bedöms mot fläktens startgräns, täckningen är bara antalet enheter gånger 0,3 km, och den vet inte vilka steg som går att ställa på varje enhet. Den görs klar när flödesmätaren FT01 är inställd.</div>
    <div class="banner ok">${icon('bolt','#34d399')}<div style="flex:1"><b>Förslag — inte styrning.</b> <span class="muted small">Appen räknar fram en fördelning utifrån våttemperatur och pumptak. Du ställer in den i styrsystemet; appen rör aldrig anläggningen.</span></div></div>
 
    ${real?missing('Räknat på de enheter som har kontakt just nu, med styrsystemets teoretiska flöde som fullt flöde. Kolumnen "Nu" är styrsystemets beräknade flöde. Täckningen i kilometer är en grov tumregel.')+'<div style="height:14px"></div>':''}
@@ -2605,7 +2612,7 @@ function putMarkers(want,sides){
 // Rådgivaren har ingen egen knapp i telefonens rad. Växeln gör den nåbar
 // högst upp i Vatten, som växeln mellan kanoner och lansar under Enheter
 // (Kristian hittade den inte i telefonen 28 november).
-const vattenSw=id=>`<div class="seg"><button class="${id==='water'?'on':''}" onclick="go('water')">Vattenbalans</button><button class="${id==='advisor'?'on':''}" onclick="go('advisor')">Vattenråd</button></div>`;
+const vattenSw=id=>`<div class="seg"><button class="${id==='water'?'on':''}" onclick="go('water')">Vattenbalans</button><button class="${id==='advisor'?'on':''}" onclick="go('advisor')">Vattenråd (skiss)</button></div>`;
 function vUnits(typ){
   const list=cannons.filter(c=>c.typ===typ);
   const t=typ==='kanon'?'Kanoner':'Lansar';

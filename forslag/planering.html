@@ -537,7 +537,8 @@ ritaNu(); ritaTidslinje(); ritaBrunnar(); ritaDagar(); ritaSenast();
 new ResizeObserver(()=>ritaTidslinje()).observe(document.getElementById('tidslinje'));
 // Förarvyn i en annan flik som lägger till ett pass.
 window.addEventListener('storage',e=>{if(e.key===PASSLAGRING){ritaSenast();ritaBrunnar();}});
-if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+// Ingen service worker: förslagen ligger bara på förhandslänken och ska alltid
+// hämtas färska. (forslag/sw.js finns bara för att ta bort en gammal.)
 </script>
 </body>
 </html>

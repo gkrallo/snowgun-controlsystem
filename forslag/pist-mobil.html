@@ -1523,7 +1523,8 @@ ritaUppknapp(); startaPass();
 if(fragaUppdrag)setTimeout(()=>visaUppdrag(true),500);
 requestAnimationFrame(ruta);
 // Samma service worker som Snökoll, så att sidan kan installeras.
-if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+// Ingen service worker: förslagen ligger bara på förhandslänken och ska alltid
+// hämtas färska. (forslag/sw.js finns bara för att ta bort en gammal.)
 </script>
 </body>
 </html>
