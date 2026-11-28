@@ -373,3 +373,31 @@ låda är bökiga och ska inte behövas för att se ungefär hur mycket som finn
 - Loggen drar kanonernas uttag mellan två mätningar med måttband och visar
   det som blir kvar per dygn. Blir det mycket mer eller mindre än några m³
   per dygn stämmer inte 90 %.
+
+### Kontroll vid nästa påfyllning (plan, 28 november)
+
+Vattenmätaren på påfyllningen är det säkraste mått vi har, eftersom kommunen
+debiterar efter den. 13 november 15:29 stod ytan vid snorkelns kant, och
+mätaren visade 73 478,4. Fylls dammen till snorkelns kant igen, är det som
+fylldes lika med allt som gått ur dammen sedan dess: kanonerna, läckaget och
+avdunstningen, minus regnet. Det beror inte på dammens form, slänten eller
+måttbandet.
+
+Så här görs det:
+
+1. **Måttband medan allt står still**, gärna två gånger med några dygns
+   mellanrum innan påfyllningen. Det ger läckaget.
+2. **Start** i appen när pumpen startar. Från den stunden räknar appen upp
+   nivån med senaste uppmätta takten, 8,95 m³/h (215 m³/dygn, passet
+   25/10–13/11). En **Avläsning** under påfyllningen rättar nivån och ger
+   en ny takt, om det gått minst en timme sedan förra avläsningen.
+3. **Stopp** när ytan når snorkelns kant, som 13 november. Skriv
+   klockslaget, och ta gärna ett foto.
+4. **Bryggan 11 på styrdatorn före dess.** Den räknar kanonernas vatten
+   timme för timme för hela säsongen, också tiden före bryggan 7, då bara
+   FT01 fanns.
+
+Sedan jämförs det påfyllda med kanonernas räknade vatten sedan 13/11 plus
+läckaget. Kvoten ersätter `UTTAG_FAKTOR` (0,9), som bygger på slänten och
+flytpunkten. Regnet på dammen (cirka 1 600 m²) är det osäkra: 10 mm regn
+är 16 m³.

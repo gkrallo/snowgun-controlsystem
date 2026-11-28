@@ -151,6 +151,42 @@ samma körningar.
 
 Kristian valde 28 november att byta `SNO_FAKTOR` från 2,2 till 1,5.
 
+#### Snökvaliteten i styrsystemet (28 november)
+
+Kanonerna har inställningen "Snow Quality", från Dry till Wet på en skala
+1–10. Kristian tror att ni brukar köra 5. Sufags beskrivningar i
+`Live_Snowstar.dat` (i `GSSystem.zip`) har bland annat:
+
+- "Température de démarrage couronne 1–3": startgränsen för varje ring.
+- "Offset qualité de neige 10 … 90".
+- "Snow Quality", "Snow Quality MAIN" och "Snow quality COM".
+- Modbus-ord 36 "Base snow quality" för den nyare styrningen.
+
+Troligen öppnar automatiken varje ring vid en egen våttemperatur, och
+kvaliteten flyttar de gränserna. Torrare snö betyder då att ringarna öppnar
+först när det är kallare, alltså mindre vatten vid samma våttemperatur.
+Kvaliteten avgör alltså både hur mycket vatten kanonen tar och hur tät snön
+blir.
+
+Styrsystemets snö (× 2,2) tar ingen hänsyn till kvaliteten. Faktorn 1,5 är
+mätt vid troligen kvalitet 5 och −2 till −5 grader våttemperatur, på snö som
+legat 1–2 dygn. Vilken kolumn som är vilken visar sonden version 3.
+
+#### Varför 1,5 och inte 2,2
+
+Kristian valde 28 november att behålla 1,5. Skälen till att det blev så långt
+från 2,2:
+
+- **Svinn.** Pucken mätte bara på spåret. Snön som slänt ut i skogen, cirka
+  10–20 m³ eller 5–10 %, kom inte med. Ett skidspår är smalt, så mer hamnar
+  utanför än i en slalombacke.
+- **Snön har satt sig.** Högen hade legat 1–2 dygn.
+- **Nära startgränsen.** Det var −2 till −5 grader våttemperatur, med
+  troligen kvalitet 5. Det ger blötare och tätare snö.
+- **Vattnet är räknat.** Kanonernas räknade vatten var 108–115 % av det
+  dammen minskade, och faktorn räknas mot det räknade.
+- **Avdunstning och avdrift** under själva sprutningen.
+
 ### Lamporna (ringar, hydrant, kompressor …)
 
 Skärmen visar för varje kanon Ring 1–4, Hydrant OK, Water valve open/closed,
