@@ -8,14 +8,22 @@
 
    Kors EN gang pa styrdatorn, av nagon som ar sysadmin, nar vi tittat pa
    sondrapporten och vet att det behovs. Kor i SQL Server Management Studio
-   (SSMS), eller via sqlcmd:
+   (SSMS, med Query > SQLCMD Mode paslaget), eller via sqlcmd.
 
+   Losenordet star INTE i filen. Det ges som variabeln LOSEN nar skriptet
+   kors (28 november 2026). Forut skulle filen redigeras med det riktiga
+   losenordet, och da kunde den checkas in av misstag. I PowerShell:
+
+     $env:LOSEN = Read-Host "Losenord for snogrupp_ro"
      sqlcmd -S 127.0.0.1\SQLEXPRESS -E -i skapa-lasonly-konto.sql
+     Remove-Item Env:LOSEN
 
-   (-E = Windows-inloggning. Har du bara SQL-inloggning: -U <admin> -P <losen>.)
+   (-E = Windows-inloggning. Har du bara SQL-inloggning: -U <admin>, och
+   sqlcmd fragar efter det losenordet.) sqlcmd laser variabeln ur miljon, sa
+   losenordet hamnar varken i filen eller i kommandohistoriken.
 
    VIKTIGT:
-   * Byt ut losenordet nedan mot ett riktigt, starkt losen INNAN du kor.
+   * Valj ett starkt losen, minst 12 tecken, utan apostrof (').
    * Det riktiga losenordet lagras bara i SECRETS.md (gitignore-ad) - aldrig
      i nagon fil som hamnar i git.
    * Scriptet skriver inte en rad driftdata - det skapar bara ett login,
@@ -29,11 +37,21 @@
 USE [master];
 GO
 
-/* 1. Login pa serverniva (byt losenordet!) */
+/* 0. Stanna om losenordet inte kommit med. Utan SQLCMD-lage byts variabeln
+   inte ut, och da skulle sjalva texten dollar-parentes-LOSEN bli losenordet.
+   NCHAR(36) ar dollartecknet, skrivet sa for att inte se ut som en variabel. */
+IF N'$(LOSEN)' LIKE NCHAR(36) + N'(%' OR LEN(N'$(LOSEN)') < 12
+BEGIN
+    RAISERROR('Losenordet saknas eller ar kortare an 12 tecken. Satt variabeln LOSEN (se filens huvud). Inget ar andrat.', 16, 1);
+    SET NOEXEC ON;
+END
+GO
+
+/* 1. Login pa serverniva */
 IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'snogrupp_ro')
 BEGIN
     CREATE LOGIN [snogrupp_ro]
-        WITH PASSWORD      = N'<SATT_ETT_STARKT_LOSEN_HAR>',
+        WITH PASSWORD      = N'$(LOSEN)',
              CHECK_POLICY  = ON,
              DEFAULT_DATABASE = [Live_Snowstar];
     PRINT 'Login snogrupp_ro skapat.';
@@ -78,6 +96,8 @@ BEGIN
 END
 CLOSE dbs;
 DEALLOCATE dbs;
+GO
+SET NOEXEC OFF;
 GO
 
 /* ----------------------------------------------------------------------------

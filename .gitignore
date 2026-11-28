@@ -32,7 +32,10 @@ bridge/brygga-live.json
 bridge/brygga.log
 bridge/brygga.log.1
 bridge/brygga-state.json
+bridge/brygga-state.json.*
 bridge/uttag_*.txt
+bridge/bakat_*.txt
+bridge/bakatbrunn_*.txt
 
 # Firebase-verktygets egna filer
 .firebase/
@@ -40,4 +43,12 @@ firebase-debug.log
 
 # Molnfunktionernas paket (npm install i functions/)
 functions/node_modules/
+# Nycklar till tjänstekonton och lokala inställningar för funktionerna får
+# aldrig in, om någon skulle ladda ner en sådan.
+functions/.env*
+*adminsdk*.json
+*serviceaccount*.json
+
+# Claude Codes egna filer (arbetskopior, förhandsvisning)
+.claude/
 database-debug.log
