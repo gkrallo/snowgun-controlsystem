@@ -44,6 +44,13 @@
   gick, och skickar den bredvid: pump/dep12/vattenTempDrift och -Tid. Den
   skickar också varje enhets snökvalitet och startgräns (och stoppgräns på
   SGC400), ur Sufags kolumnbeskrivningar.
+  Version 13 (efter kodgranskningen 28 november) räknar mellanrummen på UTC,
+  så att hjärtslaget inte uteblir natten då klockan ställs tillbaka. Den
+  skickar hur gammalt styrsystemets senaste värde är (meta/gssAlder), så att
+  appen ser när styrsystemet står fast bryggan går. Ett flöde som går till
+  noll skickas alltid, -Skicka går bara på styrdatorn, tillståndsfilen skrivs
+  via en ny fil med reservkopia, och en misslyckad sändning ger inte längre
+  en ny inloggning var 20:e sekund.
 
   Filen ska vara sparad som UTF-8 MED BOM (Windows PowerShell 5.1 läser den
   annars som ANSI och å, ä, ö blir fel) och får inte innehålla typografiska
@@ -74,7 +81,7 @@ $outFile = Join-Path $here "brygga-live.json"
 $logFile = Join-Path $here "brygga.log"
 $cfgFile = Join-Path $here "brygga-config.json"
 $stateFile = Join-Path $here "brygga-state.json"
-$VERSION = "12"
+$VERSION = "13"
 
 function Log([string]$msg) {
   $line = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "  " + $msg
@@ -317,6 +324,14 @@ function IsDifferent([string]$path, $new, $old) {
   if ($null -eq $new -and $null -eq $old) { return $false }
   if ($null -eq $new -or $null -eq $old) { return $true }
   if ((IsNum $new) -and (IsNum $old)) {
+    # Noll är ett läge, inte ett mätvärde: flödet räknas ur trycket och är
+    # precis 0 när kanonen står. Gick det 8 -> 0,1 -> 0 skickades 0,1, men
+    # steget till 0 låg inom dödbandet och blev kvar i molnet tills nästa
+    # hela sändning (upp till en timme). Det äldre kortet räknas som körande
+    # när flödet är över noll, så kanonen såg ut att gå. Till och från noll
+    # skickas därför alltid (version 13). Bara flödet: andra givare flimrar
+    # kring noll.
+    if ($path -match '/flode$' -and (([double]$new -eq 0) -ne ([double]$old -eq 0))) { return $true }
     $band = Band $path
     $d = [math]::Abs([double]$new - [double]$old)
     if ($band -gt 0) { return ($d -ge ($band - 1e-9)) }
@@ -372,8 +387,12 @@ function SeasonOf([datetime]$t) {
   return ("" + $y + "/" + (($y + 1) % 100).ToString("00"))
 }
 
-function Add-Water($snap, [datetime]$now) {
+function Add-Water($snap, [datetime]$now, $utc = $null) {
   if (-not $snap["enheter"]) { return }
+  # Tiden mellan två läsningar räknas på UTC (version 13). På lokal klocka
+  # blev den negativ i en timme natten då klockan ställs tillbaka, och då
+  # räknades inget vatten den timmen.
+  if ($null -eq $utc) { $utc = $now.ToUniversalTime() }
   $ref = Newest $snap
   if (-not $ref) { return }
   $fmt = "yyyy-MM-ddTHH:mm:ss"
@@ -398,14 +417,14 @@ function Add-Water($snap, [datetime]$now) {
     }
     if ($fresh) {
       if ($null -ne $a["last"] -and (IsNum $u["flode"]) -and $u["flode"] -gt 0) {
-        $dt = ($now - [datetime]$a["last"]).TotalSeconds
+        $dt = ($utc - [datetime]$a["last"]).TotalSeconds
         if ($dt -gt 0 -and $dt -le 120) {
           $m3 = [double]$u["flode"] * $dt / 3600
           $a["brunnM3"] = [double]$a["brunnM3"] + $m3
           $a["sasongM3"] = [double]$a["sasongM3"] + $m3
         }
       }
-      $a["last"] = $now
+      $a["last"] = $utc
     } else { $a["last"] = $null }
     $u["vattenBrunn"] = [math]::Round([double]$a["brunnM3"], 2)
     $u["vattenSasong"] = [math]::Round([double]$a["sasongM3"], 1)
@@ -1043,6 +1062,7 @@ if ($Bakat) {
 # servicekonto-nyckel - en sådan ger full makt över hela projektet.
 $script:token = $null
 $script:tokenAt = [datetime]::MinValue
+$script:loginAt = [datetime]::MinValue
 $cfg = $null
 
 function Send-Json([string]$method, [string]$url, [string]$json, [hashtable]$headers = @{}) {
@@ -1064,13 +1084,19 @@ function Login-Headers {
 }
 
 function Get-Token {
-  # Inloggningen gäller en timme; förnya efter 50 minuter.
-  if ($script:token -and ((Get-Date) - $script:tokenAt).TotalMinutes -lt 50) { return $script:token }
+  # Inloggningen gäller en timme; förnya efter 50 minuter. Tiderna är UTC,
+  # så att natten då klockan ställs om inte förlänger eller kortar den.
+  $nu = [datetime]::UtcNow
+  if ($script:token -and ($nu - $script:tokenAt).TotalMinutes -lt 50) { return $script:token }
+  # Högst ett inloggningsförsök i minuten. Utan nät, eller med fel lösenord,
+  # försökte bryggan förut logga in var 20:e sekund dygnet runt.
+  if (($nu - $script:loginAt).TotalSeconds -lt 60) { throw "väntar en minut med nästa inloggning" }
+  $script:loginAt = $nu
   $pw = Get-Secret "moln" "Lösenord för bryggans Firebase-konto"
   $body = @{ email = $cfg.email; password = (Plain $pw); returnSecureToken = $true } | ConvertTo-Json -Compress
   $r = Send-Json "Post" ("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + $cfg.apiKey) $body (Login-Headers)
   $script:token = $r.idToken
-  $script:tokenAt = Get-Date
+  $script:tokenAt = $nu
   return $script:token
 }
 
@@ -1093,14 +1119,39 @@ $script:lastFull  = [datetime]::MinValue
 $script:lastMeta  = [datetime]::MinValue
 $script:lastSqlOk = $null
 
-function Plan-Round($snap, [bool]$sqlOk, [datetime]$now, [int]$ms) {
+# Hur gammalt styrsystemets senaste värde är, i sekunder (version 13). Båda
+# tiderna är styrdatorns egen klocka - styrsystemet stämplar med den - så
+# talet stämmer även om klockan går fel mot omvärlden. Genom UTC, så att
+# natten till sommartid inte ser ut som en timmes tystnad.
+function Gss-Age([string]$gssTid, [datetime]$now) {
+  if (-not $gssTid) { return $null }
+  try {
+    $g = [datetime]::SpecifyKind([datetime]::ParseExact($gssTid, "yyyy-MM-ddTHH:mm:ss", $null), [DateTimeKind]::Local)
+    $n = [datetime]::SpecifyKind($now, [DateTimeKind]::Local)
+    return [int][math]::Round(($n.ToUniversalTime() - $g.ToUniversalTime()).TotalSeconds)
+  } catch { return $null }
+}
+
+function Plan-Round($snap, [bool]$sqlOk, [datetime]$now, [int]$ms, $utc = $null) {
+  # $now är styrdatorns lokala klocka och $utc samma ögonblick i UTC.
+  # Mellanrummen (hjärtslag varje minut, allt en gång i timmen) räknas på UTC
+  # sedan version 13. På lokal klocka blev mellanrummet negativt natten då
+  # klockan ställs tillbaka, och hjärtslaget kunde utebli i upp till en timme
+  # - då larmar molnet "Bryggan är tyst" till alla.
+  if ($null -eq $utc) { $utc = $now.ToUniversalTime() }
   # Hjärtslaget stämplas med molnets klocka, så att gammal data märks även om
   # styrdatorns klocka går fel eller hoppar natten till sommartid.
   $meta = [ordered]@{ ts = @{ ".sv" = "timestamp" }; sqlOk = $sqlOk; version = $VERSION; lasMs = $ms }
-  if ($sqlOk) { $meta["gssTid"] = Newest $snap }
+  if ($sqlOk) {
+    $g = Newest $snap
+    $meta["gssTid"] = $g
+    # Appen visar "Styrsystemet står" när talet är över fem minuter.
+    $ald = Gss-Age $g $now
+    if ($null -ne $ald) { $meta["gssAlder"] = $ald }
+  }
   # Syns i appen så länge bryggan går med det skrivande kontot.
   if ($avsteg) { $meta["skrivkonto"] = $true }
-  $metaDue = (($now - $script:lastMeta).TotalSeconds -ge 60) -or ($script:lastSqlOk -ne $sqlOk)
+  $metaDue = (($utc - $script:lastMeta).TotalSeconds -ge 60) -or ($script:lastSqlOk -ne $sqlOk)
 
   if (-not $sqlOk) {
     # Databasen svarar inte. Värdena i molnet får stå kvar - att ta bort dem
@@ -1114,7 +1165,7 @@ function Plan-Round($snap, [bool]$sqlOk, [datetime]$now, [int]$ms) {
 
   $flat = @{}
   Flatten $snap "" $flat
-  if ($null -eq $script:sent -or ($now - $script:lastFull).TotalHours -ge 1) {
+  if ($null -eq $script:sent -or ($utc - $script:lastFull).TotalHours -ge 1) {
     $body = Strip $snap
     $body["meta"] = $meta
     return @{ kind = "full"; body = $body; flat = $flat; n = $flat.Count }
@@ -1126,11 +1177,12 @@ function Plan-Round($snap, [bool]$sqlOk, [datetime]$now, [int]$ms) {
   return @{ kind = "patch"; body = $ch; flat = $flat; n = $n }
 }
 
-function Commit-Round($plan, [bool]$sqlOk, [datetime]$now) {
+function Commit-Round($plan, [bool]$sqlOk, [datetime]$now, $utc = $null) {
   if ($plan.kind -eq "none") { return }
-  $script:lastMeta = $now
+  if ($null -eq $utc) { $utc = $now.ToUniversalTime() }
+  $script:lastMeta = $utc
   $script:lastSqlOk = $sqlOk
-  if ($plan.kind -eq "full") { $script:sent = $plan.flat; $script:lastFull = $now; return }
+  if ($plan.kind -eq "full") { $script:sent = $plan.flat; $script:lastFull = $utc; return }
   if ($null -eq $plan.flat) { return }
   # Bara de fält som faktiskt skickades får nytt jämförelsevärde. De övriga
   # behåller sitt, annars skulle dödbandet nollställas varje varv.
@@ -1243,6 +1295,11 @@ if ($ProvaMoln) {
     }
   }
 
+  # Historiken får fyllas på men inte tas bort (reglerna från 28 november).
+  # Punkten finns inte, så ingenting försvinner om reglerna är de gamla.
+  $d = Try-Web "Delete" (U "hist/200001010000")
+  Report "Får inte ta bort historikpunkter" ($d.code -eq 401 -or $d.code -eq 403) ("Svar " + $d.code + " - de nya reglerna är inte utlagda (firebase deploy --only database).")
+
   # Det här ska INTE gå. Ett bryggkonto som kan läsa medlemslistan eller
   # skriva utanför sina två grenar betyder att reglerna är fel.
   $g = Try-Web "Get" (U "members")
@@ -1260,6 +1317,50 @@ if ($ProvaMoln) {
   if ($script:bad -eq 0) { Write-Host "Allt stämmer. Bryggan kan skicka, och bara dit den ska."; exit 0 }
   Write-Host ([string]$script:bad + " saker stämmer inte. Skicka inte riktiga värden förrän det är rättat.")
   exit 1
+}
+
+# ---------------------------------------------------------- tillståndsfilen
+# Räkneverken och senaste historikpunkten (brygga-state.json). Förut skrevs
+# filen på plats: ett strömavbrott mitt i skrivningen lämnade en halv fil,
+# och vid nästa start nollades vattenräknarna utan en rad i loggen. Nu skrivs
+# den till en ny fil som byts in, och den förra blir kvar som .bak
+# (version 13).
+function Write-StateFile([string]$json) {
+  $tmp = $stateFile + ".ny"
+  Set-Content -Path $tmp -Value $json -Encoding ASCII
+  if (Test-Path $stateFile) {
+    try { [System.IO.File]::Replace($tmp, $stateFile, ($stateFile + ".bak")) }
+    catch {
+      Copy-Item $stateFile ($stateFile + ".bak") -Force
+      Move-Item $tmp $stateFile -Force
+    }
+  } else { Move-Item $tmp $stateFile -Force }
+}
+
+function Read-StateFile {
+  $trasig = $false
+  foreach ($f in @($stateFile, ($stateFile + ".bak"))) {
+    if (-not (Test-Path $f)) { continue }
+    try {
+      $o = Get-Content $f -Raw | ConvertFrom-Json
+      if ($null -eq $o -or -not $o.lastSlot) { throw "filen är tom eller saknar lastSlot" }
+      if ($trasig) { Log ("Använder reservkopian " + (Split-Path -Leaf $f) + ". Räkneverken är högst fem minuter gamla.") }
+      return $o
+    } catch {
+      $trasig = $true
+      Log ("Tillståndsfilen " + (Split-Path -Leaf $f) + " gick inte att läsa: " + $_.Exception.Message)
+      if ($f -eq $stateFile) { try { Copy-Item $f ($f + ".trasig") -Force } catch { } }
+    }
+  }
+  if ($trasig) { Log "Ingen läsbar tillståndsfil. Vattenräknarna börjar om från noll." }
+  return $null
+}
+
+# -Skicka får bara gå på styrdatorn. Står datorns namn i inställningarna
+# (dator) gäller det; annars räcker det att styrsystemets mapp finns.
+function On-ControlPc($cfg, [string]$namn, [bool]$harGss) {
+  if ($cfg -and $cfg.dator) { return ($namn -eq [string]$cfg.dator) }
+  return $harGss
 }
 
 # ------------------------------------------------------------- självtest
@@ -1510,6 +1611,63 @@ if ($Sjalvtest) {
   Check "drift: utan pumphuset händer inget" ($null -eq (Mark-DriftTemp ([ordered]@{}) (Get-Date)))
   Check "drift: samma dödband som vattentemperaturen" ((Band "pump/dep12/vattenTempDrift") -eq 0.2)
 
+  # ---- Version 13
+  # Mellanrummen räknas på UTC. Natten 25 oktober går lokal tid från 02:59
+  # tillbaka till 02:00, medan UTC går vidare.
+  $script:sent = $null; $script:lastFull = [datetime]::MinValue; $script:lastMeta = [datetime]::MinValue; $script:lastSqlOk = $null
+  $u = New-Object datetime(2026, 10, 25, 0, 30, 0, [DateTimeKind]::Utc)
+  $lok = Get-Date "2026-10-25 02:30:00"
+  $p = Plan-Round (Fake 7.1 @()) $true $lok 40 $u; Commit-Round $p $true $lok $u
+  $u2 = $u.AddMinutes(31).AddSeconds(30); $lok2 = Get-Date "2026-10-25 02:01:30"
+  $p = Plan-Round (Fake 7.1 @()) $true $lok2 40 $u2
+  Check "klockan ställs tillbaka: hjärtslaget kommer ändå" ($p.kind -eq "patch" -and $p.body.Contains("meta/ts"))
+  Commit-Round $p $true $lok2 $u2
+  $p = Plan-Round (Fake 7.1 @()) $true $lok2.AddSeconds(20) 40 $u2.AddSeconds(20)
+  Check "och inte oftare än en gång i minuten" ($p.kind -eq "none")
+  Check "styrsystemets ålder i sekunder" ((Gss-Age "2026-11-15T18:43:29" (Get-Date "2026-11-15 18:44:00")) -eq 31)
+  Check "ålder: natten till sommartid är en timme inte en timme" ((Gss-Age "2026-03-29T01:59:50" (Get-Date "2026-03-29 03:00:05")) -eq 15)
+  Check "ålder: utan tid från styrsystemet inget tal" ($null -eq (Gss-Age "" (Get-Date)))
+  $p = Plan-Round (Fake 7.1 @()) $true (Get-Date "2026-11-15 18:44:00") 40 $u2.AddHours(2)
+  Check "hjärtslaget har styrsystemets ålder" ($p.kind -eq "full" -and $p.body["meta"]["gssAlder"] -eq 31)
+  $p = Plan-Round ([ordered]@{}) $false (Get-Date "2026-11-15 18:44:00") 40 $u2.AddHours(2)
+  Check "utan databas ingen ålder" (-not $p.body.Contains("meta/gssAlder"))
+
+  Check "flöde: en tiondel är inom dödbandet" (-not (IsDifferent "enheter/SGC300-1/flode" 5.1 5.0))
+  Check "flöde: steget till noll skickas alltid" (IsDifferent "enheter/SGC300-1/flode" 0 0.1)
+  Check "flöde: steget från noll skickas alltid" (IsDifferent "enheter/SGC300-1/flode" 0.1 0)
+  Check "andra fält: en tiondel kring noll är inom dödbandet" (-not (IsDifferent "pump/dep12/k125" 0 0.1))
+
+  $script:acc = @{}
+  $u = New-Object datetime(2026, 10, 25, 0, 59, 40, [DateTimeKind]::Utc); $lok = Get-Date "2026-10-25 02:59:40"
+  $s = W 7.2 7 "2026-10-25T02:59:40" $lok; Add-Water $s $lok $u
+  $u = $u.AddSeconds(20); $lok = Get-Date "2026-10-25 02:00:00"
+  $s = W 7.2 7 "2026-10-25T02:00:00" $lok; Add-Water $s $lok $u
+  Check "vattnet räknas över klockomställningen" ([math]::Abs($s["enheter"]["SGC400-1"]["vattenBrunn"] - 0.04) -lt 0.001)
+
+  $cA = [pscustomobject]@{ dator = "STYRDATORN" }; $cB = [pscustomobject]@{ email = "x" }
+  Check "skickar bara på styrdatorn: namnet i inställningarna gäller" ((On-ControlPc $cA "STYRDATORN" $false) -and -not (On-ControlPc $cA "HEMMA" $true))
+  Check "utan namn i inställningarna: bara där styrsystemet finns" ((On-ControlPc $cB "VADSOMHELST" $true) -and -not (On-ControlPc $cB "HEMMA" $false))
+
+  # Tillståndsfilen: skrivs via en ny fil, och den förra blir reservkopia.
+  $td = Join-Path ([IO.Path]::GetTempPath()) ("brygga-test-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory $td | Out-Null
+  $stateFile0 = $stateFile; $logFile0 = $logFile
+  try {
+    $stateFile = Join-Path $td "brygga-state.json"; $logFile = Join-Path $td "prov.log"
+    Check "ingen tillståndsfil: inget att läsa" ($null -eq (Read-StateFile))
+    Write-StateFile '{"lastSlot":"202611280000"}'
+    Write-StateFile '{"lastSlot":"202611280005"}'
+    Check "tillståndet skrivs och läses" ((Read-StateFile).lastSlot -eq "202611280005")
+    Check "den förra filen ligger kvar som reservkopia" ((Get-Content ($stateFile + ".bak") -Raw) -match "202611280000")
+    Check "ingen halvfärdig fil blir kvar" (-not (Test-Path ($stateFile + ".ny")))
+    # Strömavbrott mitt i en skrivning: filen är halv.
+    Set-Content -Path $stateFile -Value '{"lastSlot":"2026112' -Encoding ASCII
+    Check "trasig fil: reservkopian används" ((Read-StateFile).lastSlot -eq "202611280000")
+    Check "och det står i loggen" ((Get-Content $logFile -Raw) -match "reservkopian")
+    Set-Content -Path ($stateFile + ".bak") -Value '' -Encoding ASCII
+    Check "båda trasiga: inget tillstånd, och den trasiga filen sparas undan" (($null -eq (Read-StateFile)) -and (Test-Path ($stateFile + ".trasig")))
+  } finally { $stateFile = $stateFile0; $logFile = $logFile0; Remove-Item $td -Recurse -Force }
+
   if ($script:bad -eq 0) { Write-Host "Självtestet gick igenom."; exit 0 }
   Write-Host ("Självtestet hittade " + $script:bad + " fel."); exit 1
 }
@@ -1520,6 +1678,16 @@ if ($Skicka) {
     exit 1
   }
   $cfg = Get-Content $cfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
+  # Bara styrdatorn får skicka (version 13). Startad någon annanstans, med
+  # inställningar och lösenord på plats, skriver bryggan hjärtslag och ett
+  # tomt nuläge över det riktiga, och ser i appen ut som att den lever.
+  if (-not (On-ControlPc $cfg $env:COMPUTERNAME (Test-Path "C:\GSSystem"))) {
+    $m = "Skickar inte: den här datorn (" + $env:COMPUTERNAME + ") är inte styrdatorn."
+    if ($cfg.dator) { $m += " I brygga-config.json står dator = " + $cfg.dator + "." }
+    else { $m += ' C:\GSSystem finns inte här. Är det ändå rätt dator: lägg till raden "dator": "' + $env:COMPUTERNAME + '" i brygga-config.json.' }
+    Log $m
+    exit 1
+  }
   # Styrdatorn är Windows 10; TLS 1.2 måste slås på uttryckligen i 5.1.
   [Net.ServicePointManager]::SecurityProtocol = 3072
 }
@@ -1536,23 +1704,24 @@ if (-not $EnGang) {
 }
 
 $lastSlot = $null
-if (Test-Path $stateFile) {
+$st = Read-StateFile
+if ($null -ne $st) {
   try {
-    $st = Get-Content $stateFile -Raw | ConvertFrom-Json
     $lastSlot = [datetime]::SpecifyKind([datetime]::ParseExact($st.lastSlot, "yyyyMMddHHmm", $null), [DateTimeKind]::Utc)
     Acc-FromState $st.vatten
     $script:bakatStamp = $st.bakat
     if ($st.timmeFran) { $script:timmeFran = [datetime]::ParseExact($st.timmeFran, "yyyy-MM-ddTHH:mm:ss", $null) }
     if ($null -ne $st.driftTemp) { $script:driftTemp = [double]$st.driftTemp; $script:driftTid = [string]$st.driftTid }
-  } catch { $lastSlot = $null }
+  } catch { $lastSlot = $null; Log ("Tillståndsfilen gick inte att tolka: " + $_.Exception.Message) }
 }
 $script:timmeNasta = [datetime]::MinValue
 
 # Timvattnet, se Hour-Totals. Fel här får aldrig stoppa resten av bryggan:
 # nästa runda börjar från samma timme och tar igen det.
 function Update-HourWater([datetime]$now) {
-  if ($now -lt $script:timmeNasta) { return }
-  $script:timmeNasta = $now.AddMinutes(10)
+  # Var tionde minut, räknat på UTC (se Plan-Round).
+  if ([datetime]::UtcNow -lt $script:timmeNasta) { return }
+  $script:timmeNasta = [datetime]::UtcNow.AddMinutes(10)
   $open = Hour-OpenFrom $now
   $from = $script:timmeFran
   if ($null -eq $from) {
@@ -1582,7 +1751,7 @@ function Save-State {
   if ($script:bakatStamp) { $o["bakat"] = $script:bakatStamp }
   if ($script:timmeFran) { $o["timmeFran"] = $script:timmeFran.ToString("yyyy-MM-ddTHH:mm:ss") }
   if ($null -ne $script:driftTemp) { $o["driftTemp"] = $script:driftTemp; $o["driftTid"] = $script:driftTid }
-  (ConvertTo-Json -InputObject $o -Depth 5 -Compress) | Set-Content -Path $stateFile -Encoding ASCII
+  Write-StateFile (ConvertTo-Json -InputObject $o -Depth 5 -Compress)
 }
 
 Log ("Bryggan startar (version " + $VERSION + ", konto " + $SqlUser + ", " + $(if ($Skicka) { "skickar till molnet" } else { "torrläge" }) + ")")
@@ -1603,12 +1772,14 @@ while ($true) {
   }
   $sqlOk = ($fails -eq 0)
   $now = Get-Date
+  # Samma ögonblick i UTC, för allt som mäter tid mellan två varv.
+  $nowUtc = [datetime]::UtcNow
   $ms = [int]($now - $t0).TotalMilliseconds
-  if ($sqlOk) { try { Add-Water $snap $now } catch { Log ("Kunde inte räkna vattnet: " + $_.Exception.Message) } }
+  if ($sqlOk) { try { Add-Water $snap $now $nowUtc } catch { Log ("Kunde inte räkna vattnet: " + $_.Exception.Message) } }
   if ($sqlOk) { try { Mark-DriftTemp $snap $now } catch { Log ("Vattentemperaturen vid drift: " + $_.Exception.Message) } }
 
   try {
-    $plan = Plan-Round $snap $sqlOk $now $ms
+    $plan = Plan-Round $snap $sqlOk $now $ms $nowUtc
     if ($Skicka) {
       if ($plan.kind -eq "full")  { Send-Cloud "Put"   "live" $plan.body }
       if ($plan.kind -eq "patch") { Send-Cloud "Patch" "live" $plan.body }
@@ -1620,7 +1791,7 @@ while ($true) {
       $file["meta"] = [ordered]@{ lokalTid = $now.ToString("yyyy-MM-ddTHH:mm:ss"); sqlOk = $sqlOk; lasMs = $ms; version = $VERSION }
       (ConvertTo-Json -InputObject $file -Depth 8) | Set-Content -Path $outFile -Encoding UTF8
     }
-    Commit-Round $plan $sqlOk $now
+    Commit-Round $plan $sqlOk $now $nowUtc
     $dry = ""; if (-not $Skicka) { $dry = " (torrläge, inget skickat)" }
     if ($plan.kind -eq "full") { Log ("Hela nuläget, " + $plan.n + " fält" + $dry) }
     if ($plan.kind -eq "patch" -and $plan.n -gt 0) {
@@ -1643,8 +1814,10 @@ while ($true) {
     if ($EnGang) { Log ("Klart på " + $ms + " ms. Resultatet ligger i " + $outFile) }
   } catch {
     Log ("Kunde inte lämna ifrån mig datan: " + $_.Exception.Message)
-    # Inloggningen kan ha gått ut; logga in på nytt nästa varv.
-    $script:token = $null
+    # Inloggningen kan ha gått ut, och då hjälper en ny. Men inte efter varje
+    # fel: är det nätet eller reglerna som säger nej gav det förut en ny
+    # inloggning var 20:e sekund. En som är yngre än fem minuter får stå kvar.
+    if (([datetime]::UtcNow - $script:tokenAt).TotalMinutes -ge 5) { $script:token = $null }
   }
   if ($EnGang) { break }
   # Vid upprepade fel (till exempel minnesbrist i SQL Server som julafton

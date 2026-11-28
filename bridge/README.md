@@ -11,6 +11,30 @@ föll bort på kvartsgränsen), journalen går tillbaka till 30 oktober 08:45
 och gav 82 inkopplingar. SGC400-3 var senast inkopplad vid en annan brunn
 än 10 och räknas vid brunnen från 09:53.
 
+- **Version 13 är byggd 28 november efter kodgranskningen, inte installerad
+  än.** Stegen står i `LAS-MIG-FORST.txt` i
+  `brygga-styrdatorn-2026-11-28-v13.zip`. Självtestet går igenom (88
+  kontroller) i Windows PowerShell 5.1 hemma. Inte provat: mot styrsystemets
+  databas, mot Firebase, och `-ProvaMoln`. Vad som är nytt:
+  - Mellanrummen (hjärtslag, hela nuläget en gång i timmen, timvattnet,
+    vattnet per kanon) räknas på UTC. På lokal klocka kunde hjärtslaget
+    utebli i upp till en timme natten då klockan ställs tillbaka, och då
+    larmar molnet "Bryggan är tyst".
+  - Hjärtslaget har `meta/gssAlder`: hur gammalt styrsystemets senaste värde
+    är, i sekunder, mätt på styrdatorns egen klocka. Appen visar
+    "Styrsystemet står" när det är över fem minuter. Utan talet (version 12)
+    jämför appen `gssTid` med molnets klocka, med tio minuters gräns.
+  - Ett flöde som går till eller från noll skickas alltid. Förut kunde det
+    fastna på 0,1 i molnet i upp till en timme, och kanonen på det äldre
+    kortet såg ut att gå.
+  - `-Skicka` går bara på styrdatorn: där `C:\GSSystem` finns, eller där
+    datorns namn står som `"dator"` i `brygga-config.json`.
+  - `brygga-state.json` skrivs via en ny fil som byts in, och den förra
+    ligger kvar som `.bak`. Går filen inte att läsa används reservkopian, och
+    det står i loggen. En trasig fil sparas som `.trasig`.
+  - Högst en inloggning i minuten, och en misslyckad sändning ger inte en ny
+    inloggning om den förra är yngre än fem minuter.
+  - `-ProvaMoln` kontrollerar också att kontot inte kan ta bort historik.
 - **Version 12 går på styrdatorn sedan 28 november 11:20.** Den första
   zipfilen (10:35) saknade snökvaliteten och installerades först; den
   ombyggda (11:06) har den. `Select-String -Pattern 'kvalitet'` i
@@ -97,7 +121,10 @@ datorn och det kontot, och följer inte med i zipfilen.
 
        powershell -ExecutionPolicy Bypass -File .\installera-autostart.ps1 -Visa
 
-   Loggen ska ha en rad `Bryggan startar (version 10, ...)`.
+   Loggen ska ha en rad `Bryggan startar (version 13, ...)` med rätt
+   versionsnummer. Står det `Skickar inte: den här datorn ... är inte
+   styrdatorn`, lägg till raden `"dator": "<datorns namn>"` i
+   `brygga-config.json` (namnet står i loggraden).
 
 ## Räkna bakåt (`-Bakat`, en gång)
 
@@ -222,6 +249,22 @@ går i ett fönster med Ctrl+C.
   sekund.
 - Lösenord sparas krypterade med Windows DPAPI (`-SparaLosen sql` eller
   `moln`) och går bara att läsa av samma Windows-konto på samma dator.
+- `-Skicka` vägrar på en annan dator än styrdatorn (version 13).
+- I molnet får bryggans konto skriva nuläget, lägga till historikpunkter och
+  skriva timvattnet. Det får inte ta bort eller skriva över historik som är
+  äldre än en kvart, och inte ta bort timvatten (reglerna 28 november).
+
+**Mappens rättigheter (inte gjort, från granskningen 28 november).** Den som
+kan ändra `brygga.ps1` på styrdatorn kan få bryggan att göra vad som helst
+med det sparade SQL-lösenordet. Mappen bör därför bara vara skrivbar för
+användaren som GSSystem körs under och för administratörer. I PowerShell som
+administratör, inloggad som den användaren (oprovat — läs raden innan du kör
+den; `*S-1-5-32-544` är gruppen Administratörer och `*S-1-5-18` är systemet):
+
+    icacls C:\Snogrupp\bridge /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"
+
+Kontrollera efteråt med `icacls C:\Snogrupp\bridge` och med
+`installera-autostart.ps1 -Visa` att bryggan fortfarande går.
 
 ## Vad som skickas, och hur ofta
 
@@ -252,7 +295,9 @@ skickats.
 
 Loggar in som bryggkontot, skriver ett provvärde under `/live` och `/hist`,
 tar bort det igen, och kontrollerar att kontot *inte* kan läsa eller skriva i
-medlemslistan eller skriva någon annanstans. Behöver ingen databas och går att
+medlemslistan eller skriva någon annanstans. Från version 13 också att det
+inte kan ta bort en historikpunkt; säger provet FEL där är reglerna från 28
+november inte utlagda. Behöver ingen databas och går att
 köra på vilken dator som helst — gör det hemma, så att ett fel i nyckel,
 lösenord eller regler inte upptäcks först vid styrdatorn. Lösenordet frågas
 efter om det inte är sparat med `-SparaLosen moln`.
