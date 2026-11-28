@@ -239,8 +239,9 @@ kodgranskningen" nedan.
   Första steget är byggt: vyn **Mätprov** (`rtk`), som läser pucken över
   Bluetooth, jämför med barmarken och sparar kontrollpunkter under
   `/pist/kontroll`. Barmarken är räknad mot Swepos (SWEREF 99) och
-  livemätningen kommer i den ram som är vald hos onocoy: **ETRS89**, valt
-  av Kristian 28 november, och den får inte ändras efter att
+  livemätningen kommer i den ram som är vald hos onocoy: **ETRS89**
+  (ETRF2000, epok 2010,0, onocoys förval för ramen), valt av Kristian
+  28 november, och den får inte ändras efter att
   kontrollpunkterna är mätta. Skillnaden ska mätas, och **ingen rättning
   läggs på förrän Kristian bestämt den**. Barmarken läses tills vidare från
   Snöprognos (`BAR_URL`), så att den finns på ett ställe; `BAR_ORIGO` och

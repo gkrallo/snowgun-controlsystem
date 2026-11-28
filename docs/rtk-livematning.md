@@ -63,11 +63,14 @@ och glider 2–3 cm om året här.
 konsol (beskrivningen där är "LVSK"). SWEREF 99 är Sveriges variant av
 ETRS89, så skillnaden mot barmarken bör bli liten, och ramen följer med
 marken. Valet påverkar bara de egna mottagarna, inte det andra får från
-stationen. Vilken variant av ETRS89 onocoy använder, och vilken epok, är
-inte antecknat.
+stationen. I konsolen heter valet **"Europe ETRS89 - ETRF2000 (2010.0
+epoch)"**, med rutan Epoch på 2010.0, som är onocoys förval för ramen.
+Epoken är inte ändrad för hand och ska inte ändras.
 
-Skillnaden är ändå inte säkert noll: olika varianter av ETRS89 skiljer
-centimetrar, landhöjningen ingår olika, och hur pucken räknar sin
+Skillnaden är ändå inte säkert noll. SWEREF 99 är låst vid 1999,5 och
+onocoys ram vid 2010,0, och däremellan har marken här höjt sig några
+centimeter (landhöjningen; en uppskattning, inte uppmätt). Olika varianter
+av ETRS89 skiljer dessutom någon centimeter, och hur pucken räknar sin
 antennhöjd i realtid ingår också. Den ska **mätas**, inte antas: pucken med
 RTK-fix läggs på punkter som finns i barmarken, och skillnaden blir en fast
 förskjutning för säsongen.
