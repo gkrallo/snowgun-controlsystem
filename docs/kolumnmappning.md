@@ -543,11 +543,12 @@ Med `?demo` i adressen visas i stället de gamla exempelsiffrorna.
 | Larm och händelser | `larm`, `handelser` | riktiga; allvarlighetsgrad finns inte |
 | Kurvor | `hist` (våttemperatur, tryck ut pump 2) | en punkt per fem minuter, ett dygn |
 | Dammens nivå | appens egen beräkning | uttaget läses inte, se nedan |
+| Körfönstret | väderprognos från Open-Meteo, inte styrsystemet | riktig prognos sedan 28 november, räknad som i Snöprognos (se CLAUDE.md) |
 
 **Visas som saknat, inte som siffror:** uppmätt flöde (per enhet och totalt),
 driftläge (kör / står), dyssteg, strypning, luftflöde och vilken brunn en
-enhet står vid. Kartan ritar därför inga enheter. **Fortfarande exempel:**
-körfönstret (prognosen är inte inkopplad) — märkt som exempel i appen.
+enhet står vid. Kartan ritar därför inga enheter. Körfönstret var ett
+exempel fram till 28 november; nu visar det riktig prognos.
 
 Händelsetexterna innehåller ledtrådar till brunnen (`Appeared S ACCESS 300
 ( adr = 9) to 1`, `Hydrant disconnected`), men vad siffrorna betyder är inte
