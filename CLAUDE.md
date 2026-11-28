@@ -32,8 +32,18 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
+**Efter kodgranskningen 28 november** (listan står i
+`snowgun-forecast/matdata/granskning-2026-11-28.md`) är Snökolls fynd rättade
+och incheckade, med prov. **När det här skrevs var ingenting utlagt och
+bryggan 13 inte installerad** — kontrollera med `git log origin/main..` och
+`/live/meta/version` innan du utgår från något annat. Kvar som frågor till
+Kristian: förslagssidorna på den skarpa adressen (S3), Vattenråd (K8),
+dammens fält för läckage och reservtakt (K7), `?demo` (K6) och översiktens
+två besked om det går att köra. Se "Mönster efter kodgranskningen" nedan.
+
 - **Bryggan** (`bridge/brygga.ps1`, version 12 på styrdatorn sedan 28
-  november 11:20, med TT01 vid drift och snökvaliteten per enhet) går på
+  november 11:20, med TT01 vid drift och snökvaliteten per enhet; version
+  13 är byggd 28 november men inte installerad, se `bridge/README.md`) går på
   styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
@@ -56,8 +66,17 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   minuterna; från version 7 också deras flöde, och punkten har `flodeSum`
   (runt 18 MB per säsong). Lägg inte till fler fält per enhet
   utan att räkna på vad en hämtning av säsongen då kostar.
-- **Gamla värden får aldrig se live ut.** Ett kort vars enhet är tyst, eller
-  allt när bryggan tystnat, får klassen `old`: streckad kant, nedtonade
+- **Gamla värden får aldrig se live ut.** Värdena kan vara gamla på tre
+  sätt, och appen skiljer dem åt (`dataLage`, 28 november): bryggan har
+  tystnat (`brygga`), bryggan når inte databasen (`sql`), eller bryggan går
+  men styrsystemet skriver inga nya värden (`gss`; ur `meta/gssAlder` från
+  bryggan 13, annars `gssTid` mot hjärtslaget som svensk tid). Använd
+  `dataOld()`, `dataTid()` och `gammalText()` — titta aldrig bara på
+  `meta.ts`. Vyn ritas om var 30:e sekund också utan ny data (`tidGar`), så
+  att åldrar räknas upp och "Kör" försvinner. Det som räknas ur nuläget
+  (dammens uttag nu, vattenrådets förslag) är okänt när datan är gammal,
+  inte "det senaste". Ett kort vars enhet är tyst, eller
+  allt när datan är gammal, får klassen `old`: streckad kant, nedtonade
   siffror och en klocka med åldern (`agoHTML`). Gult och rött är för larm,
   inte för gammal data. Chippen säger "Hörs"/"Tyst" när läget inte är känt
   — "Kontakt" i blått lästes som att enheten körde — och "Kör" bara när
@@ -142,8 +161,13 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   notis gick ut (26 november). Svaret på senaste provnotisen står i
   `/larmlage/prov`. En molnfunktion, `vakt` i `functions/`, körs varje minut,
   läser `/live` och skickar notiser via FCM. Logiken i `functions/larm.js`
-  provas med `node --test larm.test.js` och ska gå igenom före varje
-  utläggning. `functions/` är det enda i repot som kräver npm; appen är
+  provas med `npm test` i `functions/` (`larm.test.js` och `vakt.test.js`)
+  och ska gå igenom före varje utläggning. Ordningen ligger i
+  `functions/vakt.js`: varje notis läggs i kön `/larmlage/ko` i samma
+  skrivning som läget, och kön töms först när minst en telefon fått den.
+  Annars provas den igen nästa minut, i upp till en timme (28 november).
+  Tomma listor sparas inte i Realtime Database — spara en egen markering
+  (som `larmSedd`) när "tomt" ska gå att skilja från "aldrig sparat". `functions/` är det enda i repot som kräver npm; appen är
   fortfarande en fil utan bygge. Kräver Blaze (Kristians beslut) och
   nyckeln för webbnotiser i `window.notisNyckel`. Larmen styr ingenting.
 - **Snömängden är vatten × 1,5**, uppmätt med pucken på högen vid brunn 5
@@ -223,7 +247,7 @@ I korthet:
    SQL Server Express tog slut på minne en kväll (24 dec 2022) — läs lite.
 5. **Lösenord/nycklar aldrig i git.** Se `SECRETS.md` (gitignore-ad).
 6. **Firebase-regler låsta:** bara bryggan skriver driftdata, bara inloggade
-   medlemmar läser. Undantaget är `/damm`, där medlemmar skriver sina egna
+   medlemmar läser. Bryggan får fylla på historiken men inte ta bort den. Undantaget är `/damm`, där medlemmar skriver sina egna
    avläsningar av vattenmätaren och måttbandet (Kristian, 25 november).
    Inget i Firebase kan styra anläggningen.
 7. **Tidsstämpel på allt** — appen varnar för gammal data, visar aldrig stale
@@ -233,6 +257,42 @@ I korthet:
 9. **Sikta på 69 m³/h, aldrig 70.** 70 är pumparnas absoluta max — över det
    börjar de slå av och på. Förslag och varningar räknar mot `PUMP_TARGET`
    (69); `PUMP_MAX` (70) visas bara som gränsen. Vattenflöden anges i m³/h.
+
+## Mönster efter kodgranskningen 28 november
+
+Gäller allt nytt, också RTK-stationen och snödjupet från maskinerna.
+
+- **Data i en `onclick` går genom `jsArg()`, aldrig `'${esc(x)}'`.**
+  Webbläsaren gör om `&#39;` till `'` innan koden i attributet tolkas, så
+  `esc()` skyddar inte där. En medlem kunde köra kod hos en administratör
+  via en nyckel i dammloggen (S2). Ett prov vakar över mönstret.
+- **Nycklar som användare skapar kontrolleras i reglerna**
+  (`$id.matches(/^[A-Za-z0-9_-]{1,40}$/)`), och appen släpper bara igenom
+  sådana (`DAMM_ID`).
+- **Konton som bara ska fylla på får inte ta bort.** Bryggans konto får
+  lägga till historikpunkter och skriva om den senaste kvarten, men inte ta
+  bort eller skriva över äldre (`/hist/$slot`, `newData.exists()`), och inte
+  ta bort timvatten. Samma mönster för maskinernas grenar: ett konto per
+  maskin, bara sin egen gren, bara nya rader.
+- **Medlemmar loggar in med Google** (`sign_in_provider` i reglerna).
+  Bryggans konto känns igen på sitt uid, inte som medlem.
+- **Inga inbyggda frågerutor** (`alert`, `confirm`, `prompt`): de visas
+  inte i installerade appar. Använd två tryck (`tvaTryck`, `memAsk`).
+- **`?demo` rör aldrig riktig data** och säger EXEMPELDATA.
+- **Prov före varje incheckning**, från repots rot:
+
+      node --test test/app.test.mjs test/sw.test.mjs
+      firebase emulators:exec --only database --project demo-snokoll "node --test test/regler.test.mjs"
+      cd functions; npm test
+      powershell -ExecutionPolicy Bypass -File bridge\brygga.ps1 -Sjalvtest
+
+  `test/app-ram.mjs` laddar appens skript i Node med en låtsaswebbläsare
+  och ställbar klocka. Regelproven kräver Java (emulatorn) men inga
+  npm-paket. Skriv ett prov för varje rättat fel, och kontrollera att det
+  fälls mot koden före rättningen.
+- **Radslut:** git gör om filerna till CRLF i arbetskopian. Skript som
+  ändrar filer måste tåla både LF och CRLF, och `brygga.ps1` ska behålla
+  sin BOM.
 
 ## Idéer under utredning
 
@@ -289,10 +349,18 @@ gjorda; av steg 4 finns bryggan men inte läs-only-kontot:
 
 ## Publicering
 
-Från repots rot, med Firebase-verktyget inloggat:
+Från repots rot, med Firebase-verktyget inloggat. Kör proven först (se
+"Mönster efter kodgranskningen"):
 
     firebase deploy --only hosting      (appen, mappen app/)
     firebase deploy --only database     (reglerna)
+    firebase deploy --only functions    (pushlarmen)
+
+De tre är oberoende av varandra och av bryggans version: reglerna från 28
+november fungerar med bryggan 12 och 13, och appen med båda. Prova
+inloggningen efter en utläggning av appen (`firebase.json` sätter
+säkerhetshuvuden sedan 28 november), och att bryggan fortfarande hörs efter
+en utläggning av reglerna.
 
 `firebase.json` ligger i roten, eftersom verktyget inte får peka på en mapp
 utanför sin egen. Ändra reglerna i filen och lägg ut dem därifrån, aldrig i
@@ -339,6 +407,11 @@ de gamla exempelsiffrorna.
   eller citattecken — Windows PowerShell 5.1 läser annars filen fel och
   skriptet går inte att köra. Kontrollera efter varje ändring.
 - `docs/` — granskningen, arkitekturen, planen, användarhanteringen, idéerna.
+- `test/` — prov av appen (`app.test.mjs`, `app-ram.mjs`), service workern
+  och inställningarna (`sw.test.mjs`) och reglerna mot emulatorn
+  (`regler.test.mjs`). Ligger utanför `app/` och läggs aldrig ut.
+- `functions/vakt.js` — vaktens ordning (läs, bedöm, spara, skicka) utan
+  Firebase; `functions/index.js` är bara kopplingen till Firebase.
 
 ## Relation till forecast-repot
 

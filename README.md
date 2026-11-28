@@ -44,16 +44,30 @@ ingen port in till styrdatorn.
 - `CLAUDE.md` — projektanteckningarna: regler, läget och fallgropar.
 - `SECRETS.md` — lösenord (inte i git, fylls i lokalt).
 
-## Status (17 november 2026)
+## Prov
 
-Hela kedjan går sedan 16 november, och appen ligger på egen adress sedan 17
-november.
+Från repots rot, före varje incheckning:
+
+    node --test test/app.test.mjs test/sw.test.mjs
+    firebase emulators:exec --only database --project demo-snokoll "node --test test/regler.test.mjs"
+    cd functions; npm test
+    powershell -ExecutionPolicy Bypass -File bridge\brygga.ps1 -Sjalvtest
+
+Regelproven går mot Firebases lokala emulator (kräver Java) och rör aldrig
+den riktiga databasen.
+
+## Status (28 november 2026)
+
+Hela kedjan går sedan 16 november: appen på egen adress sedan 17 november,
+pushlarm sedan 26 november, körfönster ur riktig prognos sedan 28 november.
+Kodgranskningen 28 november är åtgärdad i koden; vad som är utlagt och
+installerat står i `CLAUDE.md`.
 
 Kvar att göra:
 
 - **Läs-only-konto i SQL.** Bryggan går tills vidare med styrsystemets eget
   konto, som ett uttalat avsteg. Väntar på leverantören.
-- **Uppmätt flöde, driftläge och brunn per enhet** saknas i datan. Går att
-  hitta först när anläggningen kör.
+- **Flödesmätaren FT01** ska ställas in av elektrikern; appen rättar värdet
+  tills dess.
 - **Backup av styrdatorn** finns inte.
 - En omstart av styrdatorn är inte provad.
