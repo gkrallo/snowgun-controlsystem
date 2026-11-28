@@ -41,8 +41,8 @@ säkerhetshuvudena finns, biblioteken laddas med sina kontrollsummor,
 förslagssidorna svarar 404, och Firebases egna sidor för inloggningen
 (`/__/auth/…`) har ingen ramspärr. **Bryggan 13 är inte installerad** — se
 `/live/meta/version`; larmet "Styrsystemet står" och fem minuters gräns i
-appen kräver den. Inte provat av Claude: inloggningen, och att notiser
-kommer fram.
+appen kräver den. Kristian provade inloggningen och en provnotis efter
+utläggningen samma kväll: båda fungerade.
 Kristian bestämde samma kväll: förslagssidorna bara på
 förhandslänken (`forslag/`), Vattenråd märks som skiss, dammens läckage och
 reservtakt är fasta värden lika för alla, ett pushlarm när styrsystemet
