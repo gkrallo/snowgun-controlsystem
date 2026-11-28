@@ -4,23 +4,34 @@
     ".write": false,
 
     "live": {
-      ".read":  "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
-      ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'"
+      ".read":  "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+      ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'",
+      "meta": {
+        "ts": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" }
+      }
     },
     "hist": {
-      ".read":  "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
-      ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'"
+      ".read":  "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+      "_prov": {
+        ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'"
+      },
+      "$slot": {
+        ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42' && newData.exists() && (!data.exists() || data.child('ts').val() > now - 900000)",
+        ".validate": "$slot.matches(/^20[0-9]{10}$/) && newData.child('ts').isNumber() && newData.child('ts').val() <= now + 60000"
+      }
     },
     "vattenTimme": {
-      ".read":  "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
-      ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42'",
-      "$h": { ".validate": "$h.matches(/^20[0-9]{8}$/) && newData.isNumber() && newData.val() >= 0 && newData.val() < 1000" }
+      ".read":  "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+      "$h": {
+        ".write": "auth != null && auth.uid === 'GKqPM6LQz2PRML5ayk4jAqfiaF42' && newData.exists()",
+        ".validate": "$h.matches(/^20[0-9]{8}$/) && newData.isNumber() && newData.val() >= 0 && newData.val() < 1000"
+      }
     },
 
     "notis": {
       "$uid": {
-        ".read":  "auth != null && auth.uid === $uid && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
-        ".write": "auth != null && auth.uid === $uid && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        ".read":  "auth != null && auth.uid === $uid && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        ".write": "auth != null && auth.uid === $uid && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
         "$enhet": {
           ".validate": "$enhet.matches(/^[a-z0-9]{8,40}$/) && newData.hasChildren(['token', 'ts'])",
           "token": { ".validate": "newData.isString() && newData.val().length > 20 && newData.val().length <= 4096" },
@@ -33,11 +44,11 @@
       }
     },
     "larmlage": {
-      ".read": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
       "aktiva": {
         "$id": {
           "kvitt": {
-            ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && data.parent().exists() && !data.exists()",
+            ".write": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && data.parent().exists() && !data.exists()",
             ".validate": "newData.hasChildren(['uid', 'namn', 'ts']) && newData.child('uid').val() === auth.uid",
             "uid":  { ".validate": "newData.isString()" },
             "namn": { ".validate": "newData.isString() && newData.val().length <= 80" },
@@ -49,10 +60,10 @@
     },
 
     "damm": {
-      ".read": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+      ".read": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
       "avlas": {
         "$id": {
-          ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
+          ".write": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
           ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.hasChildren(['ts', 'm3', 'typ', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
           "ts":   { ".validate": "newData.isNumber() && newData.val() > 1735689600000 && newData.val() < now + 600000" },
           "m3":   { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() < 100000000" },
@@ -64,7 +75,7 @@
       },
       "kalib": {
         "$id": {
-          ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
+          ".write": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists() && (!data.exists() || data.child('uid').val() === auth.uid || root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin')",
           ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.hasChildren(['ts', 'cm', 'punkt', 'uid', 'namn']) && (newData.child('uid').val() === auth.uid || newData.child('uid').val() === data.child('uid').val())",
           "ts":    { ".validate": "newData.isNumber() && newData.val() > 1735689600000 && newData.val() < now + 600000" },
           "cm":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
@@ -77,10 +88,10 @@
     },
 
     "members": {
-      ".read":  "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",
-      ".write": "auth != null && auth.token.email_verified == true && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",
+      ".read":  "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",
+      ".write": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && root.child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() === 'admin'",
       "$who": {
-        ".read": "auth != null && auth.token.email_verified == true && auth.token.email.toLowerCase().replace('.', ',') === $who"
+        ".read": "auth != null && auth.token.email_verified == true && auth.token.firebase.sign_in_provider === 'google.com' && auth.token.email.toLowerCase().replace('.', ',') === $who"
       }
     }
   }

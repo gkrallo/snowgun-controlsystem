@@ -133,4 +133,113 @@ test('medlemmar kan inte skriva driftdata', async () => {
   await nekas(satt('live/meta/ts', ADMIN, 1), 'skriva /live som administratör');
 });
 
-export { HOST, NS, BRYGGA, BRYGGAN, MEDLEM, ADMIN, las, satt, andra, tabort, far, nekas };
+/* ---------- S6: bryggans konto får fylla på, inte ta bort ---------- */
+
+const SV = { '.sv': 'timestamp' };
+// Historikens nyckel: UTC på jämna fem minuter, som bryggan räknar den.
+const slot = ms => { const d = new Date(ms - ms % 300000); return d.toISOString().replace(/\D/g, '').slice(0, 12); };
+const punkt = (x = {}) => Object.assign({ ts: SV, t: -4.1, tw: -5.2, tryckUt: 24.5, k125: 20.1, k126: 0.1, e: { 'SGC400-3': { t: -5, tw: -6, flode: 8.3, vb: 12.5 } }, flodeSum: 8.3 }, x);
+
+test('S6: bryggan skriver nuläget som förut, hela och bitvis', async () => {
+  await far(satt('live', BRYGGAN, {
+    meta: { ts: SV, sqlOk: true, version: '13', lasMs: 40, gssTid: '2026-11-28T12:00:00', gssAlder: 20, skrivkonto: true },
+    enheter: { 'SGC400-3': { typ: 'S ACCESS 300', tw: -6.2, flode: 8.3, brunn: 7, k415: 6 } },
+    pump: { dep12: { tryckUt: 24.5, k125: 20 } }, larm: [{ id: 'x1', text: 'fault' }]
+  }), 'hela nuläget (PUT /live)');
+  await far(andra('live', BRYGGAN, { 'meta/ts': SV, 'meta/sqlOk': true, 'meta/version': '13', 'meta/lasMs': 35, 'enheter/SGC400-3/tw': -6.4, 'enheter/SGC400-4/tw': null }), 'ändrade fält (PATCH /live)');
+  const v = (await las('live', MEDLEM)).val;
+  assert.equal(v.enheter['SGC400-3'].tw, -6.4);
+  assert.ok(Math.abs(v.meta.ts - Date.now()) < 60000, 'hjärtslaget har molnets klocka');
+});
+
+test('S6: hjärtslaget kan inte stämplas in i framtiden', async () => {
+  await nekas(andra('live', BRYGGAN, { 'meta/ts': Date.now() + 86400000 }), 'ts ett dygn fram');
+  await nekas(satt('live', BRYGGAN, { meta: { ts: Date.now() + 86400000, sqlOk: true } }), 'hela nuläget med ts i framtiden');
+  await nekas(andra('live', BRYGGAN, { 'meta/ts': 'nu' }), 'ts som text');
+});
+
+test('S6: historiken får nya punkter, och den senaste får skrivas om', async () => {
+  const k = slot(Date.now());
+  await far(andra('hist', BRYGGAN, { [k]: punkt() }), 'ny punkt (PATCH /hist, som bryggan gör)');
+  // Bryggan startas om innan den hunnit spara vilken punkt som var den sista.
+  await far(andra('hist', BRYGGAN, { [k]: punkt({ t: -4.3 }) }), 'samma punkt en gång till inom en kvart');
+  assert.equal((await las('hist/' + k, MEDLEM)).val.t, -4.3);
+});
+
+test('S6: bryggans konto kan inte ta bort eller skriva över historiken', async () => {
+  const gammal = slot(Date.now() - 3 * 3600e3), g2 = slot(Date.now() - 2 * 3600e3);
+  await far(satt('hist', 'owner', { [gammal]: punkt({ ts: Date.now() - 3 * 3600e3 }), [g2]: punkt({ ts: Date.now() - 2 * 3600e3 }) }), 'så in två gamla punkter');
+  await nekas(tabort('hist', BRYGGAN), 'ta bort hela historiken');
+  await nekas(satt('hist', BRYGGAN, {}), 'ersätta hela historiken med ingenting');
+  await nekas(satt('hist', BRYGGAN, { [slot(Date.now())]: punkt() }), 'ersätta hela historiken med en punkt');
+  await nekas(tabort('hist/' + gammal, BRYGGAN), 'ta bort en gammal punkt');
+  await nekas(andra('hist', BRYGGAN, { [gammal]: null }), 'ta bort en gammal punkt i ett samlat anrop');
+  await nekas(andra('hist', BRYGGAN, { [gammal]: punkt({ t: 99 }) }), 'skriva över en gammal punkt');
+  await nekas(satt('hist/' + gammal + '/t', BRYGGAN, 99), 'ändra ett fält i en gammal punkt');
+  // Bryggans eget prov (-ProvaMoln): punkten finns inte, och svaret ska vara nej.
+  await nekas(tabort('hist/200001010000', BRYGGAN), 'ta bort en punkt som inte finns');
+  const kvar = (await las('hist', 'owner')).val;
+  assert.deepEqual(Object.keys(kvar).sort(), [gammal, g2].sort());
+  assert.equal(kvar[gammal].t, -4.1);
+});
+
+test('S6: en historikpunkt måste ha rätt nyckel och en tid som inte ligger i framtiden', async () => {
+  await nekas(andra('hist', BRYGGAN, { skrap: punkt() }), 'nyckel som inte är en tid');
+  await nekas(andra('hist', BRYGGAN, { '2026112812': punkt() }), 'för kort nyckel');
+  await nekas(andra('hist', BRYGGAN, { [slot(Date.now())]: { t: -4 } }), 'punkt utan ts');
+  await nekas(andra('hist', BRYGGAN, { [slot(Date.now())]: punkt({ ts: Date.now() + 86400000 }) }), 'ts i framtiden');
+});
+
+test('S6: -ProvaMoln fungerar som förut', async () => {
+  const prov = { prov: true, tid: SV };
+  for (const g of ['live', 'hist']) {
+    await far(satt(g + '/_prov', BRYGGAN, prov), 'provvärde under /' + g);
+    await far(tabort(g + '/_prov', BRYGGAN), 'ta bort provvärdet under /' + g);
+  }
+  await nekas(las('members', BRYGGAN), 'läsa medlemslistan');
+  await nekas(satt('members/_prov', BRYGGAN, prov), 'skriva i medlemslistan');
+  await nekas(satt('annat/_prov', BRYGGAN, prov), 'skriva någon annanstans');
+  await nekas(satt('damm/avlas/x1', BRYGGAN, avlas(BRYGGA)), 'skriva i dammloggen');
+  await nekas(satt('larmlage/aktiva/brygga/titel', BRYGGAN, 'x'), 'skriva i larmläget');
+});
+
+test('S6: timvattnet får skrivas och skrivas om, men inte tas bort', async () => {
+  await far(andra('vattenTimme', BRYGGAN, { '2026112810': 12.5, '2026112811': 3.25 }), 'två timmar');
+  await far(andra('vattenTimme', BRYGGAN, { '2026112811': 30.1 }), 'den pågående timmen växer');
+  await nekas(tabort('vattenTimme', BRYGGAN), 'ta bort allt timvatten');
+  await nekas(satt('vattenTimme', BRYGGAN, { '2026112811': 1 }), 'ersätta allt timvatten');
+  await nekas(tabort('vattenTimme/2026112810', BRYGGAN), 'ta bort en timme');
+  await nekas(andra('vattenTimme', BRYGGAN, { '2026112810': null }), 'ta bort en timme i ett samlat anrop');
+  await nekas(andra('vattenTimme', BRYGGAN, { skrap: 1 }), 'nyckel som inte är en timme');
+  await nekas(andra('vattenTimme', BRYGGAN, { '2026112812': 5000 }), 'orimligt värde');
+  assert.deepEqual((await las('vattenTimme', MEDLEM)).val, { '2026112810': 12.5, '2026112811': 30.1 });
+});
+
+/* ---------- S7: medlemmar loggar in med Google ---------- */
+
+test('S7: ett konto med lösenord släpps inte in som medlem, fast adressen står i listan', async () => {
+  const LOSEN = token('uid-losen', 'medlem.ett@example.com', { firebase: { sign_in_provider: 'password', identities: {} } });
+  const ADMINLOSEN = token('uid-losen2', 'admin@example.com', { firebase: { sign_in_provider: 'password', identities: {} } });
+  for (const p of ['live', 'hist', 'damm', 'vattenTimme', 'larmlage']) await nekas(las(p, LOSEN), 'läsa /' + p + ' med lösenordskonto');
+  await nekas(satt('damm/avlas/rad1', LOSEN, avlas('uid-losen')), 'skriva i dammloggen med lösenordskonto');
+  await nekas(las('members', ADMINLOSEN), 'läsa medlemslistan med lösenordskonto');
+  await nekas(satt('members/ny@example,com', ADMINLOSEN, { role: 'admin', name: 'x' }), 'ändra medlemslistan med lösenordskonto');
+  await nekas(las('members/medlem,ett@example,com', LOSEN), 'läsa sin egen rad med lösenordskonto');
+  await far(las('members/medlem,ett@example,com', MEDLEM), 'läsa sin egen rad med Google');
+  await far(las('members', ADMIN), 'administratören läser listan med Google');
+});
+
+test('notiser och kvittering: bara ens egna, och bara medlemmar', async () => {
+  const anm = { token: 'x'.repeat(40), ts: Date.now(), namn: 'Medlem', ua: 'prov' };
+  await far(satt('notis/uid-medlem/abcdefgh12345678', MEDLEM, anm), 'anmäla sin telefon');
+  await nekas(satt('notis/uid-annan/abcdefgh12345678', MEDLEM, anm), 'anmäla någon annans');
+  await nekas(las('notis/uid-medlem', ANNAN), 'läsa någon annans anmälan');
+  await nekas(satt('notis/uid-utanfor/abcdefgh12345678', UTANFOR, anm), 'anmäla sig utan att vara medlem');
+  await far(tabort('notis/uid-medlem/abcdefgh12345678', MEDLEM), 'ta bort sin anmälan (Logga ut gör det)');
+  await far(satt('larmlage/aktiva/enhet-SGC400-3', 'owner', { typ: 'enhet', titel: 'Kanon 5 står i fel', text: '', sedan: Date.now() }), 'så in ett larm');
+  const kv = { uid: 'uid-medlem', namn: 'Medlem', ts: Date.now() };
+  await far(satt('larmlage/aktiva/enhet-SGC400-3/kvitt', MEDLEM, kv), 'kvittera');
+  await nekas(satt('larmlage/aktiva/enhet-SGC400-3/kvitt', ANNAN, { uid: 'uid-annan', namn: 'Annan', ts: Date.now() }), 'kvittera en gång till');
+  await nekas(satt('larmlage/aktiva/finns-inte/kvitt', MEDLEM, kv), 'kvittera ett larm som inte finns');
+  await nekas(satt('larmlage/ko', MEDLEM, [{ titel: 'x' }]), 'skriva i notiskön');
+});
