@@ -17,12 +17,24 @@ function live(nu, enheter, extra) {
 }
 const kanon = (nu, k415, x) => Object.assign({ k415, brunn: 7, senastHord: lok(nu - 10000), flode: k415 === 6 ? 8 : 0 }, x || {});
 
+// Det databasen ger tillbaka av det som sparats: tomma listor och tomma
+// objekt sparas inte alls. Läget går genom den mellan varje körning, som i
+// molnet. Utan det hittade proven inte K1 (granskningen 28 november).
+function somDatabasen(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== 'object') return v;
+  if (Array.isArray(v)) { const a = v.map(somDatabasen).filter(x => x !== null); return a.length ? a : null; }
+  const o = {};
+  for (const [k, x] of Object.entries(v)) { const y = somDatabasen(x); if (y !== null) o[k] = y; }
+  return Object.keys(o).length ? o : null;
+}
+
 // Kör bedömningen minut för minut och samlar notiserna.
 function korning(steg) {
   let aktiva = {}, minne = {}, alla = [];
   for (const [nu, l] of steg) {
     const r = bedom(l, aktiva, minne, nu);
-    aktiva = r.aktiva; minne = r.minne;
+    aktiva = somDatabasen(r.aktiva) || {}; minne = somDatabasen(r.minne);
     alla.push(...r.skicka.map(s => Object.assign({ nu }, s)));
   }
   return { aktiva, minne, alla };
@@ -181,4 +193,33 @@ test('verklig /live från 26 november ger inget larm första gången', () => {
   assert.deepStrictEqual(r.aktiva, {});
   assert.strictEqual(r.minne.enheter['SGC300-1'].kor, nu);
   assert.strictEqual(r.minne.enheter['SGC400-3'].kor, undefined);
+});
+
+test('K1: första larmet efter en larmfri stund ger en notis', () => {
+  const nytt = { id: 'SGC400_def_5', maskin: 'Autonomous Snowgun', namn: '2 5 10', text: 'Fan mismatch fault' };
+  const steg = [];
+  for (let i = 0; i < 6; i++) { const nu = T0 + i * MIN; steg.push([nu, live(nu, {}, { larm: i < 3 ? [] : [nytt] })]); }
+  const r = korning(steg);
+  assert.deepStrictEqual(r.alla.map(s => [s.titel, s.nu]), [['Larm i styrsystemet', T0 + 3 * MIN]]);
+});
+
+test('K1: ett larm som går över och kommer tillbaka hörs igen, också när listan blev tom emellan', () => {
+  const a = { id: 'SGC400_def_5', maskin: 'Autonomous Snowgun', namn: '2 5 10', text: 'Fan mismatch fault' };
+  const steg = [];
+  for (let i = 0; i < 9; i++) { const nu = T0 + i * MIN; steg.push([nu, live(nu, {}, { larm: (i < 3 || i >= 6) ? [a] : [] })]); }
+  const r = korning(steg);
+  // Första minuten är första körningen: larmet stod redan där, ingen notis.
+  assert.deepStrictEqual(r.alla.map(s => s.nu), [T0 + 6 * MIN]);
+});
+
+test('K1: allra första körningen ger ingen notis för larm som redan står', () => {
+  const a = { id: 'SGC850_def_voie_pres_eau_1', maskin: 'Networked Snowgun', namn: '1 901', text: 'Fault water pressure channel' };
+  assert.deepStrictEqual(bedom(live(T0, {}, { larm: [a] }), {}, null, T0).skicka, []);
+  assert.deepStrictEqual(bedom(live(T0, {}, { larm: [] }), {}, null, T0).skicka, []);
+});
+
+test('K1: ett minne från före rättningen (bara larmKanda) räknas som läst', () => {
+  const a = { id: 'A1', maskin: 'M', namn: 'n', text: 't' }, b = { id: 'B2', maskin: 'M', namn: 'n', text: 'ny' };
+  const r = bedom(live(T0, {}, { larm: [a, b] }), {}, { larmKanda: ['A1'] }, T0);
+  assert.deepStrictEqual(r.skicka.map(s => s.text), ['M n: ny']);
 });

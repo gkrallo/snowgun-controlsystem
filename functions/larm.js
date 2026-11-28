@@ -151,8 +151,13 @@ function bedom(live, aktivaIn, minneIn, nu) {
     const larm = (Array.isArray(live.larm) ? live.larm : Object.values(live.larm || {}))
       .filter(a => a && a.id && !BORTTAGET_LARM.test(String(a.id)));
     const ids = larm.map(a => String(a.id));
-    if (minne.larmKanda) {
-      const kanda = new Set(minne.larmKanda);
+    // larmSedd säger att listan har lästs förut. Det går inte att se på
+    // larmKanda: är den tom sparar databasen den inte alls, och då såg "inga
+    // larm förra gången" ut som "första körningen" — det första larmet efter
+    // en larmfri stund gav ingen notis. (Ett minne från före larmSedd har
+    // bara larmKanda, och räknas också som läst.)
+    if (minne.larmSedd || minne.larmKanda) {
+      const kanda = new Set(minne.larmKanda || []);
       const nyaLarm = larm.filter(a => !kanda.has(String(a.id)));
       if (nyaLarm.length) skicka.push({
         tag: 'styrsystemet',
@@ -163,6 +168,7 @@ function bedom(live, aktivaIn, minneIn, nu) {
     }
     // Ett larm som går över och kommer tillbaka ska höras igen.
     minne.larmKanda = ids;
+    minne.larmSedd = true;
   }
 
   // --- Påminnelse och kvittering ---
