@@ -405,6 +405,55 @@ Så här görs det:
    FT01 fanns.
 
 Sedan jämförs det påfyllda med kanonernas räknade vatten sedan 13/11 plus
-läckaget. Kvoten ersätter `UTTAG_FAKTOR` (0,9), som bygger på slänten och
-flytpunkten. Regnet på dammen (cirka 1 600 m²) är det osäkra: 10 mm regn
+läckaget, och med rättat FT01. Kvoten avgör `UTTAG_FAKTOR` (0,83 sedan 28
+november, ur rättat FT01). Regnet på dammen (cirka 1 600 m²) är det osäkra: 10 mm regn
 är 16 m³.
+
+### FT01 rättad, och uttaget räknat mot den (28 november)
+
+Flödesmätaren FT01 visade sig vara fel inställd: omvandlaren saknar
+SENSORPROM och räknar med DN 40 och kalibreringsfaktorn 1,9634950, medan
+givaren är DN 65 med 3,552451 (se `docs/kolumnmappning.md`). Den visar 55 %,
+och felet är linjärt. Kristian bestämde att appen rättar FT01 med 1,809 tills
+omvandlaren är inställd.
+
+- Rättat FT01 24/11 19:35 till 27/11 12:56: **683 m³**. Måttbandet 40 → 120
+  cm med ritningens slänt 1:1,5 ger 679 m³, och flytpunkten med lådan 729–765
+  m³. Rättat FT01 och måttbandet med 1:1,5 skiljer under 1 %.
+- Kanonernas timvatten var 119–123 % av rättat FT01 i tre olika perioder.
+  **`UTTAG_FAKTOR` är därför 0,83** i stället för 0,9. Uttaget just nu tas
+  direkt ur rättat FT01 när pumparna går.
+- Det talar för att slänten är ungefär 1:1,5 även under 40 cm på måttbandet,
+  och att flytpunkterna har några cm fel nära kanten. Se nästa avsnitt: appen
+  räknar 1:1,5 igen sedan kvällen 28 november.
+- Påfyllningen till snorkeln avgör slutligt: det påfyllda ska vara rättat FT01
+  sedan 13 november plus läckaget.
+
+### 120 → 178 cm, 27–28 november: slänten är 1:1,5
+
+Kristian mätte 178 cm vid snorkeln 28/11 10:38, samtidigt som lådan flöt
+(`SFE_Facet_261128_093356.ubx`, 09:36–09:47 UTC; efterberäknas när LIDK dygn
+332 finns). Påfyllningen stod still.
+
+| | m³ |
+|---|---|
+| Rättat FT01, 27/11 12:56 – 28/11 10:38 | 460 |
+| plus läckage, 0,9 dygn | 462–464 |
+| Måttbandet 120 → 178 cm med 1:1,5 (32,2 cm i höjd) | **464** |
+| Måttbandet 120 → 178 cm med 1:1,3 (35,5 cm) | 507 |
+| Kanonernas timvatten | 558 |
+
+Den lutning som stämmer exakt med rättat FT01 är **1:1,50**. Det är andra
+gången: 40 → 120 cm gav 679 m³ med 1:1,5 mot 683 rättat FT01. Två
+oberoende sträckor och mätaren säger alltså att ritningens slänt gäller, och
+att 1:1,3 ur flytpunkten 24/27 november var fel. 178 cm är med 1:1,5
+2,57 m och 2 912 m³, alltså 71 %; med 1:1,3 är det 2,49 m och 2 801 m³.
+
+Flytpunkten 28/11 mot den 27/11, på samma ställe, ger höjdskillnaden direkt:
+32,2 cm väntas med 1:1,5 och 35,5 cm med 1:1,3 (antennen 127,350 eller 127,317
+mot 127,672).
+
+**I appen sedan kvällen 28 november (Kristian):** slänten 1:1,5 hela vägen
+(`SF_NED` = `SF`), FT01 rättad × 1,809 och `UTTAG_FAKTOR` 0,83. Mätningen
+120 cm 27/11 är nu 2,89 m och 3 376 m³, och 178 cm 28/11 är 2,57 m och
+2 912 m³ (71 %).

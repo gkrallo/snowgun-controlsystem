@@ -73,10 +73,11 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   dammen är appens egen beräkning. Volymen kommer ur ritningen, men krönet
   och snorkeln är inmätta mot vattenytan (24 november): 100 % är snorkeln,
   3,37 m ≈ 4 110 m³, och varningen ligger 5 cm över den. Måttbandet läses
-  bara vid snorkeln, se `docs/damm-matningar.md`. Under 40 cm på måttbandet
-  räknas slänten 1:1,3 (`SF_NED`), inte ritningens 1:1,5. Det mättes med
-  lådan som flöt 27 november: 120 cm längs duken, och ytan hade sjunkit
-  48–50 cm. Avläsningarna av
+  bara vid snorkeln, se `docs/damm-matningar.md`. Slänten är ritningens
+  1:1,5 hela vägen (`SF_NED` = `SF`): mot rättat FT01 stämde måttbandet
+  inom 1 % för 40 → 120 och 120 → 178 cm. Appen räknade 1:1,3 under 40 cm
+  en dag (28 november), ur flytpunkterna med lådan, som hade några cm fel
+  nära kanten. Avläsningarna av
   vattenmätaren (start, stopp, emellan) förs i appen i stället för i Excel,
   och påfyllningen räknas ur dem. Mätningarna med måttband sparas
   gemensamt. Loggen i Damm-koll visar avläsningar, pumppass och mätningar,
@@ -99,25 +100,31 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   var 30:e minut, och korten blir streckade när den är över två timmar
   gammal. Väderstationen visas bredvid men räknas aldrig in.
 - **FT01 (flöde ut) är `dep12/k125`**, utpekad 25 november när pumparna
-  startade. Den visade 50–53 % av dammens minskning 24–27 november
-  (måttband och flytpunkt). Appen visar den orättad och märkt så. **Räkna
-  inte dammens uttag på den** förrän en körning till är mätt med måttband
-  vid start och stopp (se `docs/damm-matningar.md`).
+  startade. Omvandlaren (Siemens MAG 5000, från 2023) har inget SENSORPROM
+  och är inställd för DN 40 med kalibreringsfaktorn 1,9634950. Givaren i
+  röret (MAG 3100, 2019) är DN 65 med 3,552451. FT01 visar därför cirka
+  55 %, och felet är linjärt. **Appen rättar FT01 med 3,552451 / 1,9634950
+  = 1,809** överallt, i nuvärdet och i historiken (`FT01_FAKTOR`, `ft01()`,
+  Kristian 28 november). Rättat blev 24–27 november 683 m³, mot 679 m³ ur
+  måttbandet med slänten 1:1,5. **När omvandlaren ställts in: sätt
+  `FT01_RATTAD` till tiden det gjordes**, så rättas bara äldre värden.
+  Annars blir FT01 dubbelt rättad. Stödsidan för elektrikern är en privat
+  artefakt, https://claude.ai/artifact/XayFgmnJaZzmyh8v7jMHdW. Se
+  `docs/kolumnmappning.md` och bilderna i `FT01waterflowsensor/`.
 - **Kanonernas flöde är räknat, inte mätt** (bryggan 7): "Real water flow"
   = teoretiskt × √(tryck ÷ börtryck), 0 när kanonen står. Det summeras och
-  läggs bredvid FT01 (45 % av summan 26 november). Summan var 108–115 % av
-  dammens minskning 24–27 november. Teoretiskt flöde står
+  läggs bredvid FT01. Summan är cirka 120 % av rättat FT01 (119–123 %
+  24–28 november). Teoretiskt flöde står
   kvar när kanonen står och får aldrig summeras. Flödet ligger i `q`, inte
   i `eau` (som bara är ?demo).
-- **Dammens uttag dödräknas ur kanonerna** (Kristians beslut 26 november,
-  eftersom FT01 troligen inte går att lita på). Bryggan 11 räknar varje
-  timmes vatten ur styrsystemets statistik till `/vattenTimme` (nyckel =
-  timmens början i UTC); appen drar summan sedan senaste måttbandsmätningen
-  (`damDrawnSince`), och nuvarande uttag är summan av `q`. Båda räknas som
-  90 % av kanonernas beräknade flöde (`UTTAG_FAKTOR`, sedan 28 november),
-  eftersom summan var 108–115 % av dammens minskning 24–27 november.
-  Loggen jämför två måttbandsmätningar med det. FT01 används inte förrän
-  Kristian felsökt den. Bryggan 11 installerades 28 november och räknade
+- **Dammens uttag dödräknas ur kanonerna, kalibrerat mot FT01.** Bryggan 11
+  räknar varje timmes vatten ur styrsystemets statistik till `/vattenTimme`
+  (nyckel = timmens början i UTC). Appen drar summan sedan senaste
+  måttbandsmätningen (`damDrawnSince`), räknad som **83 %** av kanonernas
+  beräknade vatten (`UTTAG_FAKTOR`, 28 november). Kanonerna räknar cirka
+  120 % av rättat FT01; förut var faktorn 0,9, ur flytpunkten. Uttaget just
+  nu är rättat FT01 när pumparna går, annars kanonerna × 0,83. Loggen
+  jämför två måttbandsmätningar med det. Bryggan 11 installerades 28 november och räknade
   hela säsongen bakåt. Timvattnet stämmer med `flodeSum` i `/hist` (1 130 mot
   1 130 m³ under de 35 timmar båda finns). Saknas `/vattenTimme` står dammen
   kvar på senaste mätningen och visas som gammal ("Uttaget saknas sedan
@@ -256,7 +263,8 @@ I korthet:
   Vilken kolumn som är vad står i `docs/kolumnmappning.md`.
 - **Pumparna sitter i serie:** P1 (`dep11`) är matarpumpen, P2 (`dep12`)
   högtryckspumpen. Deras volymer är samma vatten och får inte läggas ihop.
-  Dammens nivå mäts inte.
+  Dammens nivå mäts inte, men styrsystemet har en ingång för den (kolumn
+  126 i `Water departure_Com`, "niveau lac/bac"), som står på 0,1 utan givare.
 - Anslutningssträngar och SQL-frågor ligger i **klartext** i programfilerna —
   ingen dekompilering behövdes.
 - `*_Main`-tabellerna har `DateUpd` och skrivs var 20:e sekund. Aktiva larm

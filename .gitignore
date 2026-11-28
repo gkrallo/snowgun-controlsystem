@@ -22,6 +22,9 @@ desktop.ini
 probe/db-sond-rapport_*.txt
 probe/Screenshot*.png
 
+# Kristians foton av flödesmätaren FT01 (40 MB). Stödsidan är en artefakt.
+FT01waterflowsensor/
+
 # Bryggans inställningar, krypterade lösenord och utdata — bara på styrdatorn
 bridge/brygga-config.json
 bridge/brygga-hemligt-*.txt

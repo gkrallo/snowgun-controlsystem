@@ -30,17 +30,143 @@ En rad per avgång: `11` = P1 (lågtryck, LPP01), `12` = P2 (högtryck, HPP01).
 | Kolumn | Betydelse | Säkerhet |
 |---|---|---|
 | 0 | avgångens nummer | säker |
-| 121 | tryck in, bar (PT01 = 0,1) | säker |
-| 122 | vattentemperatur, °C (TT01 = 11,8). Mäter strömmande vatten: när pumparna står visar den vattnet i röret (bryggan 12 skickar därför också senaste värdet vid drift) | säker |
-| 123 | tryck ut, bar (PT02 = 7,2; 0,1 för avgång 11) | säker |
+| 121 | tryck in, bar (PT01 = 0,1). Sufag: "Mot mesure pression aspiration" | säker |
+| 122 | vattentemperatur, °C (TT01 = 11,8). Sufag: "Mot mesure température aspiration". Mäter strömmande vatten: när pumparna står visar den vattnet i röret (bryggan 12 skickar därför också senaste värdet vid drift) | säker |
+| 123 | tryck ut, bar (PT02 = 7,2; 0,1 för avgång 11). Sufag: "… pression refoulement" | säker |
 | 124 | temperatur ut, °C | säker (statistikens `temperature_refoulement`) |
-| 125 | uppmätt flöde ut, m³/h (FT01) — steg till 6–12 när pumparna startade 25 november och följde skärmen (8,6). **Mätaren misstänks visa ungefär hälften.** | säker att det är FT01; storleken okontrollerad |
-| 126 | stod på 0,1 även när pumpen gick — inte flödet; kanske trycket efter filtret (PITS01) | **osäker** |
-| 128 | maxflöde, 70 m³/h | säker |
+| 125 | uppmätt flöde ut, m³/h (FT01). Sufag: "Mot mesure débit". Steg till 6–12 när pumparna startade 25 november och följde skärmen (8,6). **Visade 50–53 % av dammens minskning 24–27 november; mätaren har felet F61, se nedan.** | säker att det är FT01; storleken fel |
+| 126 | Sufag: "Mot mesure niveau lac/bac", alltså **dammens nivå**. Står på 0,1: ingen givare inkopplad | säker (sonden 28 november) |
+| 128 | Sufag: "Mot de débit disponible" | säker |
 | 158 | senaste kontakt | säker |
 
 Statistikens `niveau_lac` är konstant 1 och `MapLevel` är tom: det finns
 ingen nivågivare i dammen. "Lake lvl. 95,5 m" på skärmen är en fast text.
+
+Styrsystemet har alltså en ingång för dammens nivå (126), och i
+`Water departure_Main` ett ersättningsvärde för den ("Remplacement niveau
+lac/bac"). En nivågivare i dammen, kopplad dit, skulle ge riktig nivå i
+stället för appens räkning. Det är en fråga för leverantören.
+
+### FT01: felet F61 och "Measuring approx. 50 %" (28 november)
+
+Kristian fotade flödesmätaren 28 november. Den består av en Siemens SITRANS
+F M MAG 5000-omvandlare och en MAG 3100-givare:
+
+- **Omvandlaren:** MAG 5000, 7ME6910-1AA10-1AA0, märkt 08/2023.
+- **Givaren:** MAG 3100, DN 65, 7ME6310-3FG11-1AA1, serienummer 161140H249,
+  från 2019, kalibreringsfaktor 3,552451.
+
+Omvandlaren är alltså fyra år yngre än givaren. Displayen visade 0 m³/h och
+"Pending 029d16h08m", med växlande "Replace" och "F61 SENSORPROM err.".
+
+Ur Siemens manual (MAG 5000/6000, A5E02338368, 06/2023, kapitel 9):
+
+- **F61, "SENSORPROM® error", åtgärd "Replace"**: "It is not possible to
+  rely on the data in SENSORPROM® unit anymore". I felsökningstabellen står
+  den under symptomet *Measuring error* ("Defective SENSORPROM® unit →
+  Replace SENSORPROM® unit").
+- **SENSORPROM** är minnet i givarens kopplingslåda. Där ligger
+  givarstorleken, kalibreringsfaktorn och alla inställningar, och
+  omvandlaren hämtar dem därifrån. Det måste ha samma serienummer som
+  givaren.
+- **Samma tabell har symptomet "Measuring approx. 50 %"**, med orsaken
+  "Missing one electrode connection" och åtgärden "Check cables".
+- **Felloggen nollställs när strömmen bryts.** "Pending 029d16h08m" är
+  alltså räknat sedan omvandlaren senast fick ström, troligen när
+  säsongen startade kring 29–30 oktober.
+
+FT01 visade 50–53 % av dammens minskning och 45–46 % av kanonernas räknade
+flöde. Båda förklaringarna passar: data som inte går att lita på, eller en
+elektrod som inte är ansluten. Att kontrollera i omvandlarens meny:
+
+- *Sensor characteristics*: Sensor size ska vara DN 65, Calibration factor
+  3,552451 och Correction factor 100 %.
+- *Basic settings*: Qmax, och att strömutgången (4–20 mA) motsvarar det
+  styrsystemet räknar med.
+- Elektrodkablarna i kopplingslådan.
+
+Ett nytt SENSORPROM beställs från Siemens med givarens serienummer. Det är
+leverantörens eller en elektrikers sak. Kopplingslådan står under 230 V.
+
+#### Omvandlarens inställningar, avlästa 28 november
+
+Kristian läste av omvandlaren i läsläget 28 november 12:07–12:14. Bilderna
+ligger i `FT01waterflowsensor/`, där dubbletterna är borttagna.
+
+| Meny | Värde i omvandlaren | Givarens skylt |
+|---|---|---|
+| SENSORPROM | **Not installed** | – |
+| Suppress P40 | No | – |
+| Sensor size | **0,0400 m (DN 40)** | **DN 65** |
+| Calibration factor | **1,9634950** | **3,552451** |
+| Correction factor | 1,0000 | – |
+| Excitation | 3,125 Hz (50 Hz) | – |
+| Sensor type, code no, serial no, size (Product identity) | **tomma (-----)** | MAG 3100, 7ME6310-3FG11-1AA1, 161140H249 |
+| Converter | MAG 5000, 7ME691…, N1R8220065, SW 04.08 X 03 | – |
+| Qmax | 70 m³/h | (styrsystemets kolumn 128: 70) |
+| Flow direction / Empty pipe / Low flow cut-off | Positive / On / 1,5 % | – |
+| Error level / Mains frequency | Warning / 50 Hz | – |
+
+**Slutsatsen:** omvandlaren har inget SENSORPROM och är inställd för en annan
+givare, DN 40 med faktorn 1,9634950 (troligen ett grundvärde), medan givaren
+i röret är DN 65 med 3,552451. Omvandlaren är från 2023 och givaren från
+2019, så den byttes troligen utan att givarens data fördes över. Siemens
+manual säger just detta: "If a SENSORPROM is not installed, check the sensor
+characteristics to see if they match the product label".
+
+**Hur mycket fel det ger.** Skillnaden i kalibreringsfaktor ensam ger att
+FT01 visar 1,9634950 / 3,552451 = **55 %** av det verkliga flödet. Rättat
+med 1,809 blir det:
+
+| Tid | FT01 | Rättat | Kanonernas timvatten | Kanonerna mot rättat |
+|---|---|---|---|---|
+| 24/11 19:35 – 27/11 12:56 | 377 m³ | **683 m³** | 814 m³ | 119 % |
+| 26/11 08:10 – 27/11 01:05 | 281 m³ | 509 m³ | 625 m³ | 123 % |
+| 27/11 12:56 – 28/11 12:00 | 254 m³ | 460 m³ | 558 m³ | 121 % |
+
+Mot dammen 24–27 november: måttbandet med ritningens slänt 1:1,5 gav 679 m³,
+alltså **inom 1 % av rättat FT01**. Flytpunkten med lådan gav 729–765 m³,
+7–12 % mer. Två oberoende mått pekar alltså på cirka 680 m³, och på att
+slänten är ungefär 1:1,5 även mellan 40 och 120 cm. Lådans höjder kan ha
+några cm fel nära kanten. Kanonernas räknade vatten blir då **cirka 120 %**
+av det verkliga, och uttaget borde räknas som cirka 0,83 av det, inte 0,9.
+
+Det här förutsätter att omvandlaren räknar flödet ur kalibreringsfaktorn och
+inte också ur storleken. Hade storleken räknats in hade FT01 visat 21 % eller
+69 %, och det stämmer inte med något vi sett. Påfyllningen till snorkeln
+avgör: den ska vara lika med rättat FT01 sedan 13 november, plus läckaget.
+
+**Felet är linjärt.** En magnetisk flödesmätare ger en spänning som är
+proportionell mot hastigheten, och omvandlaren multiplicerar med konstanter.
+En fel konstant ger samma procent fel vid alla flöden. Historiken 24–28
+november bekräftar det: FT01 delat med kanonernas summa låg på 0,44–0,48 i
+alla flödesband från 3 till 56 m³/h. Det svaga fallet vid högt flöde beror
+troligen på kanonernas egen räkning. Två förbehåll:
+
+- Low flow cut-off 1,5 % av Qmax gör att verkliga flöden under cirka
+  1,9 m³/h visas som 0.
+- Excitationen 3,125 Hz är kanske inte den frekvens givaren kalibrerades
+  med. Siemens anger att det kostar under 1 % efter nollställning.
+
+**SENSORPROM** är ett litet minne som hör till givaren. Det sitter i övre
+kanten av givarens kopplingslåda, den grå lådan under displayen (märkt MAG
+3100, 07/2019), under omvandlarens kopplingsplatta. Kontakten sluts av sig
+själv när plattan monteras. Manualen (4.3, s. 24–25) säger: "Check that your
+connection board lines up with SENSORPROM® unit, if not, move SENSORPROM®
+unit to the other side of terminal box." Stödsidan med bilder, var minnet
+sitter och hur värdena ställs in är en privat artefakt:
+https://claude.ai/artifact/XayFgmnJaZzmyh8v7jMHdW. Kristian:
+överdelen byttes för några år sedan, och det var då mätaren slutade stämma.
+Troligen kom plattan inte över minnet, eller så försvann minnet vid bytet.
+
+**Att göra (leverantör eller elektriker):** ställ in Sensor size 65 mm och
+Calibration factor 3,552451 under Sensor characteristics. Det kräver
+lösenordet, och fabrikens är 1000. Leta också efter givarens SENSORPROM (serie
+161140H249), som kan sitta kvar i den gamla omvandlarens kopplingslåda. Fråga
+först leverantören om styrsystemet använder FT01 när det fördelar flödet:
+`Water departure_Main` kolumn 16 "Empilement sur débit réel (=0) ou sur
+débit demandé (=1)" står på 0. Efter rättningen visar FT01 cirka 1,8 gånger
+mer än i dag.
 
 ## Ledningarna — `[Line_Com]`
 

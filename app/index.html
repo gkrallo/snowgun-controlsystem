@@ -668,7 +668,7 @@ function rebuildHist(){
   for(const k of keys){
     const i=Math.floor((keyMs(k)-from)/step); if(i<0||i>=n)continue;
     const p=all[k], a=acc[i], add=(f,v)=>{if(Number.isFinite(v)){a.s[f]=(a.s[f]||0)+v;a.c[f]=(a.c[f]||0)+1;}};
-    for(const f of HIST_F)add(f,p[f]);
+    for(const f of HIST_F)add(f,f==='k125'?ft01(p[f],keyMs(k)):p[f]);
     // Enheternas värden (bryggan 5) ligger under e, och plattas ut till
     // "SGC400-3.tw" — samma namn som historikrutan frågar efter.
     if(p.e)for(const [u,o] of Object.entries(p.e))if(o)for(const [f,v] of Object.entries(o)){add(u+'.'+f,v);
@@ -918,7 +918,8 @@ const LAGE={1:['s-alarm','Fel'],2:['s-off','Stoppad'],6:['s-run','Kör']};
    mättes med pucken 27 november: 190 ± 15 m³ snö, plus troligen 10–20 m³ i
    skogskanten, på 133 m³ räknat vatten. Det blir 1,4–1,6 (Kristian valde 1,5
    den 28 november). Faktorn gäller kanonernas räknade vatten, som var
-   108–115 % av dammens minskning 24–27 november. Den bygger på en hög och
+   108–115 % av dammens minskning 24–27 november enligt flytpunkten (cirka
+   120 % av rättat FT01). Den bygger på en hög och
    en mätning. Bryggan summerar bara vattnet, så faktorn kan bytas här. */
 const SNO_FAKTOR=1.5;
 const sno=v=>Number.isFinite(v)?v*SNO_FAKTOR:null;
@@ -1194,7 +1195,19 @@ function vOverviewR(){
 // FT01 = kolumn 125 i Water departure (dep12), utpekad 25 november när
 // pumparna startade. Mätaren misstänks visa ungefär hälften; värdet visas
 // orättat tills det kontrollerats mot dammen.
-const FT01_T='Flöde ut, FT01 (visar troligen för lite)';
+/* FT01 är fel inställd (avläst 28 november): omvandlaren saknar SENSORPROM
+   och går på DN 40 med kalibreringsfaktorn 1,9634950, medan givaren i röret
+   är DN 65 med 3,552451. Den visar därför 55 % av flödet. Felet är linjärt
+   (FT01 / kanonernas summa 0,44–0,48 i alla flödesband 3–56 m³/h), och
+   rättat stämde det inom 1 % med måttbandet 24–27 november. Appen rättar
+   därför med 3,552451 / 1,9634950 = 1,809 (Kristian, 28 november).
+   NÄR OMVANDLAREN ÄR INSTÄLLD: sätt FT01_RATTAD till tiden då det gjordes.
+   Värden efter den visas som mätaren säger, äldre fortsätter att rättas. */
+const FT01_FAKTOR=3.552451/1.9634950;
+const FT01_RATTAD=null;   // till exempel Date.parse('2026-12-02T10:00:00+01:00')
+const ft01Fel=(t=Date.now())=>FT01_RATTAD==null||t<FT01_RATTAD;
+const ft01=(v,t=Date.now())=>Number.isFinite(v)?(ft01Fel(t)?v*FT01_FAKTOR:v):null;
+const FT01_T=ft01Fel()?'Flöde ut, FT01 (rättat × 1,81: omvandlaren har fel kalibreringsfaktor)':'Flöde ut, FT01';
 /* TT01 mäter det strömmande vattnet. Står pumparna (FT01 under 2 m³/h; den
    visar 0,1 när allt står) visar den vattnet som står i röret, och då blir
    värdet grått. Bryggan 12 skickar senaste värdet medan vattnet gick
@@ -1236,7 +1249,7 @@ function pumpSVG(){
     ${tag(352,56,'PTS01',p2.tryckIn,'bar')}
     ${tag(462,56,'TT01',p2.vattenTemp,'°C',1,null,null,tt01Still(p2))}
     ${tag(526,56,'PT02',p2.tryckUt,'bar',1,'tryckUt','Tryck efter högtryckspumpen (PT02)')}
-    ${tag(590,56,'FT01',p2.k125,'m³/h',1,'k125',FT01_T)}
+    ${tag(590,56,'FT01',ft01(p2.k125),'m³/h',1,'k125',FT01_T)}
     ${tag(700,52,'PT04',L('L122'),'bar')}
     ${tag(700,152,'PT03',L('L121'),'bar')}
     <text x="872" y="56" text-anchor="end" font-size="10.5" font-weight="600" fill="#e9f0fa">Ledning 002 →</text>
@@ -1280,7 +1293,7 @@ function pumpSVGtall(p1,p2,L,LO,HI,pump){
     ${pump(200,260,HI,'')}${lbl(176,256,'P2','end')}${sub(176,271,'högtryckspump','end')}
     ${tag(268,290,'TT01',p2.vattenTemp,'°C',1,null,null,tt01Still(p2))}
     ${tag(268,336,'PT02',p2.tryckUt,'bar',1,'tryckUt','Tryck efter högtryckspumpen (PT02)')}
-    ${tag(268,382,'FT01',p2.k125,'m³/h',1,'k125',FT01_T)}
+    ${tag(268,382,'FT01',ft01(p2.k125),'m³/h',1,'k125',FT01_T)}
     ${tag(90,452,'PT03',L('L121'),'bar')}
     ${tag(310,452,'PT04',L('L122'),'bar')}
     ${lbl(90,530,'↓ Ledning 001','middle')}${sub(90,546,num(L('L001'))+' bar','middle')}
@@ -1300,13 +1313,13 @@ function vWaterR(){
   const pct=Math.round(tot/PUMP_MAX*100), ps=pumpState(tot), hot=ps==='over'||ps==='at', near=ps!=='ok';
   const p2=pumps&&pumps.dep12||{};
   // FT01 mot kanonerna: bara meningsfullt när det faktiskt går vatten.
-  const ft=Number.isFinite(p2.k125)?p2.k125:null, kvot=ft!=null&&tot>=3&&!bridgeOld()?ft/tot:null;
+  const ft=ft01(p2.k125), kvot=ft!=null&&tot>=3&&!bridgeOld()?ft/tot:null;
   return topbar('Driftövervakning','Vattenbalans — pump → enheter',vattenSw('water'))+`<div class="view">
   <div class="card${bridgeOld()?' old':''}"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset ${bridgeOld()?agoHTML(lastData):''}</h3>
     ${pumps?pumpSVG()+tt01Rad(p2):'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
     <p class="muted small" style="line-height:1.6;margin:12px 0 0">Vattnet går från dammen till ledningarna: <b style="color:var(--text)">P1</b> lyfter det ur intagsbrunnen, genom filtret, och <b style="color:var(--text)">P2</b> trycker ut det i de två ledningarna mot spåret. Grönt är lågt tryck, blått högt. Namnen vid värdena är givarnas namn på skärmen i pumphuset. Tryck på PT02 för att se trycket bakåt i tiden.</p>
   </div>
-  ${missing('<b>Flödesmätaren FT01</b> är styrsystemets kolumn 125. Den steg när pumparna startade 25 november och följde avläsningen på skärmen, medan kolumn 126 stod still. <b>Mätaren misstänks visa ungefär hälften</b> av det verkliga flödet, kanske ett skalningsfel sedan den byttes. Värdet visas som mätaren säger, utan rättning, och dammen räknar inte på det förrän det är kontrollerat mot måttbandet. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.')}
+  ${ft01Fel()?missing('<b>FT01 visas rättad, × 1,81.</b> Omvandlaren i pumphuset byttes för några år sedan och hittar inte givarens minne (SENSORPROM). Den räknar därför med DN 40 och fel kalibreringsfaktor, och visar bara 55 % av flödet. Felet är linjärt, så rättningen gäller i hela spannet. Rättat stämde FT01 inom 1 % med dammens måttband 24–27 november. Displayen i pumphuset visar fortfarande det orättade värdet. Pumptaket är '+PUMP_MAX+' m³/h; vi siktar på högst '+PUMP_TARGET+'.'):''}
 
   <div class="section-title">Vatten nu — enheter med kontakt</div>
   <div class="card${bridgeOld()?' old':''}">
@@ -1327,11 +1340,11 @@ function vWaterR(){
       <p class="muted small" style="margin:12px 0 0;line-height:1.6">❄ Ger ungefär <b style="color:var(--text)">${num(sno(tot),0)} m³ snö i timmen</b> (vatten × ${num(SNO_FAKTOR)})${cannons.some(c=>c.vs!=null)?' · '+num(sno(sum(cannons.filter(c=>c.vs!=null),c=>c.vs)),0)+' m³ i säsongen, alla enheter':''}.<br>${kvot!=null?'<b style="color:var(--text)">FT01 visar '+Math.round(kvot*100)+' % av kanonernas summa.</b> ':''}${hot?'<b style="color:var(--alarm)">Över pumparnas mål '+PUMP_TARGET+' m³/h.</b>':near?'<b style="color:var(--limit)">Nära målet '+PUMP_TARGET+' m³/h.</b>':''}</p>`
       :'<p class="muted small" style="margin:0">'+(running().length?'Flödet per enhet kommer när bryggan på styrdatorn är version 7.':'Ingen enhet har kontakt just nu.')+'</p>'}
   </div>
-  ${missing('<b>Kanonernas vatten är räknat, inte mätt</b> — de har ingen flödesgivare. Styrsystemet tar flödet för de öppna ringarna vid börtrycket och rättar det med trycket vid kanonen ("Real water flow" på skärmen). Det stämmer bara så bra som dysornas tabellvärden, men det är oberoende av FT01. 26 november, med sex kanoner igång, var summan 43,9 m³/h och FT01 19,8 — 45 %. Ligger kvoten stadigt där talar det för ett skalningsfel i FT01 snarare än ett fel som varierar. Måttbandet vid dammen avgör vilken som stämmer.')}
+  ${missing('<b>Kanonernas vatten är räknat, inte mätt</b> — de har ingen flödesgivare. Styrsystemet tar flödet för de öppna ringarna vid börtrycket och rättar det med trycket vid kanonen ("Real water flow" på skärmen). Det stämmer bara så bra som dysornas tabellvärden. Mot rättat FT01 räknar kanonerna cirka 20 % för mycket (119–123 % 24–28 november), och dammens uttag räknas därför som '+Math.round(UTTAG_FAKTOR*100)+' % av det.')}
 
   <div class="card" style="margin-top:14px"><h3>${icon('drop','#7dd3fc',15)} Flöde ut (FT01)</h3>${histSeg()}
     ${histPts.length>1?'<div class="chartbox"><canvas id="cFlow"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
-    <p class="muted small" style="margin:10px 0 0">Som mätaren visar — den misstänks visa ungefär hälften. Den streckade linjen är kanonernas räknade flöde ihop (från bryggans version 7).</p>
+    <p class="muted small" style="margin:10px 0 0">${ft01Fel()?'Rättat × 1,81 för omvandlarens fel kalibreringsfaktor. ':''}Den streckade linjen är kanonernas räknade flöde ihop (från bryggans version 7).</p>
   </div>
   <div class="card" style="margin-top:14px"><h3>${icon('gauge','#7dd3fc',15)} Tryck efter högtryckspumpen (PT02)</h3>${histSeg()}
     ${histPts.length>1?'<div class="chartbox"><canvas id="cWater"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}
@@ -1535,12 +1548,13 @@ const H_VARN=H_SNORKEL+0.05;                         // varning: 5 cm över snor
 // H_YTA. Ovanför 40 cm räknas 1:1,5. Det skiljer 4 cm i höjd mot GPS:en
 // där, troligen för att duken är flackare överst, men det är måttbandet man
 // mäter med, så det får gälla.
-// Under 40 cm är slänten brantare. Flytpunkten 27 november, med måttbandet
-// på 120 cm, visade att ytan sjunkit 48–50 cm sedan 24 november. Det blir
-// 80 cm längs duken per 49 cm i höjd, ungefär 1:1,3, där ritningen ger
-// 44 cm. Under 120 cm är slänten inte mätt, så samma lutning antas.
-// Volymen räknas fortfarande ur ritningen. Bara måttbandet räknas om.
-const SF_NED=80/49;                                  // cm längs duken per cm i höjd, under 40 cm vid snorkeln
+// Under 40 cm gäller också ritningens 1:1,5. Mot rättat FT01 stämde två
+// sträckor inom 1 %: 40 → 120 cm (24–27 november, 679 mot 683 m³) och
+// 120 → 178 cm (27–28 november, 464 mot 462–464 m³). Den lutning som passar
+// exakt är 1:1,50. Appen räknade 1:1,3 här 28 november, ur flytpunkterna
+// med lådan, som hade några cm fel nära kanten (Kristian, 28 november).
+// SF_NED står kvar som eget tal, så att en uppmätt avvikelse kan läggas in.
+const SF_NED=SF;                                     // cm längs duken per cm i höjd, under 40 cm vid snorkeln
 const tapeAt=(h,id)=>{                               // cm längs duken från krönet ner till ytan
   const p=kantPkt(id);
   if(p.band==null)return (kronH(id)-h)*SF*100;
@@ -1654,11 +1668,15 @@ const damFillSince=(t0,now=Date.now())=>{const a=meterAt(t0),b=meterAt(now);retu
 let vattenTimme={}, vattenTimmeOk=false;
 function applyVattenTimme(v,nekad){vattenTimme=(v&&typeof v==='object')?v:{};vattenTimmeOk=!nekad&&!!v;liveRefresh();}
 const timKey=k=>Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8),+k.slice(8,10));
-/* Kanonernas räknade vatten var 108–115 % av dammens minskning 24–27
-   november (måttbandet och flytpunkten med lådan). Dammens uttag räknas därför
-   som 90 % av det. Det är en mätning; nästa körning med måttband före och
-   efter visar om det håller (loggen räknar ut det). FT01 används inte. */
-const UTTAG_FAKTOR=0.9;
+/* Dammens uttag räknas på kanonernas timvatten, kalibrerat mot FT01.
+   Rättat FT01 (se FT01_FAKTOR) är det enda som mäter vattnet ut; kanonerna
+   räknade 119–123 % av det 24–28 november, stadigt i alla flödesband.
+   Uttaget räknas därför som 83 % av kanonernas vatten (Kristian, 28
+   november). Förut 0,9, ur måttbandet och flytpunkten. Uttaget just nu tas
+   direkt ur rättat FT01 när pumparna går. Påfyllningen till snorkeln, mot
+   kommunens mätare, avgör slutligt. */
+const UTTAG_FAKTOR=0.83;
+const UTTAG_PCT=Math.round(UTTAG_FAKTOR*100);
 /* Vattnet ur dammen mellan t0 och nu. Timmen som t0 ligger i räknas till
    den del som är efter t0, som om kanonerna gått jämnt hela timmen. */
 function damDrawnSince(t0){
@@ -1691,9 +1709,15 @@ function damVolNow(now=Date.now()){
 let damTape=Math.round(tapeAt(hFromVol(dam.V0),dam.horn));  // måttbandsreglagets läge
 
 /* flöden */
-// snökanonernas uttag (m³/h). I drift deras beräknade flöde × UTTAG_FAKTOR,
-// de som hörs nu; i ?demo exemplets eau.
-const damUttakM3h=()=>real?+(sum(running().filter(c=>Number.isFinite(c.q)),c=>c.q)*UTTAG_FAKTOR).toFixed(1):totalWater();
+// Uttaget just nu (m³/h): rättat FT01 när pumparna går, annars kanonernas
+// beräknade flöde × UTTAG_FAKTOR; i ?demo exemplets eau.
+const damUttakM3h=()=>{
+  if(!real)return totalWater();
+  // Går pumparna och bryggan hörs: FT01, rättat, är det som faktiskt går ut.
+  const p2=pumps&&pumps.dep12;
+  if(p2&&!bridgeOld()&&pumpGar(p2))return +ft01(p2.k125).toFixed(1);
+  return +(sum(running().filter(c=>Number.isFinite(c.q)),c=>c.q)*UTTAG_FAKTOR).toFixed(1);
+};
 const damInflowM3d=()=>{const p=pumpInfo();return p.on?p.rate*24:0;};  // påfyllningen, m³/dygn (regn tillkommer)
 const damNetM3h=()=>damInflowM3d()/24 - damUttakM3h() - dam.leak/24;
 const floorVol=()=>volAt(dam.floorH);               // lägsta driftnivå (pumpintag)
@@ -1796,14 +1820,14 @@ function kronFakta(){
       ${rad('Yta innanför krönet',Math.round(36.5*44.5).toLocaleString('sv-SE')+' m²',KRON.yta.toLocaleString('sv-SE')+' m²')}
       ${rad('Bräddning under krönet','50 cm, bräddrör',cmUnder+' cm, snorkeln')}
       ${rad('Volym till bräddningen',Math.round(volAt(3.00)).toLocaleString('sv-SE')+' m³',Math.round(V100).toLocaleString('sv-SE')+' m³')}
-      ${rad('Slänt vid snorkeln','1:1,5','1:1,3 från 40 till 120 cm på måttbandet')}
+      ${rad('Slänt vid snorkeln','1:1,5','1:1,5 (40–178 cm, mot FT01)')}
       ${rad('Djup','3,5 m','inte mätt')}
     </table>
     <p class="muted small" style="line-height:1.6;margin:12px 0 0"><b style="color:var(--text)">Snorkeln sitter högre än appen trodde.</b> Förut räknade den med ritningens bräddrör plus 20 cm: 3,20 m och ${Math.round(volAt(3.20)).toLocaleString('sv-SE')} m³. Mätt mot vattenytan ${KANT.datum} sitter snorkelns kant ${cmUnder} cm under krönets medel, på ${num(H_SNORKEL,2)} m. Då rymmer dammen ${Math.round(V100-volAt(3.20))} m³ mer, och det stämmer med vattenmätaren på påfyllningen. Det som såg ut som läckage var alltså troligen en större damm.</p>
     <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Måtten i plan stämmer med ritningen.</b> Räknat med de inmätta måtten blir det bara ${Math.round(volKron(H_SNORKEL)-V100)} m³ mer till snorkeln, så volymen räknas fortfarande ur ritningen.</p>
     <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Höjden skiljer mer.</b> 10 cm i höjd är ca ${Math.round(areaAt(H_SNORKEL)*0.1)} m³ vid snorkeln. Krönet ligger så här många cm över snorkelns kant: ${lista}. Tar snorkeln inte undan, till exempel om den fryser, bräddar dammen först i SO och NV. Därför varnar appen redan 5 cm över snorkeln. Det kan finnas lägre ställen mellan hörnen, som inte är mätta. De fyra hörnens medel räknas som ritningens 3,50 m.</p>
     <p class="muted small" style="line-height:1.6;margin:10px 0 0">Planen: band-ATV med pucken längs krönet ${KRON.datum}. Höjderna: GPS:en i en låda ${KANT.datum}, först stående på krönets kant och sedan flytande vid vattenlinjen på samma ställe. Båda är efterberäknade mot Swepos, med 100 % fix. Höjderna stämmer på ±2 cm. Botten är inte mätt, så volymen bygger på ritningens djup.</p>
-    <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Slänten är brantare än ritningen under 40 cm.</b> Lådan flöt vid snorkeln igen 27 november, när måttbandet visade 120 cm. Ytan hade då sjunkit 48–50 cm sedan 24 november, alltså 49 cm i höjd på 80 cm längs duken. Med ritningens 1:1,5 hade det varit 44 cm. Under 40 cm räknar appen därför måttbandet med 1:1,3. Under 120 cm är slänten inte mätt.</p>`;
+    <p class="muted small" style="line-height:1.6;margin:10px 0 0"><b style="color:var(--text)">Slänten stämmer med ritningen, 1:1,5.</b> Mot flödesmätaren FT01, rättad, stämde måttbandet inom 1 % på två sträckor: 40 → 120 cm (24–27 november) och 120 → 178 cm (27–28 november). Flytpunkterna med lådan pekade först på 1:1,3, men de hade några cm fel nära kanten.</p>`;
 }
 
 function vDam(){
@@ -1820,7 +1844,7 @@ function vDam(){
   else if(net<-0.01){const t=usableVol(V)/(-net); proj=`Sjunker ≈ ${fmtDur(t)} till lägsta driftnivå`; projEta=etaStr(t);}
   else proj='I det närmaste i balans';
   return topbar('Vattenbalans','Damm-koll — magasinet vid Råda ås')+`<div class="view">
-   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Volymen räknas ur byggritningen. Krönet och snorkeln är inmätta mot vattenytan ${KANT.datum}. ${real?(vattenTimmeOk?'<b style="color:var(--text)">Uttaget är 90 % av kanonernas eget beräknade vatten</b>, timme för timme ur styrsystemets statistik, inte FT01. Ingen kanon mäter flödet. 24–27 november räknade kanonerna 108–115 % av det dammen minskade, därav 90 %. Mät gärna med måttbandet före och efter en körning: loggen visar då om det stämmer.':'<b style="color:var(--text)">Uttaget har inte kommit från bryggan än</b> (version 11), så beräkningen tar bara hänsyn till påfyllning och läckage — mät med måttbandet efter varje körning.'):'Uttaget kommer från driftdatan;'} Vattenmätaren och måttbandet matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
+   <div class="banner ok">${icon('dam','#34d399',20)}<div style="flex:1"><b>Digital tvilling av dammen.</b> <span class="muted small">Volymen räknas ur byggritningen. Krönet och snorkeln är inmätta mot vattenytan ${KANT.datum}. ${real?(vattenTimmeOk?'<b style="color:var(--text)">Uttaget är '+UTTAG_PCT+' % av kanonernas beräknade vatten</b>, timme för timme ur styrsystemets statistik. Faktorn kommer från FT01, rättad för omvandlarens fel: kanonerna räknar cirka 20 % för mycket. Uttaget just nu är FT01 när pumparna går. Mät gärna med måttbandet före och efter en körning: loggen visar då om det stämmer.':'<b style="color:var(--text)">Uttaget har inte kommit från bryggan än</b> (version 11), så beräkningen tar bara hänsyn till påfyllning och läckage — mät med måttbandet efter varje körning.'):'Uttaget kommer från driftdatan;'} Vattenmätaren och måttbandet matar du in — appen räknar, den styr aldrig pumparna.</span></div></div>
    ${dammErr?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>${dammErr}</b></div></div>`:''}
    ${real&&!kalibList().length?`<div class="banner">${icon('bell','#f87171')}<div style="flex:1"><b>Ingen mätning med måttband är sparad än.</b> <span class="muted small">Volymen nedan är ett exempel tills någon mätt vid snorkeln och sparat mätningen.</span></div></div>`:''}
 
@@ -1915,7 +1939,7 @@ function mbCard(h){
     ${calForm.msg?`<p class="mt-msg ${calForm.err?'fel':''}">${calForm.msg}</p>`:''}
     <p class="muted small" style="margin-top:12px"><b style="color:var(--text)">Vad händer när jag sparar?</b> Mätningen blir dammens nya utgångsläge för alla i gruppen. Sedan räknar appen vidare själv — plus det vattenmätaren fyller på, minus läckaget — tills nästa mätning. Att bara dra i reglaget sparar ingenting.</p>
     <p class="muted small" style="margin-top:8px">${s
-      ?`Senaste mätningen: <b style="color:var(--text)">${fmtDT(s.ts)}, ${fmtCm(s.cm)} cm</b>${s.namn?' ('+esc(s.namn)+')':''}, alltså ${fmtHel(dam.V0)} m³. Sedan dess: påfyllt ${fmtHel(damFillSince(s.ts))} m³, läckage ${fmtHel((Date.now()-s.ts)/864e5*dam.leak)} m³, ${damUtanUttag()?'uttaget saknas (bryggan på styrdatorn behöver version 11)':'uttag '+fmtHel(damDrawn())+' m³'+(real?' (90 % av kanonernas räknade vatten'+(vattenTimmeSenast()?', till '+fmtDT(vattenTimmeSenast()):'')+')':'')}. Alla mätningar finns i loggen.`
+      ?`Senaste mätningen: <b style="color:var(--text)">${fmtDT(s.ts)}, ${fmtCm(s.cm)} cm</b>${s.namn?' ('+esc(s.namn)+')':''}, alltså ${fmtHel(dam.V0)} m³. Sedan dess: påfyllt ${fmtHel(damFillSince(s.ts))} m³, läckage ${fmtHel((Date.now()-s.ts)/864e5*dam.leak)} m³, ${damUtanUttag()?'uttaget saknas (bryggan på styrdatorn behöver version 11)':'uttag '+fmtHel(damDrawn())+' m³'+(real?' ('+UTTAG_PCT+' % av kanonernas räknade vatten'+(vattenTimmeSenast()?', till '+fmtDT(vattenTimmeSenast()):'')+')':'')}. Alla mätningar finns i loggen.`
       :`Ingen mätning sparad än.${real?'':' (I ?demo sparas den bara i minnet.)'}`}</p>`;
 }
 // Reglaget och fältet följer varandra utan att hela vyn ritas om — annars
@@ -2088,7 +2112,7 @@ function lackage(){
   const k=real&&vattenTimmeOk?damDrawnSince(a.ts)-damDrawnSince(s.ts):null, rest=k!=null?borta-k:borta;
   const B=t=>`<b style="color:var(--text)">${t}</b>`, LAK='läckage, avdunstning och bräddning, minus regn';
   const text=k!=null&&k>=1
-    ?`Då försvann ${fmtHel(borta)} m³. Kanonerna tog ${fmtHel(k)} m³ (90 % av sitt räknade vatten), och kvar blir ${B(fmtHel(rest)+' m³, '+num(rest/d,1)+' m³/dygn')}: ${LAK}. Blir det mycket mer eller mindre än några m³ per dygn stämmer inte faktorn för kanonerna.`
+    ?`Då försvann ${fmtHel(borta)} m³. Kanonerna tog ${fmtHel(k)} m³ (${UTTAG_PCT} % av sitt räknade vatten), och kvar blir ${B(fmtHel(rest)+' m³, '+num(rest/d,1)+' m³/dygn')}: ${LAK}. Blir det mycket mer eller mindre än några m³ per dygn stämmer inte faktorn för kanonerna.`
     :`Då försvann ${B(fmtHel(borta)+' m³, '+num(borta/d,1)+' m³/dygn')}: ${LAK}.${k==null?' Har kanonerna gått emellan ingår uttaget också.':''}`;
   return `<p class="muted small" style="margin-top:8px">${B('Mellan de två senaste mätningarna')} (${num(d,1)} dygn) fyllde mätaren ${fmtHel(f)} m³ och nivån ändrades ${vb>=va?'+':'−'}${fmtHel(Math.abs(vb-va))} m³. ${text} Måttbandet ger ca ±10 m³.</p>`;
 }
@@ -2353,8 +2377,8 @@ function drawMapUnits(){
       (real?`<br><a href="#" onclick="openUnit('${esc(c.id)}');return false">Öppna</a>`:'');
     want['w'+no]={ll:[w.lat,w.lon],html,pop,pref:side};
   }
-  // Pumphuset står vid dammen. Summan är kanonernas eget beräknade flöde
-  // tills FT01 är kontrollerad: den visar ungefär hälften (se Vatten).
+  // Pumphuset står vid dammen. Summan är kanonernas eget beräknade flöde;
+  // FT01 står i rutan, rättad (se FT01_FAKTOR).
   {
     const lat=KRON.horn.reduce((a,k)=>a+k.lat,0)/KRON.horn.length, lon=KRON.horn.reduce((a,k)=>a+k.lon,0)/KRON.horn.length;
     const lv=real?cannons.filter(c=>mapUnitState(c).live&&Number.isFinite(c.q)):cannons;
@@ -2363,7 +2387,7 @@ function drawMapUnits(){
     const html=()=>`<div class="mk"><div class="mlab pump e" style="left:4px">Σ ${num(q)} <small>m³/h</small><br><small>Dammen</small> <span style="color:${damUtanUttag()?'#6f7f96':pc}">${damUtanUttag()?'≤ ':''}${pct} %</span></div></div>`;
     const p2=pumps&&pumps.dep12||{};
     const pop=`<b>Pumphuset</b><br>Kanonernas flöde, summa: ${num(q)} m³/h<br>`+
-      (real?`FT01 visar ${num(p2.k125)} m³/h (troligen för lite)<br>`:'')+
+      (real?`FT01 ${num(ft01(p2.k125))} m³/h${ft01Fel()?' (rättat × 1,81)':''}<br>`:'')+
       `Dammen ${pct} % · egen beräkning, nivån mäts inte${damUtanUttag()?'. Uttaget sedan mätningen '+fmtDT(dam.t0)+' saknas':''}<br>`+
       `<a href="#" onclick="go('water');return false">Vatten</a> · <a href="#" onclick="go('dam');return false">Damm-koll</a>`;
     want.pump={ll:[lat,lon],html,pop};
