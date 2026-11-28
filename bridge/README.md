@@ -11,9 +11,12 @@ föll bort på kvartsgränsen), journalen går tillbaka till 30 oktober 08:45
 och gav 82 inkopplingar. SGC400-3 var senast inkopplad vid en annan brunn
 än 10 och räknas vid brunnen från 09:53.
 
-- **Version 11 är inte installerad** (28 november; version 10 går). Appens
-  damm väntar på den. Stegen står i `LAS-MIG-FORST.txt` i zipfilen
-  `brygga-styrdatorn-2026-11-26-v11.zip`.
+- **Läget 28 november:** version 11 går på styrdatorn sedan förmiddagen
+  (Kristian), installerad enligt `LAS-MIG-FORST.txt` i
+  `brygga-styrdatorn-2026-11-26-v11.zip`. `/vattenTimme` fick 53 timmar med
+  vatten, 1 433 m³ från 30 oktober. Det stämmer med `flodeSum` i `/hist`:
+  1 130 mot 1 130 m³ under de 35 timmar båda finns. Kanonerna startade 26/11
+  02:00 UTC, inte 25/11 kväll; FT01 visade bara någon m³ då.
 - Version 11 räknar kanonernas vatten timme för timme ur styrsystemets
   statistik och skickar det till `/vattenTimme` (nyckel = timmens början i
   UTC, värde m³), för dammens uttag. Första starten räknar hela säsongen,

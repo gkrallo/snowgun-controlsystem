@@ -32,8 +32,8 @@ oss om **styrsystemet** (Sufag/MND GSSystem) och arbetet med att exportera
 
 Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggning.
 
-- **Bryggan** (`bridge/brygga.ps1`, version 10 på styrdatorn sedan 26
-  november 12:15) går på styrdatorn som en
+- **Bryggan** (`bridge/brygga.ps1`, version 11 på styrdatorn sedan 28
+  november, förmiddagen) går på styrdatorn som en
   schemalagd uppgift, läser var 20:e sekund och skickar bara ändringar.
   **Den går med `GSS_Login` enligt ett uttalat avsteg** — leverantören har
   inte svarat om `sa`, och utan `sa` går läs-only-kontot inte att skapa. Se
@@ -113,9 +113,11 @@ Hela kedjan går: styrsystemet → bryggan → Firebase → appen, med inloggnin
   90 % av kanonernas beräknade flöde (`UTTAG_FAKTOR`, sedan 28 november),
   eftersom summan var 108–115 % av dammens minskning 24–27 november.
   Loggen jämför två måttbandsmätningar med det. FT01 används inte förrän
-  Kristian felsökt den. **Bryggan 11 är inte installerad på styrdatorn**
-  (28 november): utan `/vattenTimme` står dammen kvar på senaste mätningen
-  och visas som gammal ("Uttaget saknas sedan mätningen").
+  Kristian felsökt den. Bryggan 11 installerades 28 november och räknade
+  hela säsongen bakåt. Timvattnet stämmer med `flodeSum` i `/hist` (1 130 mot
+  1 130 m³ under de 35 timmar båda finns). Saknas `/vattenTimme` står dammen
+  kvar på senaste mätningen och visas som gammal ("Uttaget saknas sedan
+  mätningen").
 - **Pushlarm** är utlagda sedan 26 november 16:20 (`docs/forslag-pushlarm.md`,
   "Byggt 26 november"). Läggs ut med `firebase deploy --only functions`.
   Funktionen körs som projektets standardkonto

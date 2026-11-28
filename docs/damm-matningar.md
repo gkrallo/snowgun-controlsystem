@@ -370,6 +370,13 @@ låda är bökiga och ska inte behövas för att se ungefär hur mycket som finn
   Nu visas dammen som gammal, "Uttaget saknas sedan mätningen", tills
   timvattnet finns. Bryggan 11 räknar hela säsongen bakåt vid första
   starten, så uttaget sedan mätningen kommer med direkt.
+- **Bryggan 11 installerades 28 november på förmiddagen.** Från mätningen
+  27/11 12:56 till 28/11 kl. 10 räknade kanonerna 558 m³. 90 % är 502 m³,
+  så dammen har ungefär 2 800 m³, 68 %.
+- Med bryggans timvatten blev kanonernas vatten 24/11 19:35 till 27/11
+  12:56 **814 m³**. Det uppskattade jag förut till 823 m³ ur FT01. Mot
+  dammens minskning, 715–760 m³, är det 107–114 %, så faktorn 0,9 står
+  sig.
 - Loggen drar kanonernas uttag mellan två mätningar med måttband och visar
   det som blir kvar per dygn. Blir det mycket mer eller mindre än några m³
   per dygn stämmer inte 90 %.
