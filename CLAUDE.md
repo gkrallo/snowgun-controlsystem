@@ -39,10 +39,9 @@ bryggan 13 inte installerad** — kontrollera med `git log origin/main..` och
 `/live/meta/version` innan du utgår från något annat. Reglerna lades ut 28
 november kväll. Kristian bestämde samma kväll: förslagssidorna bara på
 förhandslänken (`forslag/`), Vattenråd märks som skiss, dammens läckage och
-reservtakt är fasta värden lika för alla, och ett pushlarm när styrsystemet
-står. Kvar som fråga: översiktens besked om det går att köra (kanonernas
-egna givare ska gälla när de går, prognosen är för mobilisering). Se
-"Mönster efter kodgranskningen" nedan.
+reservtakt är fasta värden lika för alla, ett pushlarm när styrsystemet
+står, och översiktens besked "Läget nu" (nedan). Se "Mönster efter
+kodgranskningen" nedan.
 
 - **Bryggan** (`bridge/brygga.ps1`, version 12 på styrdatorn sedan 28
   november 11:20, med TT01 vid drift och snökvaliteten per enhet; version
@@ -88,6 +87,16 @@ egna givare ska gälla när de går, prognosen är för mobilisering). Se
   (vattentemperaturen i pumphuset) mäter bara strömmande vatten: står
   pumparna (FT01 under 2 m³/h) blir den grå, med "senast vid drift" under
   skissen (`tt01Rad`, från bryggan 12).
+- **Verkligheten styr när ni kör, prognosen är för att mobilisera**
+  (Kristian, 28 november). Översiktens kort "Läget nu" ger ETT besked, med
+  källan utskriven (`twNu`, `lagetNu`): kanonernas egna givare när minst en
+  hörs — medianen av dem som går, annars av dem som hörs — sedan
+  väderstationen (märkt "visar ofta för varmt"), och prognosen bara om inget
+  annat finns. Varje enhet bedöms mot sin egen startgräns i styrsystemet
+  (`startGrans`), också på kartan. Prognosen står under egen rubrik, "Framåt
+  — prognos", utan eget besked om nu, men med hur den ligger till mot
+  kanonerna just då. Lägg aldrig tillbaka två jämbördiga besked om nuläget.
+  Körfönstret är planeringsvyn och räknar som Snöprognos.
 - **Appen** loggar in med Google, visar riktig data och går att installera på
   hemskärmen. Det som saknas i datan visas som saknat, aldrig som påhittade
   siffror: öppna ringar, dyssteg och strypning. Körfönstret är riktig

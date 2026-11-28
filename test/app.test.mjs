@@ -545,3 +545,115 @@ test('pushlarmet "Styrsystemet står" ersätter appens egen rad', () => {
   assert.doesNotMatch(app.visa('alarms'), /Styrsystemet skriver inga nya värden/);
   assert.match(app.visa('alarms'), /styrsystemet som slutar skriva nya värden/);
 });
+
+/* ---------- Läget nu: kanonerna först, prognosen för mobilisering ---------- */
+
+// Tre enheter: två kanoner och en lans. Varje rad: [våttemp, läge (6 kör, 2 stoppad), startgräns].
+function medEnheter(rader, { station = -5, prognos = null, meta = {} } = {}) {
+  const app = medKlocka(), nu = app.nu(), l = liveVid(nu, meta);
+  const nycklar = ['SGC400-3', 'SGC400-4', 'SGC400-5'];
+  l.enheter = {};
+  rader.forEach(([tw, k415, startTemp], i) => {
+    l.enheter[nycklar[i]] = { typ: i === 2 ? 'TAURUS_2.0' : 'S ACCESS 300', senastHord: sv(nu - 30000), t: tw + 1, rh: 80, tw, flode: k415 === 6 ? 8 : 0, brunn: 5 + i, k415, startTemp, stoppTemp: startTemp + 0.5 };
+  });
+  l.vader = station === null ? null : { t: station + 1, rh: 85, tw: station };
+  if (prognos !== null) {
+    const pts = []; for (let i = -2; i < 30; i++) pts.push({ x: nu + i * 3600e3, temp: prognos + 1, rh: 80, pressure: 1000, wind: 2, gust: 3, dir: 200, wb: prognos });
+    app.kor('fc').pts = pts; app.kor(`fc.at=${nu}`);
+  }
+  app.kor('applyLive')(l);
+  return app;
+}
+const M = '−';   // minustecknet som appen skriver
+
+test('läget nu: medianen av de kanoner som går, med lägsta och högsta', () => {
+  const app = medEnheter([[-6.2, 6, -2.5], [-6.6, 6, -2.5], [-5.0, 2, -3]]);
+  assert.equal(app.kor('twNu().kalla'), 'kanoner');
+  assert.equal(+app.kor('twNu().tw').toFixed(2), -6.4);
+  const html = app.visa('overview');
+  assert.match(html, /Läget nu<\/h3>/);
+  assert.match(html, /Kallt nog vid alla 3</);
+  assert.match(html, new RegExp(`${M}6,4 °C</b> våttemperatur vid kanonerna: medianen av 2 enheter som går, från ${M}6,6 till ${M}6,2\\.`));
+  assert.match(html, new RegExp(`Våttemperatur</h3><div class="val">${M}6,4<small> °C</small></div><div class="foot up">vid kanonerna · median av 2 som går · ${M}6,6 till ${M}6,2<`));
+  assert.doesNotMatch(html, /Går det att köra\?|väderstationens våttemperatur i det här ögonblicket/);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('läget nu: varje enhet bedöms mot sin egen startgräns i styrsystemet', () => {
+  // Lansen ska ned till −3 och mäter −2,8: över sin gräns, fast kanonernas −2,5 vore nog.
+  const app = medEnheter([[-6.2, 6, -2.5], [-6.6, 6, -2.5], [-2.8, 2, -3]]);
+  const html = app.visa('overview');
+  assert.match(html, /2 av 3 under sin startgräns</);
+  assert.match(html, new RegExp(`Över sin gräns: Lans 7 \\(${M}2,8 mot ${M}3,0\\)\\.`));
+  assert.match(html, /<div class="foot warn">vid kanonerna/);
+  // Kartan färgar efter samma gräns.
+  const lans = app.kor("cannons.find(c=>c.typ==='lans')");
+  assert.match(app.kor('unitLabel')(lans, { live: true, q: 0 }, 'e', true), /color:#fbbf24/);
+  assert.match(app.kor('unitLabel')(Object.assign({}, lans, { tw: -3.2 }), { live: true, q: 0 }, 'e', true), /color:#7dd3fc/);
+});
+
+test('läget nu: går ingen kanon används de som hörs, och det står så', () => {
+  const app = medEnheter([[-1.0, 2, -2.5], [-1.4, 2, -2.5], [-1.2, 2, -3]]);
+  const html = app.visa('overview');
+  assert.match(html, /För varmt vid kanonerna</);
+  assert.match(html, new RegExp(`${M}1,2 °C</b> våttemperatur vid kanonerna: medianen av 3 enheter som hörs \\(ingen går\\)`));
+});
+
+test('läget nu: en givare som visar fel drar inte beskedet', () => {
+  const app = medEnheter([[-6.2, 6, -2.5], [-6.6, 6, -2.5], [15, 6, -3]]);
+  assert.equal(app.kor('twNu().tw'), -6.2);            // medelvärdet vore +0,7
+  assert.match(app.visa('overview'), /2 av 3 under sin startgräns/);
+});
+
+test('läget nu: väderstationen gäller bara när ingen kanon hörs, och sägs visa för varmt', () => {
+  const tyst = (station) => {
+    const app = medEnheter([], { station });
+    return [app.kor('twNu().kalla'), app.visa('overview')];
+  };
+  let [kalla, html] = tyst(-5);
+  assert.equal(kalla, 'station');
+  assert.match(html, /Kallt nog enligt väderstationen</);
+  assert.match(html, /Ingen kanon hörs just nu\. Väderstationen visar ofta för varmt\./);
+  assert.match(html, /vid väderstationen · visar ofta för varmt · luft/);
+  [kalla, html] = tyst(-1);
+  assert.match(html, /För varmt enligt väderstationen</);
+  assert.match(html, /så det kan vara kallare än så\./);
+  // Hörs en kanon går den före väderstationen, också om stationen säger något annat.
+  const app = medEnheter([[-6.2, 6, -2.5]], { station: 1 });
+  assert.match(app.visa('overview'), /Kallt nog vid kanonen</);
+  assert.doesNotMatch(app.main(), /enligt väderstationen/);
+});
+
+test('läget nu: prognosen ger bara besked om nu när inget annat finns', () => {
+  // Kanonerna mäter: inget besked om nu ur prognosen, men hur den ligger till.
+  let app = medEnheter([[-6.2, 6, -2.5], [-6.6, 6, -2.5]], { prognos: -2.7 });
+  let html = app.visa('overview');
+  assert.match(html, /Framåt — prognos/);
+  assert.doesNotMatch(html, /enligt prognosen/);
+  assert.match(html, new RegExp(`Prognosen säger ${M}2,7 °C nu, kanonerna mäter ${M}6,4: prognosen ligger <b[^>]*>3,7 grader för varmt</b> just nu\\.`));
+  assert.match(html, /Prognosen är till för att mobilisera\. När ni kör gäller det kanonerna mäter\./);
+  // Prognosen stämmer.
+  app = medEnheter([[-6.2, 6, -2.5]], { prognos: -6.0 });
+  assert.match(app.visa('overview'), /det stämmer just nu\./);
+  // Varken kanoner eller väderstation: då prognosen, och det står varför.
+  app = medEnheter([], { station: null, prognos: -4.0 });
+  html = app.visa('overview');
+  assert.equal(app.kor('twNu().kalla'), 'prognos');
+  assert.match(html, /Varken kanonerna eller väderstationen ger något värde just nu\. Prognosen säger/);
+  assert.equal((html.match(/enligt prognosen/g) || []).length, 2);   // rutan överst och kortet, inte en tredje gång
+  // Gamla mätvärden räknas inte som verklighet.
+  app = medEnheter([[-6.2, 6, -2.5]], { prognos: -4.0 });
+  app.visa('overview'); app.fram(6); html = app.tick();
+  assert.equal(app.kor('twNu().kalla'), 'prognos');
+  assert.match(html, /Bryggan är tyst sedan [^<]*\. Prognosen säger/);
+  assert.doesNotMatch(html, /Kallt nog vid/);
+  // Ingenting alls.
+  app = medEnheter([], { station: null });
+  assert.match(app.visa('overview'), /Inget värde just nu/);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('läget nu: ?demo är oförändrat', () => {
+  const app = laddaApp({ search: '?demo' });
+  assert.doesNotMatch(app.visa('overview'), /Läget nu|undefined|NaN/);
+});

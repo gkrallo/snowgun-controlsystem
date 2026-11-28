@@ -1251,24 +1251,85 @@ const alarmBanner=()=>{const aa=activeAlarms();return aa.length
   : `<div class="banner ok">${icon('bell','#34d399')}<div style="flex:1"><b>Inga aktiva larm</b></div></div>`};
 const missing=t=>`<div class="note" style="margin-top:14px">${t}</div>`;
 
+/* Våttemperaturen just nu, från den källa vi litar mest på (Kristian, 28
+   november 2026): verkligheten styr när ni kör, prognosen är för att
+   mobilisera. Förut stod två besked bredvid varandra, ett från
+   väderstationen och ett från prognosen, med olika startgräns.
+     1. Kanonerna, när minst en hörs med färska värden. Medianen av
+        enheternas egna givare — av dem som går, om någon går (givaren sitter
+        då i luftström), annars av dem som hörs. Median och inte medelvärde,
+        så att en enda givare som visar fel inte drar beskedet.
+     2. Väderstationen, när ingen kanon hörs. Den visar ofta för varmt:
+        säger den kallt nog är det kallt nog, annars kan det vara kallare.
+     3. Prognosen, bara om inget annat finns.
+   Gränsen i nuläget är den som står inställd på varje enhet i styrsystemet
+   (startT, från bryggan 12): det är den kanonen startar på. Körfönstret
+   räknar som förut, som Snöprognos. */
+const startGrans=c=>Number.isFinite(c.startT)?c.startT:(c.typ==='lans'?KF.lanceBase:KF.fanBase);
+const medianAv=v=>{const a=[...v].sort((x,y)=>x-y), m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2;};
+function twNu(){
+  if(real&&!dataOld()){
+    const hors=cannons.filter(c=>c.state==='conn'&&Number.isFinite(c.tw));
+    if(hors.length){
+      const gar=hors.filter(c=>mapUnitState(c).kor), U=gar.length?gar:hors, v=U.map(c=>c.tw);
+      return {kalla:'kanoner', tw:medianAv(v), min:Math.min(...v), max:Math.max(...v), n:U.length, gar:gar.length>0,
+        hors:hors.length, over:hors.filter(c=>c.tw>startGrans(c))};
+    }
+    if(wx&&Number.isFinite(wx.tw))return {kalla:'station', tw:wx.tw, kallt:wx.tw<=KF.fanBase};
+  }
+  const pt=fc.pts.length&&!fcOld()?fcNow():null;
+  if(pt&&Number.isFinite(pt.wb))return {kalla:'prognos', tw:pt.wb, pt};
+  return {kalla:null, tw:null};
+}
+const nuChip=(kl,t)=>`<span class="chip ${kl}"><span class="d"></span>${t}</span>`;
+const antalTxt=n=>n.n===1?'en enhet':'medianen av '+n.n+' enheter';
+// Kortet "Läget nu": ett besked, med källan utskriven.
+function lagetNu(n){
+  const P='<p class="muted small" style="line-height:1.6;margin:11px 0 0">', B=t=>`<b style="color:var(--text)">${t}</b>`;
+  if(n.kalla==='kanoner'){
+    const under=n.hors-n.over.length;
+    const chip=under===n.hors?nuChip('s-run',n.hors===1?'Kallt nog vid kanonen':'Kallt nog vid alla '+n.hors)
+      :under===0?nuChip('s-limit','För varmt vid kanonerna'):nuChip('s-limit',under+' av '+n.hors+' under sin startgräns');
+    return `<div class="row" style="margin-top:8px">${chip}</div>
+      ${P}${B(fmt1(n.tw)+' °C')} våttemperatur vid kanonerna: ${antalTxt(n)} ${n.gar?'som går':'som hörs (ingen går)'}${n.n>1?', från '+fmt1(n.min)+' till '+fmt1(n.max):''}. Gränsen är den som står inställd på varje enhet i styrsystemet.${n.over.length?' Över sin gräns: '+n.over.map(c=>esc(c.namn)+' ('+fmt1(c.tw)+' mot '+fmt1(startGrans(c))+')').join(', ')+'.':''}</p>`;
+  }
+  if(n.kalla==='station')
+    return `<div class="row" style="margin-top:8px">${n.kallt?nuChip('s-run','Kallt nog enligt väderstationen'):nuChip('s-off','För varmt enligt väderstationen')}</div>
+      ${P}${B(fmt1(n.tw)+' °C')} vid väderstationen, mot startgränsen ${fmt1(KF.fanBase)} °C. Ingen kanon hörs just nu. Väderstationen visar ofta för varmt${n.kallt?'.':', så det kan vara kallare än så.'}</p>`;
+  const varfor=dataOld()?esc(gammalText())+'.':'Varken kanonerna eller väderstationen ger något värde just nu.';
+  if(n.kalla==='prognos')
+    return `<div class="row" style="margin-top:8px">${kfChip(assess(n.pt).state)}<span class="muted small">enligt prognosen</span></div>
+      ${P}${varfor} Prognosen säger ${B(fmt1(n.tw)+' °C')}.</p>`;
+  return `<div class="row" style="margin-top:8px">${nuChip('s-off','Inget värde just nu')}${dataOld()?agoHTML(dataTid(),gammalText()):''}</div>${P}${varfor}</p>`;
+}
+// Samma källa i rutan överst.
+function twKort(n){
+  const H=`<h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(n.tw)}<small> °C</small></div>`;
+  if(n.kalla==='kanoner')return `<div class="card kpi" style="cursor:pointer" onclick="go('cannons')" title="Visa enheterna">${H}<div class="foot ${n.over.length?'warn':'up'}">vid kanonerna · ${n.n===1?'en enhet':'median av '+n.n} ${n.gar?'som går':'som hörs'}${n.n>1?' · '+fmt1(n.min)+' till '+fmt1(n.max):''}</div></div>`;
+  if(n.kalla==='station')return `<div class="card kpi${HC}"${histAttr('tw','Våttemperatur vid väderstationen','°C')}>${H}<div class="foot ${n.kallt?'up':''}">vid väderstationen · visar ofta för varmt · luft ${num(wx.t)} °C, ${num(wx.rh,0)} %</div></div>`;
+  if(n.kalla==='prognos')return `<div class="card kpi">${H}<div class="foot">enligt prognosen${dataOld()?' · mätvärdena är gamla '+agoHTML(dataTid(),gammalText()):''}</div></div>`;
+  return `<div class="card kpi${dataOld()?' old':''}">${H}<div class="foot">${dataOld()?agoHTML(dataTid(),gammalText()):'Inget värde just nu'}</div></div>`;
+}
+
 function vOverviewR(){
-  const con=running().length, tw=wx?wx.tw:null, cold=Number.isFinite(tw)?tw<=FTHRESH:null;
+  const con=running().length, nu=twNu();
   const p1=pumps&&pumps.dep11||{}, p2=pumps&&pumps.dep12||{};
   return topbar('Driftövervakning','Översikt')+`<div class="view">${alarmBanner()}
   <div class="grid g-kpi">
     <div class="card kpi${dataOld()?' old':''}"><h3>${icon('fan','#7dd3fc',15)} Med kontakt</h3><div class="val">${con}<small> / ${cannons.length} enheter</small></div><div class="foot">${dataOld()?agoHTML(dataTid(),gammalText()):cannons.filter(c=>mapUnitState(c).kor).length+' kör just nu'}</div></div>
     <div class="card kpi${dataOld()?' old':''}${HC}"${histAttr('tryckUt','Tryck efter högtryckspumpen (PT02)','bar')}><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">${dataOld()?agoHTML(dataTid(),gammalText()):'efter högtryckspumpen · FT01 '+num(ft01(p2.k125))+' m³/h'+(cannons.some(c=>Number.isFinite(c.q)&&c.state==='conn')?' · kanonerna '+num(sum(cannons.filter(c=>c.state==='conn'&&Number.isFinite(c.q)),c=>c.q))+' m³/h':'')}</div></div>
-    <div class="card kpi${dataOld()?' old':''}${HC}"${histAttr('tw','Våttemperatur vid väderstationen','°C')}><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null||dataOld()?'':cold?'up':'warn'}">${dataOld()?agoHTML(dataTid(),gammalText()):cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx&&!dataOld()?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
+    ${twKort(nu)}
     <div class="card kpi${damUtanUttag()?' old':''}" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPctTxt()}<small> %</small></div>${damBar()}<div class="foot">${damUtanUttag()?esc(damUttagText()):'Egen beräkning — nivån mäts inte'}</div></div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
     <div class="card"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur vid väderstationen</h3>${histSeg()}
       ${histPts.length>1?'<div class="chartbox"><canvas id="cTw"></canvas></div>':'<p class="muted small" style="margin-top:12px">Kurvan fylls på med en punkt var femte minut.</p>'}</div>
-    <div class="card"><h3>${icon('clock','#7dd3fc',15)} Går det att köra?</h3>
-      <div class="row" style="margin-top:8px">${dataOld()?'<span class="chip s-off"><span class="d"></span>Inget färskt värde</span>'+agoHTML(dataTid(),gammalText()):cold===null?'<span class="chip s-off"><span class="d"></span>Inget värde</span>':cold?'<span class="chip s-run"><span class="d"></span>Kallt nog just nu</span>':'<span class="chip s-limit"><span class="d"></span>För varmt just nu</span>'}</div>
-      <p class="muted small" style="line-height:1.6;margin:11px 0 0">Bedömt på väderstationens våttemperatur i det här ögonblicket, mot startgränsen ${num(FTHRESH)} °C. Framåt:</p>
-      ${fcBrief()}
+    <div class="card"><h3>${icon('clock','#7dd3fc',15)} Läget nu</h3>
+      ${lagetNu(nu)}
+      <div class="section-title" style="margin:16px 2px 0">Framåt — prognos</div>
+      ${fcBrief(nu.kalla==='kanoner'?{matt:nu.tw}:{utanNu:true})}
+      <p class="muted small" style="line-height:1.6;margin:10px 0 0">Prognosen är till för att mobilisera. När ni kör gäller det kanonerna mäter.</p>
       <button class="linkbtn" style="margin-top:12px" onclick="go('forecast')">Körfönstret</button>
     </div>
   </div>
@@ -2394,7 +2455,7 @@ function vMap(){
      <span class="row"><i style="background:#0e5a7a;border:2px solid #22d3ee;border-radius:2px"></i><span class="muted small">Dammens krön</span></span>
    </div>
    ${real&&!cannons.some(c=>c.brunn)?missing('<b>Enheterna ritas inte ut än.</b> Brunnen varje enhet står vid saknas i datan från bryggan. Kartan visar spåret och brunnarna.'):''}
-   <div class="note" style="margin-top:12px">Vid varje enhet står <b>våttemperaturen</b> från enhetens egen givare (blå under startgränsen ${num(FTHRESH)} °C, gul över) och <b>flödet</b> i m³/h. Flödet är styrsystemets beräknade, ingen kanon mäter det. Står två enheter vid samma brunn visas den som är aktiv; den andra står i rutan. Vid dammen står summan av enheternas flöde och dammens nivå i procent; flödesmätaren FT01, rättad, står i rutan när man trycker. Utzoomat syns bara ikonerna. Tryck för detaljer. Spårlinjen är medellinjen ur drygt sex varv med klocka, och brunnarna och dammens krön är inmätta med pucken. Brunn 17 och 18 ligger en bit från linjen: gatan är 15–20 m bred längst ner i stora slingan, och varven gick på andra sidan. Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
+   <div class="note" style="margin-top:12px">Vid varje enhet står <b>våttemperaturen</b> från enhetens egen givare (blå under enhetens startgräns i styrsystemet, gul över) och <b>flödet</b> i m³/h. Flödet är styrsystemets beräknade, ingen kanon mäter det. Står två enheter vid samma brunn visas den som är aktiv; den andra står i rutan. Vid dammen står summan av enheternas flöde och dammens nivå i procent; flödesmätaren FT01, rättad, står i rutan när man trycker. Utzoomat syns bara ikonerna. Tryck för detaljer. Spårlinjen är medellinjen ur drygt sex varv med klocka, och brunnarna och dammens krön är inmätta med pucken. Brunn 17 och 18 ligger en bit från linjen: gatan är 15–20 m bred längst ner i stora slingan, och varven gick på andra sidan. Kartan speglar styrsystemet — appen visar bara, styr aldrig.</div>
   </div>`;
 }
 let mapInst=null;
@@ -2499,7 +2560,7 @@ function mapPick(list){
 // ikonen bättre (Kristian 27 november).
 function unitLabel(c,m,side,rad){
   const tw=m.live?num(c.tw):'–', q=m.live?num(m.q):'–';
-  const twc=m.live&&Number.isFinite(c.tw)?(c.tw<=FTHRESH?'#7dd3fc':'#fbbf24'):'#9fb0c7';
+  const twc=m.live&&Number.isFinite(c.tw)?(c.tw<=startGrans(c)?'#7dd3fc':'#fbbf24'):'#9fb0c7';
   return `<div class="mlab ${side}${m.live?'':' dim'}"><span style="color:${twc}">${tw}°</span>${m.borta?' <span style="color:#fbbf24">⚠</span>':''}${rad?' ':'<br>'}${q} <small>m³/h</small></div>`;
 }
 function drawMapUnits(){
@@ -2919,14 +2980,25 @@ function timelineHTML(hours=48){
 }
 
 // Kort sammanfattning för översikten.
-function fcBrief(){
+/* opt.matt = våttemperaturen kanonerna mäter nu. Då visas inget eget besked
+   om nuläget ur prognosen, utan hur prognosen ligger till mot kanonerna —
+   det säger hur mycket fönstret är värt. opt.utanNu = inget besked om nu
+   alls (det står redan i kortet). Utan opt som förut, för ?demo. */
+function fcBrief(opt={}){
   fcEnsure();
   if(!fc.pts.length)return `<p class="muted small" style="line-height:1.6;margin:11px 0 0">${fc.err?esc(fc.err)+' Prognosen försöker igen om en stund.':'Hämtar prognosen …'}</p>`;
   const pt=fcNow(), a=pt?assess(pt):null, w=kfWins()[0], now=Date.now();
   const txt=!w?'Inget körfönster inom tio dygn — för varmt eller för blåsigt.'
     :w.start<=now+20*60000?`Prognosen håller <b style="color:var(--text)">till ${kfWhen(w.end)}${daysAhead(w.end)?' '+WD[new Date(w.end).getDay()]:''}</b> (${durText(w.end-now)}${w.marginal?', delvis marginellt':''}).`
     :`Nästa fönster: <b style="color:var(--text)">${dayPrefix(w.start)} ${kfWhen(w.start)}</b>, ${durText(w.end-w.start)}.`;
-  return `<div class="row" style="margin-top:10px">${a?kfChip(a.state):''}<span class="muted small">enligt prognosen${a?' · våttemp '+fmt1(pt.wb)+' °C':''}</span>${fcOld()?agoHTML(fc.at):''}</div>
+  let topp;
+  if(Number.isFinite(opt.matt)||opt.utanNu){
+    const d=pt&&Number.isFinite(opt.matt)?pt.wb-opt.matt:null;
+    const jfr=d===null?'':`Prognosen säger ${fmt1(pt.wb)} °C nu, kanonerna mäter ${fmt1(opt.matt)}: `+
+      (Math.abs(d)<0.5?'det stämmer just nu.':`prognosen ligger <b style="color:var(--text)">${num(Math.abs(d),1)} grader för ${d>0?'varmt':'kallt'}</b> just nu.`);
+    topp=jfr||fcOld()?`<p class="muted small" style="line-height:1.6;margin:8px 0 0">${jfr}${fcOld()?' '+agoHTML(fc.at):''}</p>`:'';
+  }else topp=`<div class="row" style="margin-top:10px">${a?kfChip(a.state):''}<span class="muted small">enligt prognosen${a?' · våttemp '+fmt1(pt.wb)+' °C':''}</span>${fcOld()?agoHTML(fc.at):''}</div>`;
+  return `${topp}
     <p class="muted small" style="line-height:1.6;margin:10px 0 0">${txt}</p>${timelineHTML(24)}`;
 }
 
