@@ -550,6 +550,18 @@ function applyLive(v){
   wx=v.vader?Object.assign({},v.vader,{vind:v.vindStation||null}):null;
   pumps=v.pump||null; lines=v.ledningar||null;
   events=asList(v.handelser);
+  /* Styrsystemets larm har ett id per felrad, inte per tillfälle. Förut
+     rensades de lokala kvitteringarna aldrig: "Slangen frusen" kvitterad en
+     gång visades som kvitterad varje gång den kom tillbaka (K5). Nu glöms
+     kvitteringen när larmet inte längre står i listan. Bara när listan är
+     färskt läst — når bryggan inte databasen står den gamla listan kvar. */
+  if(metaLive&&metaLive.sqlOk!==false){
+    const star=new Set(asList(v.larm).map(a=>String(a.id)));
+    if(metaLive.skrivkonto)star.add('avsteg');
+    let andrad=false;
+    for(const id of [...acked])if(!star.has(id)){acked.delete(id);andrad=true;}
+    if(andrad)saveAck();
+  }
   // Larmet "SGC300 0 2 general fault" har stått sedan 2024 och gäller kanonen
   // på adress 2, som inte finns längre.
   alarms=asList(v.larm).filter(a=>!/^SGC300_.*_2$/.test(String(a.id))).map(a=>({id:String(a.id), sev:'warn',
@@ -710,6 +722,24 @@ function setHistRange(h){
   window.loadHist(h).then(v=>{if(tok!==histTok)return;histOld=v||{};histOldRange=h;histOldAt=Date.now();},
     ()=>{if(tok===histTok)histErr='Kunde inte hämta historiken. Försök igen.';})
     .finally(()=>{if(tok!==histTok)return;histLoading=false;rebuildHist();});
+}
+/* En längre period hämtas en gång, och slutet på den täcks av dygnslyssnaren
+   (288 punkter). Stod appen öppen över ett dygn med till exempel Vecka vald
+   gled lyssnaren förbi slutet på det hämtade, och kurvan fick ett hål som såg
+   ut som att bryggan varit nere (K12). Nu hämtas det som kommit sedan
+   hämtningen, långt innan hålet kan uppstå: bara de timmarna, inte hela
+   perioden en gång till. */
+let histFyllT=0;
+function histFyllPa(){
+  if(!real||histRange===24||histLoading||histOldRange===null||!window.loadHist)return;
+  const nu=Date.now(), sedan=nu-histOldAt;
+  if(sedan<6*3600e3||nu-histFyllT<10*60e3)return;
+  histFyllT=nu;
+  const tok=histTok;
+  window.loadHist(Math.ceil(sedan/3600e3)+1).then(v=>{
+    if(tok!==histTok)return;
+    Object.assign(histOld,v||{}); histOldAt=nu; rebuildHist();
+  },()=>{});
 }
 /* Historikrutan (25 november 2026): tryck på ett värde och se dess kurva.
    Samma periodval och samma hämtning som kurvorna i vyerna. Enheternas
@@ -1096,6 +1126,8 @@ const STALE_S=real?150:90;
 const narKort=(t,sek)=>{const d=new Date(t);
   return d.toDateString()!==new Date().toDateString()?dm(d):hhmm(d)+(sek?':'+String(d.getSeconds()).padStart(2,'0'):'');};
 function liveHTML(){
+  // ?demo: fast text, aldrig "Live" över påhittade siffror (K6).
+  if(!real)return `<span class="live stale" id="liveChip">EXEMPELDATA · inte riktiga värden</span>`;
   const l=dataLage(), chip=(t,ok)=>`<span class="live${ok?'':' stale'}" id="liveChip"${ok?'':` title="${esc(gammalText())}"`}>${t}</span>`;
   if(l==='vantar')return chip('Väntar på data');
   if(l==='brygga')return chip('⚠ Gammal data · senast '+narKort(lastData,true));
@@ -1125,7 +1157,7 @@ function vOverview(){
     <div class="card kpi"><h3>${icon('fan','#7dd3fc',15)} I drift</h3><div class="val">${run}<small> / ${cannons.length} enheter</small></div><div class="foot">${cannons.filter(c=>c.state==='limit').length} strypta · ${nOff} ${nOff===1?'avstängd':'avstängda'}</div></div>
     <div class="card kpi" style="cursor:pointer" onclick="go('water')"><h3>${icon('drop','#7dd3fc',15)} Vattenuttag</h3><div class="val">${totalWater()}<small> / ${PUMP_TARGET} m³/h</small></div><div class="bar ${ps==='over'||ps==='at'?'red':ps==='near'?'amber':''}"><i style="width:${Math.min(100,wpct)}%"></i></div><div class="foot ${ps==='ok'?'':ps==='near'?'warn':'down'}">${PUMP_TXT[ps]} · tak ${PUMP_MAX}</div></div>
     <div class="card kpi"><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${tw.toFixed(1)}<small> °C</small></div><div class="foot up">▼ sjunker · bra för produktion</div></div>
-    <div class="card kpi${damUtanUttag()?' old':''}" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">${damUtanUttag()?esc(damUttagText()):'≈ '+fmtDur(damDaysAt(damUttakM3h())*24)+' kvar vid nuvarande uttag'}</div></div>
+    <div class="card kpi${damUtanUttag()?' old':''}" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPctTxt()}<small> %</small></div>${damBar()}<div class="foot">${damUtanUttag()?esc(damUttagText()):'≈ '+fmtDur(damDaysAt(damUttakM3h())*24)+' kvar vid nuvarande uttag'}</div></div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
@@ -1154,13 +1186,16 @@ let memForm={email:'',name:'',role:'viewer'};
 const emailKey=e=>String(e).trim().toLowerCase().split('.').join(',');
 const keyEmail=k=>String(k).split(',').join('.');
 function setAdmin(b,key){
+  // I ?demo finns ingen medlemsvy: den skrev förut i den riktiga listan (K6).
+  if(!real)b=false;
   const was=isAdmin; isAdmin=!!b; myKey=key||'';
   if(!isAdmin){members=null; if(current==='members')current='overview';}
   if(was!==isAdmin&&!document.getElementById('app').classList.contains('hidden'))safeRender(true);
 }
-function applyMembers(o){members=o||{}; if(current==='members')liveRefresh();}
+function applyMembers(o){if(!real)return; members=o||{}; if(current==='members')liveRefresh();}
 function memSay(t,err){memMsg=t;memErr=!!err;render();}
 async function memWrite(key,data,done){
+  if(!real)return memSay('I ?demo ändras ingenting.',true);
   try{await window.memberWrite(key,data);memSay(done,false);}
   catch(e){memSay('Databasen sa nej. Är du fortfarande administratör? ('+(e&&e.code||e)+')',true);}
 }
@@ -1231,9 +1266,9 @@ function vOverviewR(){
   return topbar('Driftövervakning','Översikt')+`<div class="view">${alarmBanner()}
   <div class="grid g-kpi">
     <div class="card kpi${dataOld()?' old':''}"><h3>${icon('fan','#7dd3fc',15)} Med kontakt</h3><div class="val">${con}<small> / ${cannons.length} enheter</small></div><div class="foot">${dataOld()?agoHTML(dataTid(),gammalText()):cannons.filter(c=>mapUnitState(c).kor).length+' kör just nu'}</div></div>
-    <div class="card kpi${dataOld()?' old':''}${HC}"${histAttr('tryckUt','Tryck efter högtryckspumpen (PT02)','bar')}><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">${dataOld()?agoHTML(dataTid(),gammalText()):'efter högtryckspumpen · FT01 '+num(p2.k125)+' m³/h'+(cannons.some(c=>Number.isFinite(c.q)&&c.state==='conn')?' · kanonerna '+num(sum(cannons.filter(c=>c.state==='conn'&&Number.isFinite(c.q)),c=>c.q))+' m³/h':'')}</div></div>
+    <div class="card kpi${dataOld()?' old':''}${HC}"${histAttr('tryckUt','Tryck efter högtryckspumpen (PT02)','bar')}><h3>${icon('gauge','#7dd3fc',15)} Tryck ut i ledningarna</h3><div class="val">${num(p2.tryckUt)}<small> bar</small></div><div class="foot">${dataOld()?agoHTML(dataTid(),gammalText()):'efter högtryckspumpen · FT01 '+num(ft01(p2.k125))+' m³/h'+(cannons.some(c=>Number.isFinite(c.q)&&c.state==='conn')?' · kanonerna '+num(sum(cannons.filter(c=>c.state==='conn'&&Number.isFinite(c.q)),c=>c.q))+' m³/h':'')}</div></div>
     <div class="card kpi${dataOld()?' old':''}${HC}"${histAttr('tw','Våttemperatur vid väderstationen','°C')}><h3>${icon('temp','#7dd3fc',15)} Våttemperatur</h3><div class="val">${num(tw)}<small> °C</small></div><div class="foot ${cold===null||dataOld()?'':cold?'up':'warn'}">${dataOld()?agoHTML(dataTid(),gammalText()):cold===null?'Inget värde från väderstationen':cold?'Under startgränsen '+num(FTHRESH)+' °C':'Över startgränsen '+num(FTHRESH)+' °C'}${wx&&!dataOld()?' · luft '+num(wx.t)+' °C, '+num(wx.rh,0)+' %':''}</div></div>
-    <div class="card kpi${damUtanUttag()?' old':''}" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPct()}<small> %</small></div><div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"><i style="width:${Math.min(100,damPct())}%"></i></div><div class="foot">${damUtanUttag()?esc(damUttagText()):'Egen beräkning — nivån mäts inte'}</div></div>
+    <div class="card kpi${damUtanUttag()?' old':''}" style="cursor:pointer" onclick="go('dam')"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin</h3><div class="val">${damPctTxt()}<small> %</small></div>${damBar()}<div class="foot">${damUtanUttag()?esc(damUttagText()):'Egen beräkning — nivån mäts inte'}</div></div>
   </div>
 
   <div class="grid g-2" style="margin-top:14px">
@@ -1299,7 +1334,7 @@ function pumpSVG(){
     <!-- dammen -->
     <path d="M8 196h104l-18 50H26z" fill="#12314a" stroke="#ffffff26"/><path d="M14 206h92l-13 36H27z" fill="${HI}" opacity=".45"/>
     <text x="60" y="186" text-anchor="middle" font-size="11" font-weight="600" fill="#e9f0fa">Dammen</text>
-    <text x="60" y="262" text-anchor="middle" font-size="10" fill="#8296b5">${damPct()} % · beräknat</text>
+    <text x="60" y="262" text-anchor="middle" font-size="10" fill="#8296b5">${damPctTxt()} % · beräknat</text>
     <text x="60" y="276" text-anchor="middle" font-size="9.5" fill="#8296b5">nivån mäts inte</text>
     <!-- till intagsbrunnen -->
     <path d="M104 226H150" stroke="#8ba0bd" stroke-width="4" fill="none"/>
@@ -1346,7 +1381,7 @@ function pumpSVGtall(p1,p2,L,LO,HI,pump){
     <!-- dammen och intagsbrunnen -->
     ${lbl(64,20,'Dammen','middle')}
     <path d="M16 30h96l-16 46H32z" fill="#12314a" stroke="#ffffff26"/><path d="M22 40h84l-12 32H34z" fill="${HI}" opacity=".45"/>
-    ${sub(64,92,damPct()+' % · beräknat','middle')}${sub(64,106,'nivån mäts inte','middle')}
+    ${sub(64,92,damPctTxt()+' % · beräknat','middle')}${sub(64,106,'nivån mäts inte','middle')}
     <path d="M104 58H160" stroke="#8ba0bd" stroke-width="4" fill="none"/>
     <rect x="160" y="28" width="80" height="58" fill="#12314a" stroke="#ffffff26"/><rect x="162" y="46" width="76" height="38" fill="${HI}" opacity=".35"/>
     <!-- lågtryckssidan -->
@@ -1377,10 +1412,17 @@ function vWaterR(){
   // Flödet nu (bryggan 7). Teoretiskt flöde står kvar när kanonen står och
   // summeras därför inte; det beräknade är 0 utan tryck.
   const con=running().filter(c=>Number.isFinite(c.q)), tot=+sum(con,c=>c.q).toFixed(1);
-  const pct=Math.round(tot/PUMP_MAX*100), ps=pumpState(tot), hot=ps==='over'||ps==='at', near=ps!=='ok';
   const p2=pumps&&pumps.dep12||{};
   // FT01 mot kanonerna: bara meningsfullt när det faktiskt går vatten.
   const ft=ft01(p2.k125), kvot=ft!=null&&tot>=3&&!dataOld()?ft/tot:null;
+  /* Varningen mot pumparnas mål räknas på det som går ut ur pumphuset: rättat
+     FT01 när pumparna går, annars kanonernas summa × UTTAG_FAKTOR — samma
+     regel som dammens uttag (K9). Förut räknades den på kanonernas summa,
+     som ligger cirka 20 % över FT01: vid uppmätt 58 m³/h stod det rött
+     "Över pumparnas mål 69". Stapeln för summan visar fortfarande summan. */
+  const utFT=pumpGar(p2)&&ft!=null, ut=utFT?ft:tot*UTTAG_FAKTOR;
+  const pct=Math.round(tot/PUMP_MAX*100), ps=pumpState(ut), hot=ps==='over'||ps==='at', near=ps!=='ok';
+  const utTxt=num(ut)+' m³/h ('+(utFT?'FT01':'kanonerna × '+UTTAG_PCT+' %')+')';
   return topbar('Driftövervakning','Vattenbalans — pump → enheter',vattenSw('water'))+`<div class="view">
   <div class="card${dataOld()?' old':''}"><h3>${icon('gauge','#7dd3fc',15)} Pumphuset ${dataOld()?agoHTML(dataTid(),gammalText()):''}</h3>
     ${pumps?pumpSVG()+tt01Rad(p2):'<p class="muted small" style="margin-top:12px">Inga värden från pumphuset än.</p>'}
@@ -1404,7 +1446,7 @@ function vWaterR(){
         <div class="flow-track"><div class="flow-fill" style="width:${ft>0?Math.min(100,Math.round(ft/PUMP_MAX*100)):0}%;opacity:.6"></div></div>
         <div class="flow-val">${num(ft)} <small>m³/h</small></div>
       </div>
-      ${dataOld()?`<p class="muted small" style="margin:12px 0 0;line-height:1.6">${esc(gammalText())}. Flödena ovan är de sista som kom, inte vad som går nu.</p>`:`<p class="muted small" style="margin:12px 0 0;line-height:1.6">❄ Ger ungefär <b style="color:var(--text)">${num(sno(tot),0)} m³ snö i timmen</b> (vatten × ${num(SNO_FAKTOR)})${cannons.some(c=>c.vs!=null)?' · '+num(sno(sum(cannons.filter(c=>c.vs!=null),c=>c.vs)),0)+' m³ i säsongen, alla enheter':''}.<br>${kvot!=null?'<b style="color:var(--text)">FT01 visar '+Math.round(kvot*100)+' % av kanonernas summa.</b> ':''}${hot?'<b style="color:var(--alarm)">Över pumparnas mål '+PUMP_TARGET+' m³/h.</b>':near?'<b style="color:var(--limit)">Nära målet '+PUMP_TARGET+' m³/h.</b>':''}</p>`}`
+      ${dataOld()?`<p class="muted small" style="margin:12px 0 0;line-height:1.6">${esc(gammalText())}. Flödena ovan är de sista som kom, inte vad som går nu.</p>`:`<p class="muted small" style="margin:12px 0 0;line-height:1.6">❄ Ger ungefär <b style="color:var(--text)">${num(sno(tot),0)} m³ snö i timmen</b> (vatten × ${num(SNO_FAKTOR)})${cannons.some(c=>c.vs!=null)?' · '+num(sno(sum(cannons.filter(c=>c.vs!=null),c=>c.vs)),0)+' m³ i säsongen, alla enheter':''}.<br>${kvot!=null?'<b style="color:var(--text)">FT01 visar '+Math.round(kvot*100)+' % av kanonernas summa.</b> ':''}${hot?'<b style="color:var(--alarm)">Uttaget '+utTxt+' är över pumparnas mål '+PUMP_TARGET+' m³/h'+(ps==='over'?' och över taket '+PUMP_MAX:'')+'.</b>':near?'<b style="color:var(--limit)">Uttaget '+utTxt+' är nära målet '+PUMP_TARGET+' m³/h.</b>':''}</p>`}`
       :'<p class="muted small" style="margin:0">'+(running().length?'Flödet per enhet kommer när bryggan på styrdatorn är version 7.':'Ingen enhet har kontakt just nu.')+'</p>'}
   </div>
   ${missing('<b>Kanonernas vatten är räknat, inte mätt</b> — de har ingen flödesgivare. Styrsystemet tar flödet för de öppna ringarna vid börtrycket och rättar det med trycket vid kanonen ("Real water flow" på skärmen). Det stämmer bara så bra som dysornas tabellvärden. Mot rättat FT01 räknar kanonerna cirka 20 % för mycket (119–123 % 24–28 november), och dammens uttag räknas därför som '+Math.round(UTTAG_FAKTOR*100)+' % av det.')}
@@ -1649,7 +1691,15 @@ const DAMLV=[
    V0/t0 är den senaste mätningen med måttband. Finns ingen sparad är V0 ett
    exempel, och vyn säger det. Läckage, lägsta driftnivå och reservtakten är
    inställningar i telefonen. */
-let dam={ V0:3743, t0:Date.now(), kalId:null, drawn:0, fillRate:213, leak:2.0, floorH:0.5, horn:'SN' };
+// Påfyllningspumpens takt står på ett ställe. Texterna sa förut 213, 214 och
+// "ca 9" om samma pump (K7).
+const FYLL_M3D=213;                                  // m³/dygn, cirka 9 m³/h
+let dam={ V0:3743, t0:Date.now(), kalId:null, drawn:0, fillRate:FYLL_M3D, leak:2.0, floorH:0.5, horn:'SN' };
+// Utan sparad mätning är V0 ett exempel. I drift får det inte visas som
+// dammens nivå utanför Damm-koll, där det står att det är ett exempel (K7).
+const damKand=()=>!real||dam.kalId!==null;
+const damPctTxt=()=>damKand()?damPct():'–';
+const damBar=(st='')=>damKand()?`<div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}"${st}><i style="width:${Math.min(100,damPct())}%"></i></div>`:'';
 
 /* ---------- Vattenmätaren och kalibreringarna (25 november 2026) ----------
    Avläsningarna av vattenmätaren på påfyllningen och kalibreringarna med
@@ -1674,6 +1724,8 @@ const dammLista=o=>Object.entries(o||{}).filter(([id,x])=>DAMM_ID.test(id)&&x&&t
 const avlasList=()=>dammLista(dammData.avlas).filter(a=>Number.isFinite(a.m3));
 const kalibList=()=>dammLista(dammData.kalib).filter(k=>Number.isFinite(k.cm)&&KANT.pkt.some(p=>p.id===k.punkt));
 function applyDamm(v,nekad){
+  // I ?demo ligger dammens rader bara i minnet; de riktiga blandas inte in (K6).
+  if(!real)return;
   dammData={avlas:(v&&v.avlas)||{},kalib:(v&&v.kalib)||{}};
   dammErr=nekad?'Får inte läsa dammens avläsningar. Reglerna i Firebase är kanske inte utlagda.':'';
   damSync(); liveRefresh();
@@ -1737,7 +1789,7 @@ const damFillSince=(t0,now=Date.now())=>{const a=meterAt(t0),b=meterAt(now);retu
    timmen växer var tionde minut. Hela grenen är några hundra tal på en
    säsong, så appen lyssnar på allt. */
 let vattenTimme={}, vattenTimmeOk=false;
-function applyVattenTimme(v,nekad){vattenTimme=(v&&typeof v==='object')?v:{};vattenTimmeOk=!nekad&&!!v;liveRefresh();}
+function applyVattenTimme(v,nekad){if(!real)return;vattenTimme=(v&&typeof v==='object')?v:{};vattenTimmeOk=!nekad&&!!v;liveRefresh();}
 const timKey=k=>Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8),+k.slice(8,10));
 /* Dammens uttag räknas på kanonernas timvatten, kalibrerat mot FT01.
    Rättat FT01 (se FT01_FAKTOR) är det enda som mäter vattnet ut; kanonerna
@@ -1764,8 +1816,9 @@ function damDrawnSince(t0){
 // dammen står kvar på senaste mätningen. Det får inte se aktuellt ut.
 // Detsamma när datan är gammal: timvattnet kommer från bryggan, och tystnar
 // den vet ingen vad kanonerna tagit sedan dess.
-const damUtanUttag=()=>real&&(!vattenTimmeOk||dataOld());
-const damUttagText=()=>!vattenTimmeOk?'Uttaget saknas sedan mätningen '+fmtDT(dam.t0)
+const damUtanUttag=()=>real&&(!damKand()||!vattenTimmeOk||dataOld());
+const damUttagText=()=>!damKand()?'Ingen mätning med måttband är sparad än'
+  :!vattenTimmeOk?'Uttaget saknas sedan mätningen '+fmtDT(dam.t0)
   :dataLage()==='vantar'?'Väntar på driftdata':gammalText()+'. Uttaget efter det är inte med';
 // Sista timmen med vatten, för att kunna säga hur färskt uttaget är.
 const vattenTimmeSenast=()=>{const k=Object.keys(vattenTimme).filter(x=>/^\d{10}$/.test(x)).sort().pop();return k?timKey(k)+3600e3:null;};
@@ -1964,12 +2017,28 @@ function vDam(){
      </div>
    </div>
 
-   <div class="note" style="margin-top:14px">⚠️ <b>Så snabbt töms den:</b> användbar volym ≈ ${Math.round(V100-floorVol()).toLocaleString('sv-SE')} m³. Vid fullt uttag — pumptaket <b>70 m³/h</b> (1 680 m³/dygn), som också är dammens högsta utflöde — räcker det ungefär <b>${((V100-floorVol())/(PUMP_MAX*24)).toFixed(1)} dygn</b>. Påfyllningspumpen ger bara 213 m³/dygn (≈9 m³/h), en bråkdel av uttaget, så den är en påfyllnad mellan passen snarare än i takt med kanonerna. Pumptaket är verkligt; lägsta driftnivå (${dam.floorH} m) och läckage är ännu exempel. Volymmodellen är exakt och förankrad i ritningen, och krönet och snorkeln är inmätta mot vattenytan.</div>
+   <div class="note" style="margin-top:14px">⚠️ <b>Så snabbt töms den:</b> användbar volym ≈ ${Math.round(V100-floorVol()).toLocaleString('sv-SE')} m³. Vid fullt uttag — pumptaket <b>70 m³/h</b> (1 680 m³/dygn), som också är dammens högsta utflöde — räcker det ungefär <b>${((V100-floorVol())/(PUMP_MAX*24)).toFixed(1)} dygn</b>. Påfyllningspumpen ger bara ${FYLL_M3D} m³/dygn (cirka ${num(FYLL_M3D/24,0)} m³/h), en bråkdel av uttaget, så den är en påfyllnad mellan passen snarare än i takt med kanonerna. Pumptaket är verkligt; lägsta driftnivå (${dam.floorH} m) och läckage är ännu exempel. Volymmodellen är exakt och förankrad i ritningen, och krönet och snorkeln är inmätta mot vattenytan.</div>
   </div>`;
 }
 const clampH=h=>Math.max(0,Math.min(DAM.hMax,h));
 const tapeFor=h=>Math.max(0,Math.round(tapeAt(h,'SN')));
 function damNum(k,v){const n=parseFloat(String(v).replace(',','.')); if(!isNaN(n)&&n>=0)dam[k]=n; render();}
+
+/* Två tryck i stället för webbläsarens frågeruta (K10). confirm() visas inte
+   i en installerad app på alla telefoner: den svarar nej direkt, och knappen
+   ser död ut. Första trycket ställer frågan i kortet och gör knappen röd,
+   andra trycket inom åtta sekunder utför. Samma mönster som i medlemslistan
+   (memAsk). tvaTryck svarar sant på andra trycket. */
+let arm={tag:'',t:0};
+function tvaTryck(tag,aterstall){
+  clearTimeout(arm.t);
+  if(arm.tag===tag){arm.tag='';return true;}
+  arm.tag=tag;
+  arm.t=setTimeout(()=>{arm.tag='';if(aterstall)aterstall();if(current==='dam')render();},8000);
+  return false;
+}
+const armad=tag=>arm.tag===tag;
+const armKnapp=(tag,fn,txt)=>`<button class="linkbtn"${armad(tag)?' style="border-color:var(--alarm);color:var(--alarm)"':''} onclick="${fn}()">${armad(tag)?'Tryck igen för att ta bort':txt}</button>`;
 
 /* Formulären hålls i variabler, inte bara i fälten. Vyn ritas om när ny
    data kommer, och då skulle det man skrivit annars försvinna. */
@@ -2012,7 +2081,7 @@ function mbCard(h){
     <label>Mättes</label>
     <input type="datetime-local" id="mb_ts" value="${calForm.ts||toLocalDT(Date.now())}" onchange="calForm.ts=this.value">
     <div class="row" style="margin-top:12px">${red
-      ?`<button class="linkbtn fram" onclick="damCalib()">Spara ändring</button><button class="linkbtn" onclick="kalibTaBort()">Ta bort</button><button class="linkbtn" onclick="mbAvbryt()">Avbryt</button>`
+      ?`<button class="linkbtn fram" onclick="damCalib()">Spara ändring</button>${armKnapp('kalib:'+red,'kalibTaBort','Ta bort')}<button class="linkbtn" onclick="mbAvbryt()">Avbryt</button>`
       :`<button class="linkbtn fram" onclick="damCalib()">Spara mätningen</button>`}</div>
     ${calForm.msg?`<p class="mt-msg ${calForm.err?'fel':''}">${calForm.msg}</p>`:''}
     <p class="muted small" style="margin-top:12px"><b style="color:var(--text)">Vad händer när jag sparar?</b> Mätningen blir dammens nya utgångsläge för alla i gruppen. Sedan räknar appen vidare själv — plus det vattenmätaren fyller på, minus läckaget — tills nästa mätning. Att bara dra i reglaget sparar ingenting.</p>
@@ -2050,7 +2119,8 @@ async function damCalib(){
 }
 async function kalibTaBort(){
   const id=calForm.edit, k=id&&dammData.kalib[id]; if(!k)return;
-  if(!confirm(`Ta bort mätningen ${fmtDT(k.ts)}, ${fmtCm(k.cm)} cm?`))return;
+  if(!tvaTryck('kalib:'+id,()=>{calForm.msg='';})){
+    calForm.msg=`Ta bort mätningen ${fmtDT(k.ts)}, ${fmtCm(k.cm)} cm? Tryck en gång till på knappen.`;calForm.err=true;render();return;}
   try{await dammSkriv('kalib',id,null);calForm={cm:'',ts:'',edit:null,msg:'Borttagen.',err:false};render();}
   catch(e){calForm.msg='Kunde inte ta bort: '+felText(e);calForm.err=true;render();}
 }
@@ -2069,7 +2139,7 @@ function mtCard(){
   const red=mtForm.edit, ed=red&&dammData.avlas[red];
   const knappar=red
     ?`<div class="seg" style="margin-top:12px">${['start','stopp','avl'].map(t=>`<button class="${mtForm.typ===t?'on':''}" onclick="mtForm.typ='${t}';render()">${TYPTXT[t]}</button>`).join('')}</div>
-      <div class="row" style="margin-top:12px"><button class="linkbtn fram" onclick="mtSpara(mtForm.typ)">Spara ändring</button><button class="linkbtn" onclick="mtTaBort()">Ta bort</button><button class="linkbtn" onclick="mtAvbryt()">Avbryt</button></div>`
+      <div class="row" style="margin-top:12px"><button class="linkbtn fram" onclick="mtSpara(mtForm.typ)">Spara ändring</button>${armKnapp('avlas:'+red,'mtTaBort','Ta bort')}<button class="linkbtn" onclick="mtAvbryt()">Avbryt</button></div>`
     :`<div class="row" style="margin-top:12px">${['start','stopp','avl'].map(t=>`<button class="linkbtn${(t==='start'&&!p.on)||(t==='stopp'&&p.on)?' fram':''}" ${mtForm.sparar?'disabled':''} onclick="mtSpara('${t}')">${t==='avl'?'Avläsning':TYPTXT[t]}</button>`).join('')}</div>`;
   return `<p class="muted small" style="margin:8px 0 0">${status}</p>
     ${red?`<p class="mt-msg">Ändrar avläsningen ${fmtDT(ed&&ed.ts)}${ed&&ed.namn?' ('+esc(ed.namn)+')':''}.</p>`:''}
@@ -2084,7 +2154,7 @@ function mtCard(){
     <input type="number" id="dam_rate" value="${dam.fillRate}" onchange="damNum('fillRate',this.value)">
     <label>Läckage / avdunstning (m³/dygn)</label>
     <input type="number" id="dam_leak" value="${dam.leak}" step="0.5" onchange="damNum('leak',this.value)">
-    <p class="muted small" style="margin-top:10px">Påfyllningen ger ca 9 m³/h (214 m³/dygn) — den är en påfyllnad mellan passen, inte i takt med snökanonernas uttag (upp till 70 m³/h).</p>`;
+    <p class="muted small" style="margin-top:10px">Påfyllningen ger cirka ${num(FYLL_M3D/24,0)} m³/h (${FYLL_M3D} m³/dygn) — den är en påfyllnad mellan passen, inte i takt med snökanonernas uttag (upp till 70 m³/h).</p>`;
 }
 function mtRedigera(id){const a=dammData.avlas[id]; if(!a)return;
   mtForm=Object.assign(mtForm,{edit:id,m3:fmtM3(a.m3),ts:toLocalDT(a.ts),typ:a.typ,msg:'',err:false});render(); tillKort('mtkort');}
@@ -2103,7 +2173,9 @@ async function mtSpara(typ){
   if(fore&&m3<fore.m3)return fel(`Ställningen är lägre än avläsningen ${fmtDT(fore.ts)} (${fmtM3(fore.m3)} m³). Mätaren går inte baklänges — kontrollera siffrorna.`);
   if(efter&&m3>efter.m3)return fel(`Ställningen är högre än avläsningen ${fmtDT(efter.ts)} (${fmtM3(efter.m3)} m³), som är senare. Kontrollera siffror och tid.`);
   if(fore){const dt=(ts-fore.ts)/3600e3, t=(m3-fore.m3)/Math.max(dt,1/60);
-    if(t>20&&!confirm(`Det blir ${num(t,1)} m³/h sedan avläsningen ${fmtDT(fore.ts)}. Påfyllningen brukar ge ca 9. Spara ändå?`))return;}
+    // Samma siffror och samma knapp en gång till = ja. Ändras något frågas det igen.
+    if(t>20&&!tvaTryck('takt:'+typ+':'+m3+':'+(mtForm.ts||'nu')+':'+(mtForm.edit||''),()=>{mtForm.msg='';}))
+      return fel(`Det blir ${num(t,1)} m³/h sedan avläsningen ${fmtDT(fore.ts)}. Påfyllningen brukar ge cirka ${num(FYLL_M3D/24,0)}. Stämmer siffrorna, tryck en gång till på samma knapp för att spara.`);}
   const gammal=mtForm.edit?dammData.avlas[mtForm.edit]:null;
   // Den som läste av står kvar när någon annan rättar.
   const data={ts:Math.round(ts),m3:Math.round(m3*1000)/1000,typ,uid:gammal?gammal.uid:me.uid,namn:gammal?gammal.namn:me.namn};
@@ -2115,7 +2187,8 @@ async function mtSpara(typ){
   }catch(e){fel('Kunde inte spara: '+felText(e));}
 }
 async function mtTaBort(){const id=mtForm.edit, a=id&&dammData.avlas[id]; if(!a)return;
-  if(!confirm(`Ta bort avläsningen ${fmtDT(a.ts)}, ${fmtM3(a.m3)} m³?`))return;
+  if(!tvaTryck('avlas:'+id,()=>{mtForm.msg='';})){
+    mtForm.msg=`Ta bort avläsningen ${fmtDT(a.ts)}, ${fmtM3(a.m3)} m³? Tryck en gång till på knappen.`;mtForm.err=true;render();return;}
   try{await dammSkriv('avlas',id,null);mtForm=Object.assign(mtForm,{edit:null,m3:'',ts:'',msg:'Borttagen.',err:false});render();}
   catch(e){mtForm.msg='Kunde inte ta bort: '+felText(e);mtForm.err=true;render();}
 }
@@ -2460,9 +2533,9 @@ function drawMapUnits(){
   {
     const lat=KRON.horn.reduce((a,k)=>a+k.lat,0)/KRON.horn.length, lon=KRON.horn.reduce((a,k)=>a+k.lon,0)/KRON.horn.length;
     const lv=real?cannons.filter(c=>mapUnitState(c).live&&Number.isFinite(c.q)):cannons;
-    const q=real?(lv.length?sum(lv,c=>c.q):null):totalWater(), pct=damPct();
+    const q=real?(lv.length?sum(lv,c=>c.q):null):totalWater(), pct=damPctTxt();
     const pc=pct<30?'#f87171':pct<50?'#fbbf24':'#34d399';
-    const html=()=>`<div class="mk"><div class="mlab pump e" style="left:4px">Σ ${num(q)} <small>m³/h</small><br><small>Dammen</small> <span style="color:${damUtanUttag()?'#6f7f96':pc}">${damUtanUttag()?'≤ ':''}${pct} %</span></div></div>`;
+    const html=()=>`<div class="mk"><div class="mlab pump e" style="left:4px">Σ ${num(q)} <small>m³/h</small><br><small>Dammen</small> <span style="color:${damUtanUttag()?'#6f7f96':pc}">${damUtanUttag()&&damKand()?'≤ ':''}${pct} %</span></div></div>`;
     const p2=pumps&&pumps.dep12||{};
     const pop=`<b>Pumphuset</b><br>Kanonernas flöde, summa: ${num(q)} m³/h<br>`+
       (real?`FT01 ${num(ft01(p2.k125))} m³/h${ft01Fel()?' (rättat × 1,81)':''}<br>`:'')+
@@ -2937,7 +3010,7 @@ function vForecast(){
      <div class="card${damUtanUttag()?' old':''}"><h3>${icon('dam','#7dd3fc',15)} Vattenmagasin — så länge räcker det</h3>
        ${damUtanUttag()?`<p class="muted small" style="margin:10px 0 0">${esc(damUttagText())}.</p>`
          :`<div class="val" style="font-size:1.7rem;font-weight:700;margin-top:6px">≈ ${fmtDur(damH)} <small class="muted" style="font-size:.85rem">vid nuvarande uttag</small></div>`}
-       <div class="bar ${damPct()<30?'red':damPct()<50?'amber':'green'}" style="margin-top:10px"><i style="width:${Math.min(100,damPct())}%"></i></div>
+       ${damBar(' style="margin-top:10px"')}
        <p class="muted small" style="line-height:1.6;margin-top:12px">${winH!==null&&!damUtanUttag()?`Fönstret är öppet ${durText(winH*3600000)} till; vattnet räcker ${damH<winH?'<b style="color:var(--limit)">kortare</b>':'längre'}. `:''}Kör hårt medan fönstret är öppet och magasinet räcker.</p>
      </div>
    </div>
@@ -3167,7 +3240,7 @@ setInterval(refreshLive,15000);
    nätet, stod "Kör" och "Hörd nyss" kvar, och "för 10 min sedan" frös. Nu
    ritas vyn om var 30:e sekund, och direkt när appen kommer fram på skärmen
    igen (en telefon stannar timrarna när skärmen är släckt). */
-function tidGar(){ if(!real||document.hidden)return; liveRefresh(); }
+function tidGar(){ if(!real||document.hidden)return; histFyllPa(); liveRefresh(); }
 setInterval(tidGar,30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)tidGar();});
 
@@ -3184,7 +3257,7 @@ function clearApp(){
   document.getElementById('main').innerHTML='';
   // Riktig data ska inte ligga kvar i minnet åt nästa som loggar in.
   if(real){cannons=[];alarms=[];wx=pumps=lines=metaLive=null;events=[];histPts=[];lastData=0;
-    histLive={};histOld={};histOldRange=null;histRange=24;histTok++;histLoading=false;histErr='';histInfo='';closeHist();
+    histLive={};histOld={};histOldRange=null;histOldAt=0;histFyllT=0;histRange=24;histTok++;histLoading=false;histErr='';histInfo='';closeHist();
     dammData={avlas:{},kalib:{}};dammErr='';damSync();
     calForm={cm:'',ts:'',edit:null,msg:'',err:false};mtForm={m3:'',ts:'',typ:'avl',edit:null,msg:'',err:false,sparar:false};loggAlla=false;
     larmlage={};notisSt={pa:false,laddad:false,arbetar:false,msg:'',err:false};}
@@ -3376,7 +3449,7 @@ window.kvittera = id => {
 // Adressen kan bytas av webbläsaren. Var gång appen öppnas med larmen på
 // hämtas den igen och sparas om den ändrats, och tiden visar att telefonen
 // lever.
-let notisKollad = false;
+let notisKollad = false, notisPa = false;
 function notisFornya(v) {
   if (notisKollad || !v || !window.notisNyckel || !('Notification' in window) || Notification.permission !== 'granted') return;
   notisKollad = true;
@@ -3425,6 +3498,17 @@ window.fbLogin = async function () {
 };
 
 window.logout = async function () {
+  // Den som loggar ut ska inte fortsätta få larm på telefonen (K12). Adressen
+  // tas bort ur /notis medan inloggningen ännu gäller. Högst fyra sekunder:
+  // utan nät blir skrivningen aldrig klar, och då ska utloggningen ändå gå.
+  if (fb && fb.auth.currentUser && notisPa) {
+    const bort = (async () => {
+      await fb.dbm.remove(notisRef());
+      const m = await messaging(); if (m) await msgMod.deleteToken(m);
+    })().catch(() => { });
+    await Promise.race([bort, new Promise(r => setTimeout(r, 4000))]);
+  }
+  notisPa = false;
   stopListening();
   if (window.clearApp) window.clearApp();
   if (fb) { try { await fb.authm.signOut(fb.auth); } catch (e) { } }
@@ -3504,7 +3588,7 @@ if (fb) fb.authm.onAuthStateChanged(fb.auth, user => {
       s7 => window.applyLarmlage(s7.val()), () => window.applyLarmlage(null));
     notisKollad = false;
     stopNotis = fb.dbm.onValue(notisRef(),
-      s8 => { window.applyNotis(s8.exists()); notisFornya(s8.val()); }, () => window.applyNotis(false));
+      s8 => { notisPa = s8.exists(); window.applyNotis(notisPa); notisFornya(s8.val()); }, () => { notisPa = false; window.applyNotis(false); });
   }, () => noAccess());   // nekad läsning = inte medlem (eller obekräftad adress)
 });
 </script>

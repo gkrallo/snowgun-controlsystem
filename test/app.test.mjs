@@ -255,3 +255,184 @@ test('K3: alla vyer går att rita i alla lägen utan fel', () => {
     assert.deepEqual(utanNat(app.fel), [], JSON.stringify(meta));
   }
 });
+
+/* ---------- K4–K12 ---------- */
+
+const vanta = () => new Promise(r => setImmediate(r));
+const FT = 3.552451 / 1.9634950;
+
+test('K4: översikten visar FT01 rättad, som alla andra ställen', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu()));          // FT01 visar 20 i styrsystemet
+  const html = app.visa('overview');
+  assert.match(html, /FT01 36,2 m³\/h/);
+  assert.doesNotMatch(html, /FT01 20,0/);
+  assert.equal(+(20 * FT).toFixed(1), 36.2);
+});
+
+test('K5: en kvittering glöms när larmet gått över, och larmet visas okvitterat när det kommer tillbaka', () => {
+  const larm = id => ({ id, maskin: 'SGC300', namn: '0 1', text: 'fault : hose frozen', sedan: '20/11/2026 03:10:00' });
+  const app = medKlocka(undefined, { lagrat: { snokollAck: JSON.stringify(['A1', 'B2']) } });
+  const med = l => { const x = liveVid(app.nu()); x.larm = l; return x; };
+  app.kor('applyLive')(med([larm('A1')]));
+  assert.match(app.visa('alarms'), /Kvitterad/);
+  assert.deepEqual(JSON.parse(app.lager.get('snokollAck')), ['A1'], 'B2 står inte längre och glöms');
+  // Larmet går över ...
+  app.fram(1); app.kor('applyLive')(med([]));
+  assert.deepEqual(JSON.parse(app.lager.get('snokollAck')), []);
+  // ... och kommer tillbaka två veckor senare.
+  app.fram(14 * 24 * 60); app.kor('applyLive')(med([larm('A1')]));
+  const html = app.visa('alarms');
+  assert.doesNotMatch(html, /Kvitterad/);
+  assert.match(html, /ackOne\(/);
+  assert.equal(app.kor('activeAlarms().length'), 1);
+});
+
+test('K5: kvitteringarna rörs inte när bryggan inte når databasen', () => {
+  const app = medKlocka(undefined, { lagrat: { snokollAck: JSON.stringify(['A1']) } });
+  const l = liveVid(app.nu(), { sqlOk: false }); l.larm = [];
+  app.kor('applyLive')(l);
+  assert.deepEqual(JSON.parse(app.lager.get('snokollAck')), ['A1']);
+});
+
+test('K6: ?demo säger EXEMPELDATA, aldrig Live, och tar inte in riktig data', () => {
+  const app = laddaApp({ search: '?demo' });
+  for (const vy of VYER) {
+    const html = app.visa(vy);
+    assert.match(html, /EXEMPELDATA/, vy);
+    assert.doesNotMatch(html, /Live ·/, vy);
+  }
+  assert.match(app.tick(), /EXEMPELDATA/);
+  app.kor('applyDamm')({ avlas: { '-Oriktig': { ts: NU, m3: 73478, typ: 'avl', uid: 'u', namn: 'Riktig' } } });
+  app.kor('applyVattenTimme')({ '2026112810': 12.5 });
+  app.kor('applyMembers')({ 'riktig@example,com': { role: 'admin', name: 'Riktig' } });
+  app.kor('setAdmin(true,"riktig@example,com")');
+  assert.equal(app.kor('avlasList().length'), 0);
+  assert.equal(app.kor('Object.keys(vattenTimme).length'), 0);
+  assert.equal(app.kor('members'), null);
+  assert.equal(app.kor('isAdmin'), false);
+  assert.doesNotMatch(app.visa('members'), /Släpp in någon/);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('K7: utan sparad mätning visas ingen procent för dammen utanför Damm-koll', () => {
+  const app = medKlocka(), nu = app.nu();
+  app.kor('applyLive')(liveVid(nu));
+  app.kor('applyVattenTimme')({ '2026112810': 12.5 });
+  const utan = app.visa('overview');
+  assert.match(utan, /Vattenmagasin<\/h3><div class="val">–<small> %/);
+  assert.match(utan, /Ingen mätning med måttband är sparad än/);
+  assert.match(app.visa('water'), /– % · beräknat/);
+  app.kor('applyDamm')({ kalib: { '-Okal1': { ts: nu - 3600e3, cm: 100, punkt: 'SN', uid: 'u', namn: 'Prov' } } });
+  assert.match(app.visa('overview'), /Vattenmagasin<\/h3><div class="val">\d+<small> %/);
+  assert.match(app.visa('water'), /\d+ % · beräknat/);
+});
+
+test('K7: påfyllningens takt står likadant överallt', () => {
+  const app = medKlocka();
+  app.kor('applyLive')(liveVid(app.nu()));
+  const html = app.visa('dam');
+  assert.match(html, /213 m³\/dygn/);
+  assert.doesNotMatch(html, /214/);
+  assert.equal(app.kor('dam.fillRate'), app.kor('FYLL_M3D'));
+});
+
+test('K9: pumpvarningen räknas på rättat FT01 när pumparna går, inte på kanonernas summa', () => {
+  const vatten = (k125, flode) => {
+    const app = medKlocka(), l = liveVid(app.nu());
+    l.pump.dep12.k125 = k125;
+    l.enheter['SGC400-3'].flode = flode;
+    l.enheter['SGC400-4'] = Object.assign({}, l.enheter['SGC400-3'], { brunn: 9 });
+    app.kor('applyLive')(l);
+    return app.visa('water');
+  };
+  // Kanonerna räknar 70 ihop, FT01 visar 32 = 57,9 rättat: under målet, ingen varning.
+  const lugnt = vatten(32, 35);
+  assert.match(lugnt, /<b>70,0<\/b>/);
+  assert.doesNotMatch(lugnt, /pumparnas mål|Nära målet|nära målet/);
+  // FT01 38,5 = 69,7 rättat: över målet 69.
+  assert.match(vatten(38.5, 35), /Uttaget 69,7 m³\/h \(FT01\) är över pumparnas mål 69 m³\/h\./);
+  // FT01 39 = 70,6: över taket också.
+  assert.match(vatten(39, 35), /är över pumparnas mål 69 m³\/h och över taket 70\./);
+  // Pumparna står enligt FT01, men kanonerna räknar 80: då gäller kanonerna × 83 %, 66,4.
+  assert.match(vatten(0.1, 40), /Uttaget 66,4 m³\/h \(kanonerna × 83 %\) är nära målet 69 m³\/h\./);
+});
+
+test('K10: appen använder inte webbläsarens egna frågerutor', () => {
+  // "confirm()" i en kommentar räknas inte: bara anrop med något i parentesen.
+  const kvar = appKod.split('\n').map((rad, i) => [i + 1, rad]).filter(([, rad]) => /(^|[^.\w])(confirm|alert|prompt)\((?!\))/.test(rad));
+  assert.deepEqual(kvar, []);
+});
+
+// En inloggad app där skrivningarna till /damm bara antecknas.
+function medDamm(rader) {
+  const app = medKlocka(), skrivet = [];
+  app.ctx.dammMe = () => ({ uid: 'jag', namn: 'Jag' });
+  app.ctx.dammWrite = (lista, id, data) => { skrivet.push([lista, id, data]); return Promise.resolve(); };
+  app.kor('applyLive')(liveVid(app.nu()));
+  app.kor('applyDamm')(rader(app.nu()));
+  app.visa('dam');
+  return Object.assign(app, { skrivet });
+}
+
+test('K10: ta bort en avläsning kräver två tryck', async () => {
+  const app = medDamm(nu => ({ avlas: { '-Oa1': { ts: nu - 3600e3, m3: 100, typ: 'avl', uid: 'jag', namn: 'Jag' } } }));
+  app.kor("mtRedigera('-Oa1')");
+  assert.match(app.main(), />Ta bort<\/button>/);
+  await app.kor('mtTaBort()');
+  assert.deepEqual(app.skrivet, [], 'första trycket tar inte bort');
+  assert.match(app.main(), /Ta bort avläsningen [^<]*100 m³\? Tryck en gång till/);
+  assert.match(app.main(), /Tryck igen för att ta bort/);
+  await app.kor('mtTaBort()');
+  assert.deepEqual(app.skrivet, [['avlas', '-Oa1', null]]);
+  assert.match(app.main(), /Borttagen\./);
+  assert.deepEqual(utanNat(app.fel), []);
+});
+
+test('K10: ta bort en mätning med måttband kräver två tryck', async () => {
+  const app = medDamm(nu => ({ kalib: { '-Ok1': { ts: nu - 3600e3, cm: 120, punkt: 'SN', uid: 'jag', namn: 'Jag' } } }));
+  app.kor("mbRedigera('-Ok1')");
+  await app.kor('kalibTaBort()');
+  assert.deepEqual(app.skrivet, []);
+  assert.match(app.main(), /Ta bort mätningen [^<]*120 cm\? Tryck en gång till/);
+  await app.kor('kalibTaBort()');
+  assert.deepEqual(app.skrivet, [['kalib', '-Ok1', null]]);
+});
+
+test('K10: en orimlig takt frågar först, och sparar på andra trycket med samma siffror', async () => {
+  const app = medDamm(nu => ({ avlas: { '-Oa1': { ts: nu - 3600e3, m3: 100, typ: 'start', uid: 'jag', namn: 'Jag' } } }));
+  app.kor("mtForm.m3='200'");                      // 100 m³ på en timme
+  await app.kor("mtSpara('avl')");
+  assert.deepEqual(app.skrivet, []);
+  assert.match(app.main(), /Det blir 100,0 m³\/h [^<]*tryck en gång till på samma knapp/);
+  // Ändras siffran frågas det igen.
+  app.kor("mtForm.m3='190'");
+  await app.kor("mtSpara('avl')");
+  assert.deepEqual(app.skrivet, []);
+  await app.kor("mtSpara('avl')");
+  assert.equal(app.skrivet.length, 1);
+  assert.equal(app.skrivet[0][2].m3, 190);
+  // En rimlig takt sparas direkt.
+  app.skrivet.length = 0;
+  app.kor("mtForm.m3='109'");
+  await app.kor("mtSpara('avl')");
+  assert.equal(app.skrivet.length, 1);
+});
+
+test('K12: en vald vecka fylls på med det som kommit sedan den hämtades', async () => {
+  const app = medKlocka(), hamtat = [];
+  app.ctx.loadHist = h => { hamtat.push(h); return Promise.resolve({}); };
+  app.kor('applyLive')(liveVid(app.nu()));
+  app.visa('overview');
+  app.kor('setHistRange(168)'); await vanta();
+  assert.deepEqual(hamtat, [168]);
+  app.fram(60); app.tick(); await vanta();
+  assert.deepEqual(hamtat, [168], 'inget hämtas om i onödan');
+  app.fram(6 * 60); app.tick(); await vanta();
+  assert.deepEqual(hamtat, [168, 8], 'bara timmarna sedan hämtningen, inte hela veckan');
+  app.fram(5); app.tick(); await vanta();
+  assert.deepEqual(hamtat, [168, 8]);
+  // Med 24 h vald hämtas aldrig något extra.
+  app.kor('setHistRange(24)'); app.fram(48 * 60); app.tick(); await vanta();
+  assert.deepEqual(hamtat, [168, 8]);
+});
